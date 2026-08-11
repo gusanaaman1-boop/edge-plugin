@@ -13,13 +13,13 @@ namespace edge::ui
         slider.getProperties().set ("ticks", true);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                     juce::MathConstants<float>::pi * 2.75f, true);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 14);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, metric::pillRow);
         parent.addAndMakeVisible (slider);
 
         caption.setText (text, juce::dontSendNotification);
         caption.setJustificationType (juce::Justification::centred);
         caption.setColour (juce::Label::textColourId, colour::textDim);
-        caption.setFont (juce::FontOptions (9.5f).withStyle ("Bold"));
+        caption.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
         parent.addAndMakeVisible (caption);
 
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -29,9 +29,12 @@ namespace edge::ui
             slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
     }
 
+    //  The same rhythm the main strip uses - knob, pill, caption - so the two
+    //  halves of the plug-in line up with each other.
     void ShapePanel::Control::setBounds (juce::Rectangle<int> r)
     {
-        caption.setBounds (r.removeFromTop (12));
+        caption.setBounds (r.removeFromBottom (metric::captionRow));
+        r.removeFromBottom (metric::rowGap);
         slider.setBounds (r);
     }
 
@@ -41,7 +44,7 @@ namespace edge::ui
                              juce::Justification j)
         {
             l.setText (text, juce::dontSendNotification);
-            l.setFont (juce::FontOptions (10.5f).withStyle ("Bold"));
+            l.setFont (juce::FontOptions (font::title).withStyle ("Bold"));
             l.setColour (juce::Label::textColourId, c);
             l.setJustificationType (j);
             addAndMakeVisible (l);

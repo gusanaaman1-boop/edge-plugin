@@ -80,8 +80,39 @@ namespace edge::ui
         auto* l = juce::LookAndFeel_V4::createSliderTextBox (s);
         l->setJustificationType (juce::Justification::centred);
         l->setColour (juce::Label::outlineWhenEditingColourId, colour::textDim);
-        l->setFont (juce::FontOptions (10.5f));
+        l->setFont (juce::FontOptions (font::value));
+        l->getProperties().set ("pill", true);
         return l;
+    }
+
+    void Look::drawLabel (juce::Graphics& g, juce::Label& l)
+    {
+        //  Detect the slider's own text box by its parent rather than by a
+        //  property set in createSliderTextBox(): sliders that were constructed
+        //  before this look-and-feel was installed - every member of the editor
+        //  and of the SHAPE panel - already had their label made by the default
+        //  one, and never got the property.
+        const bool isSliderReadout = dynamic_cast<juce::Slider*> (l.getParentComponent()) != nullptr;
+
+        if (isSliderReadout || (bool) l.getProperties().getWithDefault ("pill", false))
+        {
+            auto r = l.getLocalBounds().toFloat().reduced (0.5f, 1.0f);
+            g.setColour (juce::Colour (0xff0a0b0c));
+            g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (colour::panelEdge.withAlpha (0.65f));
+            g.drawRoundedRectangle (r, 3.0f, 1.0f);
+        }
+
+        if (l.isBeingEdited())
+        {
+            juce::LookAndFeel_V4::drawLabel (g, l);
+            return;
+        }
+
+        g.setColour (l.findColour (juce::Label::textColourId));
+        g.setFont (l.getFont());
+        g.drawFittedText (l.getText(), l.getLocalBounds().reduced (3, 0),
+                          l.getJustificationType(), 1, 1.0f);
     }
 
     void Look::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
@@ -226,7 +257,7 @@ namespace edge::ui
         }
 
         g.setColour (on ? colour::textBright : (highlighted ? colour::text : colour::textDim));
-        g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
+        g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
         g.drawText (b.getButtonText(), textArea, juce::Justification::centred, false);
     }
 
@@ -264,13 +295,13 @@ namespace edge::ui
 
         g.setColour (b.getToggleState() ? accent
                                         : (highlighted ? colour::text : colour::textDim));
-        g.setFont (juce::FontOptions (11.5f).withStyle ("Bold"));
+        g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
         g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, false);
     }
 
     juce::Font Look::getComboBoxFont (juce::ComboBox&)
     {
-        return juce::Font (juce::FontOptions (11.0f).withStyle ("Bold"));
+        return juce::Font (juce::FontOptions (font::value).withStyle ("Bold"));
     }
 
     void Look::drawComboBox (juce::Graphics& g, int w, int h, bool down,

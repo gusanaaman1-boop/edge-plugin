@@ -105,14 +105,16 @@ namespace edge
 
     // --- BITE ----------------------------------------------------------------
 
-    float biteMaxDrive (float bitePercent) noexcept
+    float biteMaxDrive (float bitePercent, int character) noexcept
     {
         const float b = juce::jlimit (0.0f, 1.0f, bitePercent * 0.01f);
+        const float ceiling = character == (int) Character::iron ? kBiteMaxDriveIron
+                                                                 : kBiteMaxDriveWarm;
 
         //  b == 0 must give EXACTLY zero, which pow() does, and which is what
         //  makes "BITE 0 fully disengages" a bit-exact statement rather than a
         //  very quiet one.
-        return kBiteMaxDrive * std::pow (b, kBiteDriveCurve);
+        return ceiling * std::pow (b, kBiteDriveCurve);
     }
 
     float biteGamma (float bitePercent) noexcept
@@ -121,7 +123,7 @@ namespace edge
         return kBiteGammaLow + (kBiteGammaHigh - kBiteGammaLow) * b;
     }
 
-    float colourDrivePercent (float bitePercent, float activity) noexcept
+    float colourDrivePercent (float bitePercent, float activity, int character) noexcept
     {
         //  A pure function of the PARAMETER state and the FILTER's activity.
         //  No envelope follower, no level detector, no adaptation: the colour
@@ -133,7 +135,8 @@ namespace edge
         if (a <= 0.0f)
             return 0.0f;
 
-        return biteMaxDrive (bitePercent) * std::pow (a, biteGamma (bitePercent));
+        return biteMaxDrive (bitePercent, character)
+             * std::pow (a, biteGamma (bitePercent));
     }
 
     // --- response ------------------------------------------------------------
@@ -231,6 +234,8 @@ namespace edge
                          &edgeBase, &followAmount, &spreadOctaves, &bite })
             v->reset (sampleRate, shapeSmooth);
 
+        freeAmount.reset (sampleRate, 0.050);
+
         //  MODE is a step. 30 ms of ramp on an edge's enable is what turns a
         //  discrete switch into a click-free transition, and it is the only
         //  thing MODE does.
@@ -280,6 +285,12 @@ namespace edge
         lowEnable.setTargetValue (s.mode == (int) Mode::lowPass ? 0.0f : 1.0f);
         highEnable.setTargetValue (s.mode == (int) Mode::highPass ? 0.0f : 1.0f);
 
+        //  FREE is a BAND whose corners do not travel in from the range
+        //  boundaries and whose centre FOLLOW moves instead. Both of those are
+        //  crossfaded by this one value, so selecting it is click-free for the
+        //  same reason every other mode change is.
+        freeAmount.setTargetValue (s.mode == (int) Mode::freeBand ? 1.0f : 0.0f);
+
         edgeBase.setTargetValue (juce::jlimit (0.0f, 1.0f, s.edgePercent * 0.01f));
         followAmount.setTargetValue (juce::jlimit (-1.0f, 1.0f, s.followPercent * 0.01f));
         spreadOctaves.setTargetValue (juce::jlimit (-1.0f, 1.0f, s.spreadPercent * 0.01f)
@@ -290,6 +301,7 @@ namespace edge
         follower.setTimes (s.followAttackMs, s.followReleaseMs);
 
         pendingOutputDb = s.outputDb;
+        pendingCharacter = juce::jlimit (0, ColorStage::numCharacters - 1, s.character);
         bypassFade.setTargetValue (s.bypass ? 1.0f : 0.0f);
     }
 
@@ -299,7 +311,7 @@ namespace edge
 
         for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
                          &lowCurve, &highCurve, &lowShoulder, &highShoulder,
-                         &lowRes, &highRes, &lowEnable, &highEnable,
+                         &lowRes, &highRes, &lowEnable, &highEnable, &freeAmount,
                          &edgeBase, &followAmount, &spreadOctaves, &bite, &bypassFade })
             v->setCurrentAndTargetValue (v->getTargetValue());
 
@@ -344,11 +356,18 @@ namespace edge
         //  a bit-exact wire and its corner is unobservable. MODE now only
         //  drives the gains.
         //
+        //  In FREE the corners do not travel at all: the band sits where it was
+        //  put and EDGE becomes purely "how deep". `free` crossfades between
+        //  the two behaviours so selecting the mode is not a step.
+        const float freeMix = freeAmount.getCurrentValue();
+        const float travel = e + freeMix * (1.0f - e);
+
         //  SPREAD shifts BOTH corners of a channel by the same number of
-        //  octaves, which is exactly what preserves the band's width.
-        const float logLow  = (logLowOrigin  + e * (logLowFreq.getCurrentValue()  - logLowOrigin))
+        //  octaves, and so does FREE's travel, which is exactly what preserves
+        //  the band's width in both cases.
+        const float logLow  = (logLowOrigin  + travel * (logLowFreq.getCurrentValue()  - logLowOrigin))
                             + octaveOffset;
-        const float logHigh = (logHighOrigin + e * (logHighFreq.getCurrentValue() - logHighOrigin))
+        const float logHigh = (logHighOrigin + travel * (logHighFreq.getCurrentValue() - logHighOrigin))
                             + octaveOffset;
 
         Resolved r;
@@ -378,7 +397,7 @@ namespace edge
         {
             for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
                              &lowCurve, &highCurve, &lowShoulder, &highShoulder,
-                             &lowRes, &highRes, &lowEnable, &highEnable,
+                             &lowRes, &highRes, &lowEnable, &highEnable, &freeAmount,
                              &edgeBase, &followAmount, &spreadOctaves, &bite })
                 v->skip (chunkLength);
         }
@@ -389,8 +408,11 @@ namespace edge
         {
             //  Left goes down, right goes up. With one channel there is no
             //  spread to apply.
-            const float offset = channels < 2 ? 0.0f
-                                              : (c == 0 ? -spread : spread);
+            //  SPREAD separates the channels; FREE's travel moves both of them
+            //  together. Both are octave offsets on both corners, so they simply
+            //  add and the band keeps its width either way.
+            const float offset = (channels < 2 ? 0.0f : (c == 0 ? -spread : spread))
+                               + freeTravelOctaves;
 
             const auto r = resolveFor (liveEdge01, offset);
 
@@ -402,17 +424,21 @@ namespace edge
             dispChannel[c].store (r);
         }
 
-        //  The ghost curve: what EDGE at 100 % would do, without spread.
-        dispTarget.store (resolveFor (1.0f, 0.0f));
+        //  The ghost curve: what EDGE at 100 % would do, without spread but
+        //  WITH FREE's travel - the band's target is where it has travelled to,
+        //  not where it started.
+        dispTarget.store (resolveFor (1.0f, freeTravelOctaves));
 
         //  Hidden colour, from the FILTER's activity and BITE. Channel 0's
         //  activity: SPREAD moves frequencies, not gains, so both channels have
         //  the same activity by construction.
         const float activity = juce::jmax (lowEdge.activity (0), highEdge.activity (0));
-        colourDrive.setTargetValue (colourDrivePercent (bite.getCurrentValue(), activity));
+        colourDrive.setTargetValue (colourDrivePercent (bite.getCurrentValue(), activity,
+                                                        pendingCharacter));
 
         const auto shape0 = getDisplayShape (0);
         colour.setSpectrum (shape0.lowHz, shape0.highHz);
+        colour.setCharacter (pendingCharacter);
 
         //  Static make-up for Resonance only. Self-gating: at Depth 0 section 0
         //  is a wire, resonanceMakeup() is 0, and this is exactly 0 dB.
@@ -523,10 +549,26 @@ namespace edge
             };
 
             const float env = follower.processBlock (detectPtrs, chans, chunk);
+
+            //  FOLLOW has two destinations, crossfaded by FREE.
+            //
+            //    normally  it moves EDGE's position - how far into the cut
+            //    in FREE    it moves the band's CENTRE, in octaves, and leaves
+            //               the depth alone, which is what "a band that travels"
+            //               means
+            //
+            //  amount == 0 sends exactly zero to both, so "FOLLOW 0 is identical
+            //  to the follower being disabled" survives the split.
+            const float freeMix = freeAmount.getCurrentValue();
+            const float amount = followAmount.getCurrentValue();
+
             const float liveEdge = applyFollow (edgeBase.getCurrentValue(),
-                                                followAmount.getCurrentValue(), env);
+                                                amount * (1.0f - freeMix), env);
+
+            freeTravelOctaves = amount * freeMix * env * kFreeTravelOctaves;
 
             dispFollowEnv.store (env, std::memory_order_relaxed);
+            dispFreeTravel.store (freeTravelOctaves, std::memory_order_relaxed);
 
             applyChunkShape (chunk, liveEdge);
             colour.setDrive (colourDrive.skip (chunk));

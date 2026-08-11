@@ -55,7 +55,15 @@ namespace
                 { edge::param::lowFreq,   260.0f }, { edge::param::highFreq, 4800.0f },
                 { edge::param::bite,       35.0f } } },
 
-            { "05-shape-open", true, {
+            { "05-free-band", false, {
+                { edge::param::mode,      (float) (int) edge::Mode::freeBand },
+                { edge::param::edge,      100.0f },
+                { edge::param::lowFreq,   700.0f }, { edge::param::highFreq, 2800.0f },
+                { edge::param::follow,     60.0f },
+                { edge::param::character, (float) (int) edge::Character::iron },
+                { edge::param::bite,       70.0f } } },
+
+            { "06-shape-open", true, {
                 { edge::param::edge,       90.0f },
                 { edge::param::lowFreq,   140.0f }, { edge::param::highFreq, 9000.0f },
                 { edge::param::lowShoulder, 55.0f }, { edge::param::highShoulder, 70.0f },

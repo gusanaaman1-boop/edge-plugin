@@ -42,9 +42,13 @@ namespace edge
         inline constexpr const char* followSens    = "follow.sens";
         inline constexpr const char* followAttack  = "follow.attack";
         inline constexpr const char* followRelease = "follow.release";
+
+        //  Which hidden engine BITE is driving. Two characters, and only two -
+        //  it is a voicing, not a model browser.
+        inline constexpr const char* character = "character";
     }
 
-    enum class Mode { lowPass = 0, band, highPass };
+    enum class Mode { lowPass = 0, band, highPass, freeBand };
 
     inline const char* modeName (int m) noexcept
     {
@@ -53,9 +57,32 @@ namespace edge
             case 0: return "LP";
             case 1: return "BAND";
             case 2: return "HP";
+            case 3: return "FREE";
         }
         return "?";
     }
+
+    //  The two hidden colour characters, both vendored from FOUR COLOR:
+    //
+    //    WARM  a memoryless rational soft saturator with a slow sag envelope
+    //          and a drive-dependent bias. Round, fat, gently compressing.
+    //    IRON  the same saturator inside a feedback loop whose return passes a
+    //          one-pole "core loss" filter, so the transfer depends on what just
+    //          happened. Denser, more transformer-ish, more even harmonics.
+    //
+    //  Neither is a "model" in the sense the earlier rule forbade: there is no
+    //  drive, bias, mix or oversampling exposed, and BITE is still the only
+    //  amount control. This is one two-way voicing switch.
+    enum class Character { warm = 0, iron };
+
+    inline const char* characterName (int c) noexcept
+    {
+        return c == (int) Character::iron ? "IRON" : "WARM";
+    }
+
+    //  FREE mode: the band keeps its width and travels. FOLLOW moves its CENTRE
+    //  by up to this many octaves instead of driving EDGE's amount.
+    inline constexpr float kFreeTravelOctaves = 2.0f;
 
     //  Frequency travel. These are also the EDGE macro's ORIGINS: at EDGE 0 the
     //  low corner sits at kLowFreqMin and the high corner at kHighFreqMax, which
@@ -114,7 +141,18 @@ namespace edge
     //  kBiteMaxDrive is a CEILING, and it is set by the aliasing measurement,
     //  not by taste. If it ever fails the -70 dBc limit at 1x the cap comes
     //  down; latency is never traded for it.
-    inline constexpr float kBiteMaxDrive   = 24.0f;   // % at BITE 100
+    //  Per character, because the ceiling is set by each one's own aliasing,
+    //  not by a shared guess. IRON puts its saturator inside a loop whose
+    //  return is low-passed, so it throws far less energy at Nyquist than WARM
+    //  does: measured -107 dBc against WARM's -74 at the same drive. Handing
+    //  that headroom back is what makes IRON the denser voicing rather than a
+    //  differently-labelled WARM - at a shared 24 % the two measured only
+    //  1.4 dB apart in second-harmonic content.
+    inline constexpr float kBiteMaxDriveWarm = 24.0f;   // % at BITE 100
+    inline constexpr float kBiteMaxDriveIron = 46.0f;
+
+    //  What the v0.1 migration is written against.
+    inline constexpr float kBiteMaxDrive   = kBiteMaxDriveWarm;
     inline constexpr float kBiteDriveCurve = 0.70f;   // maxDrive shape vs BITE
     inline constexpr float kBiteGammaLow   = 0.65f;   // gamma at BITE -> 0
     inline constexpr float kBiteGammaHigh  = 0.35f;   // gamma at BITE 100

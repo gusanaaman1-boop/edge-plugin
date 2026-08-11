@@ -27,11 +27,13 @@ private:
                               juce::Slider::TextBoxBelow };
         juce::Label caption;
         std::unique_ptr<SliderAttachment> attachment;
+        juce::Rectangle<int> markArea;
 
         void attach (juce::Component& parent, juce::AudioProcessorValueTreeState&,
                      const juce::String& id, const juce::String& text,
                      juce::Colour accent, bool bipolar);
         void setBounds (juce::Rectangle<int>);
+        static int heightFor (int knobSize) noexcept;
     };
 
     void timerCallback() override;
@@ -51,12 +53,17 @@ private:
 
     Knob followKnob, spreadKnob, biteKnob, outputKnob;
 
-    juce::TextButton lpButton { "LP" }, bandButton { "BAND" }, hpButton { "HP" };
+    juce::TextButton lpButton { "LP" }, bandButton { "BAND" },
+                     hpButton { "HP" }, freeButton { "FREE" };
     std::unique_ptr<juce::ParameterAttachment> modeAttachment;
 
     juce::TextButton shapeButton { "SHAPE" };
     juce::ToggleButton bypassButton { "BYPASS" };
     std::unique_ptr<ButtonAttachment> bypassAttachment;
+
+    //  CHARACTER: one two-way switch, next to the lamp it lights.
+    juce::TextButton characterButton { "WARM" };
+    std::unique_ptr<juce::ParameterAttachment> characterAttachment;
 
     juce::Rectangle<int> warmLampArea;
     bool warmLit = false;

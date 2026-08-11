@@ -109,7 +109,7 @@ namespace edge
         //  --- performance -----------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { param::mode, kStateVersion }, "Mode",
-            juce::StringArray { "LP", "BAND", "HP" }, (int) Mode::band));
+            juce::StringArray { "LP", "BAND", "HP", "FREE" }, (int) Mode::band));
 
         addFloat (param::edge,   "Edge",   { 0.0f, 100.0f }, 0.0f, percentText);
         addFloat (param::follow, "Follow", { -100.0f, 100.0f }, 0.0f, signedPercentText);
@@ -119,6 +119,13 @@ namespace edge
 
         layout.add (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { param::bypass, kStateVersion }, "Bypass", false));
+
+        //  CHARACTER: which of the two hidden engines BITE drives. Two entries,
+        //  and it stays two - it is a voicing, not a model browser, and nothing
+        //  underneath it is exposed.
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { param::character, kStateVersion }, "Character",
+            juce::StringArray { "WARM", "IRON" }, (int) Character::warm));
 
         //  --- follow setup, inside SHAPE --------------------------------------
         addFloat (param::followSens, "Follow Sens", { -60.0f, 0.0f }, -12.0f, dbText);
@@ -162,6 +169,7 @@ namespace edge
         s.followPercent = get (param::follow);
         s.spreadPercent = get (param::spread);
         s.bitePercent   = get (param::bite);
+        s.character     = (int) get (param::character);
         s.outputDb      = get (param::output);
         s.bypass        = get (param::bypass) > 0.5f;
 

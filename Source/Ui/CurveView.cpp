@@ -231,19 +231,38 @@ namespace edge::ui
         return { xForHz (hz), yForDb ((float) magnitudeDb (t, sr, hz)) };
     }
 
+    void CurveView::setFreeMode (bool shouldBeFree)
+    {
+        if (freeMode == shouldBeFree)
+            return;
+
+        freeMode = shouldBeFree;
+        hovered = Grab::none;
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+
     CurveView::Grab CurveView::grabAt (juce::Point<float> p) const noexcept
     {
         const float r = kHandleRadius * 2.4f;
 
         //  Frequency proximity decides, not distance in pixels: the two handles
         //  can sit on top of each other vertically when both edges are deep.
-        const float dLow  = std::abs (p.x - handlePosition (Grab::low).x);
-        const float dHigh = std::abs (p.x - handlePosition (Grab::high).x);
+        const float xLow  = handlePosition (Grab::low).x;
+        const float xHigh = handlePosition (Grab::high).x;
+        const float dLow  = std::abs (p.x - xLow);
+        const float dHigh = std::abs (p.x - xHigh);
 
-        if (juce::jmin (dLow, dHigh) > r)
-            return Grab::none;
+        if (juce::jmin (dLow, dHigh) <= r)
+            return dLow <= dHigh ? Grab::low : Grab::high;
 
-        return dLow <= dHigh ? Grab::low : Grab::high;
+        //  In FREE the whole band is a target: grabbing between the handles
+        //  slides it across the spectrum with its width intact. That is what
+        //  the mode is for, so it only exists there.
+        if (freeMode && p.x > xLow && p.x < xHigh)
+            return Grab::band;
+
+        return Grab::none;
     }
 
     juce::RangedAudioParameter* CurveView::freqParam (Grab g) const noexcept
@@ -262,8 +281,9 @@ namespace edge::ui
         if (h != hovered)
         {
             hovered = h;
-            setMouseCursor (h == Grab::none ? juce::MouseCursor::NormalCursor
-                                            : juce::MouseCursor::DraggingHandCursor);
+            setMouseCursor (h == Grab::none  ? juce::MouseCursor::NormalCursor
+                          : h == Grab::band  ? juce::MouseCursor::LeftRightResizeCursor
+                                             : juce::MouseCursor::DraggingHandCursor);
             repaint();
         }
     }
@@ -280,6 +300,20 @@ namespace edge::ui
             return;
 
         dragStartY = e.position.y;
+        dragStartX = e.position.x;
+
+        auto* lowF  = processor.getState().getParameter (param::lowFreq);
+        auto* highF = processor.getState().getParameter (param::highFreq);
+        dragStartLowHz  = lowF->convertFrom0to1 (lowF->getValue());
+        dragStartHighHz = highF->convertFrom0to1 (highF->getValue());
+
+        if (dragging == Grab::band)
+        {
+            lowF->beginChangeGesture();
+            highF->beginChangeGesture();
+            return;
+        }
+
         if (auto* d = depthParam (dragging))
             dragStartDepth = d->convertFrom0to1 (d->getValue());
 
@@ -291,6 +325,37 @@ namespace edge::ui
     {
         if (dragging == Grab::none)
             return;
+
+        //  Dragging the band moves both corners by the same number of OCTAVES,
+        //  which is what keeps its width. Moving them by the same number of Hz
+        //  would squash it in the bass and stretch it at the top.
+        if (dragging == Grab::band)
+        {
+            const float octaves = std::log2 (hzForX (e.position.x) / hzForX (dragStartX));
+
+            auto* lowF  = processor.getState().getParameter (param::lowFreq);
+            auto* highF = processor.getState().getParameter (param::highFreq);
+
+            //  Clamp the SHIFT, not each corner: clamping them independently
+            //  would let one hit its end and the other keep going, which is
+            //  exactly the width change the octave move exists to avoid.
+            const float wantLow  = dragStartLowHz  * std::exp2 (octaves);
+            const float wantHigh = dragStartHighHz * std::exp2 (octaves);
+
+            const float limited = juce::jlimit (
+                std::log2 (kLowFreqMin / dragStartLowHz),
+                juce::jmin (std::log2 (kLowFreqMax / dragStartLowHz),
+                            std::log2 (kHighFreqMax / dragStartHighHz)),
+                octaves);
+
+            juce::ignoreUnused (wantLow, wantHigh);
+
+            lowF->setValueNotifyingHost (lowF->convertTo0to1 (
+                dragStartLowHz * std::exp2 (limited)));
+            highF->setValueNotifyingHost (highF->convertTo0to1 (
+                dragStartHighHz * std::exp2 (limited)));
+            return;
+        }
 
         if (auto* fp = freqParam (dragging))
             fp->setValueNotifyingHost (fp->convertTo0to1 (hzForX (e.position.x)));
@@ -309,8 +374,17 @@ namespace edge::ui
         if (dragging == Grab::none)
             return;
 
-        freqParam (dragging)->endChangeGesture();
-        depthParam (dragging)->endChangeGesture();
+        if (dragging == Grab::band)
+        {
+            processor.getState().getParameter (param::lowFreq)->endChangeGesture();
+            processor.getState().getParameter (param::highFreq)->endChangeGesture();
+        }
+        else
+        {
+            freqParam (dragging)->endChangeGesture();
+            depthParam (dragging)->endChangeGesture();
+        }
+
         dragging = Grab::none;
     }
 
@@ -506,6 +580,30 @@ namespace edge::ui
             g.setColour (colour::textBright);
             g.drawText (label, box, juce::Justification::centred, false);
         };
+
+        //  In FREE the band itself is a control, so it is drawn as one.
+        if (freeMode)
+        {
+            const float xLow  = handlePosition (Grab::low).x;
+            const float xHigh = handlePosition (Grab::high).x;
+            const bool lit = dragging == Grab::band
+                          || (dragging == Grab::none && hovered == Grab::band);
+
+            auto slab = juce::Rectangle<float> (xLow, plot.getY(),
+                                                juce::jmax (2.0f, xHigh - xLow),
+                                                plot.getHeight());
+
+            g.setColour (colour::textBright.withAlpha (lit ? 0.055f : 0.022f));
+            g.fillRect (slab);
+
+            if (lit)
+            {
+                g.setColour (colour::textBright.withAlpha (0.30f));
+                g.drawText ("MOVE BAND", slab.toNearestInt().withHeight (14)
+                                             .translated (0, 10),
+                            juce::Justification::centred, false);
+            }
+        }
 
         drawHandle (Grab::low,  colour::low,  "LOW");
         drawHandle (Grab::high, colour::high, "HIGH");

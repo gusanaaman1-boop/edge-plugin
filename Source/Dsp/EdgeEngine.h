@@ -73,9 +73,9 @@ namespace edge
 
     //  BITE -> the two halves of the colour law. Exposed so the tests can
     //  assert the law rather than the audio it happens to produce.
-    float biteMaxDrive (float bitePercent) noexcept;
+    float biteMaxDrive (float bitePercent, int character = 0) noexcept;
     float biteGamma (float bitePercent) noexcept;
-    float colourDrivePercent (float bitePercent, float activity) noexcept;
+    float colourDrivePercent (float bitePercent, float activity, int character = 0) noexcept;
 
     class EdgeEngine
     {
@@ -99,6 +99,7 @@ namespace edge
             float followPercent = 0.0f;
             float spreadPercent = 0.0f;
             float bitePercent = 35.0f;
+            int   character = (int) Character::warm;
             float outputDb = 0.0f;
             bool  bypass = false;
 
@@ -147,6 +148,11 @@ namespace edge
         float getLiveEdge01() const noexcept { return dispLiveEdge.load (std::memory_order_relaxed); }
         float getFollowEnvelope01() const noexcept { return dispFollowEnv.load (std::memory_order_relaxed); }
         bool  isSpreadActive() const noexcept { return dispSpreadActive.load (std::memory_order_relaxed); }
+
+        //  How far FOLLOW has moved the band's centre, in octaves. Only ever
+        //  non-zero in FREE mode; the editor draws nothing special for it
+        //  because the resolved shape already carries the moved corners.
+        float getFreeTravelOctaves() const noexcept { return dispFreeTravel.load (std::memory_order_relaxed); }
 
         //  Is the colour engine actually producing anything - what the WARM
         //  lamp reads, rather than "BITE > 0".
@@ -202,6 +208,9 @@ namespace edge
         juce::SmoothedValue<float> lowShoulder, highShoulder; // percent
         juce::SmoothedValue<float> lowRes, highRes;
         juce::SmoothedValue<float> lowEnable, highEnable;     // MODE, 0..1
+        //  1 in FREE mode. Smoothed, because it re-routes both the corner
+        //  travel and FOLLOW's destination, and a step in either is a click.
+        juce::SmoothedValue<float> freeAmount;
         juce::SmoothedValue<float> edgeBase;                  // 0..1
         juce::SmoothedValue<float> followAmount;              // -1..1
         juce::SmoothedValue<float> spreadOctaves;             // +/- octaves, per channel
@@ -212,6 +221,8 @@ namespace edge
 
         float pendingOutputDb = 0.0f;
         float resonanceTrimDb = 0.0f;
+        int   pendingCharacter = (int) Character::warm;
+        float freeTravelOctaves = 0.0f;
 
         juce::AudioBuffer<float> dryBuffer;
 
@@ -228,6 +239,7 @@ namespace edge
         std::atomic<bool>  dispSpreadActive { false };
         std::atomic<float> dispOutputDb { 0.0f };
         std::atomic<float> dispColourEngage { 0.0f }, dispColourGain { 1.0f };
+        std::atomic<float> dispFreeTravel { 0.0f };
 
         //  One published shape per channel, plus the target.
         struct DisplayShape

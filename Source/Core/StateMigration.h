@@ -115,6 +115,10 @@ namespace edge
         put (param::output, take ("output", 0.0f));
         put (param::bypass, take ("bypass", 0.0f));
 
+        //  New in v0.3: a v0.1 project had neither, and the defaults are the
+        //  behaviour it had.
+        put (param::character, (float) (int) Character::warm);
+
         put (param::followSens,    -12.0f);
         put (param::followAttack,   10.0f);
         put (param::followRelease, 150.0f);

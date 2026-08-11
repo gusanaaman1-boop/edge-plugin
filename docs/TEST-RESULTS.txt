@@ -75,8 +75,8 @@ EDGE test suite
   [PASS] Output 24 dB delivers it                                   24.000 dB
 
 == 11. Parameters, state, migration ==
-  [PASS] 20 host parameters, exactly as specified                   20
-  [PASS] every documented parameter ID exists                       20 / 20
+  [PASS] 21 host parameters (20 specified, plus CHARACTER)          21
+  [PASS] every documented parameter ID exists                       21 / 21
   [PASS] save / restore round-trips every parameter                 worst relative error = 0.000000000 on ""
   [PASS] a v0.1 tree is recognised as legacy                        yes
   [PASS] v0.1 state migrates: targets kept, EDGE opened, BAND selected edge 100 %, bite 28.6 %, version 2
@@ -99,9 +99,23 @@ EDGE test suite
   [PASS] 0 dBFS white noise stays finite and bounded                peak 0.558
   [PASS] six full preset changes during playback: largest sample step 0.019298 vs source 0.017273
 
+== 16. FREE band ==
+  [PASS] FREE: EDGE changes the depth, not the corners              EDGE 40 %: 600-2400 Hz at -8.8 dB;  EDGE 100 %: 600-2400 Hz at -110.0 dB
+  [PASS] FREE at EDGE 0 is still bit-exact                          max |out-in| = 0.000000000000
+  [PASS] FREE: FOLLOW moves the centre and keeps the width          travelled 2.00 oct, width 2.000 vs 2.000 oct
+  [PASS] eight BAND<->FREE switches during playback: excess step    -100.0 dBFS
+
+== 17. CHARACTER ==
+  [PASS] WARM at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
+  [PASS] IRON at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
+  [PASS] WARM and IRON produce measurably different harmonics       sum|delta| = 43.8 dB over h2..h5  [WARM/IRON  h2 -37.5/-68.3  h3 -19.9/-15.1  h4 -45.1/-40.7  h5 -31.4/-27.5]
+  [PASS] IRON aliasing at BITE 100, 1x, full cut                    -89.8 dBc  (ceiling 46.0 %)
+  [PASS] eight character switches during playback: excess step      -100.0 dBFS
+  [PASS] both characters are level-matched in the passband          WARM -0.03 dB   IRON 0.31 dB
+
 == 13. Real-time safety and CPU ==
   [PASS] no heap allocation in 10,000 blocks, analyser off and on   0 off, 0 on
-  [PASS] CPU with the analyser feeding: real-time factor            323.185x realtime (0.31 % of one core, bar 200x)
-  [PASS] analyser costs no more than 10 % of throughput             closed 322.575x, open 323.185x, delta -0.2 %
+  [PASS] CPU with the analyser feeding: real-time factor            314.541x realtime (0.32 % of one core, bar 200x)
+  [PASS] analyser costs no more than 10 % of throughput             closed 305.73x, open 314.541x, delta -2.9 %
 
-74 checks, 0 failed
+84 checks, 0 failed

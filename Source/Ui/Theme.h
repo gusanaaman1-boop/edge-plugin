@@ -42,10 +42,28 @@ namespace edge::ui
 
         inline constexpr int shapeHeight   = 190;   // extra height when SHAPE is open
 
+        //  One vertical rhythm for every knob column in the plug-in, so the
+        //  main strip and the SHAPE panel line up with each other instead of
+        //  each inventing its own spacing.
+        inline constexpr int markRow    = 11;   // the "0" above a bipolar knob
+        inline constexpr int pillRow    = 16;   // the value read-out
+        inline constexpr int captionRow = 13;   // the name underneath
+        inline constexpr int rowGap     = 3;
+
         inline constexpr float displayTopDb    = 15.0f;
         inline constexpr float displayBottomDb = -45.0f;
         inline constexpr float displayMinHz    = 18.0f;
         inline constexpr float displayMaxHz    = 22000.0f;
+    }
+
+    //  One type scale. Every size in the plug-in comes from here; the previous
+    //  build had eight different ones and nothing lined up.
+    namespace font
+    {
+        inline constexpr float tiny    = 9.0f;    // axis numbers, +/- marks
+        inline constexpr float caption = 10.0f;   // control names
+        inline constexpr float value   = 11.0f;   // read-outs
+        inline constexpr float title   = 11.0f;   // section titles
     }
 
     juce::String formatHz (float hz);
@@ -97,5 +115,10 @@ namespace edge::ui
         void drawPopupMenuBackground (juce::Graphics&, int w, int h) override;
 
         juce::Label* createSliderTextBox (juce::Slider&) override;
+
+        //  Value read-outs are drawn as dark recessed pills. JUCE's default
+        //  paints a transparent box with a light outline, which read as boxes
+        //  floating on top of the panel rather than sunk into it.
+        void drawLabel (juce::Graphics&, juce::Label&) override;
     };
 }

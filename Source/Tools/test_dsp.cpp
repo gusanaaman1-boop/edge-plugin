@@ -792,7 +792,9 @@ namespace
     {
         section ("7. BITE");
 
-        check (edge::biteMaxDrive (0.0f) == 0.0f && edge::colourDrivePercent (0.0f, 1.0f) == 0.0f,
+        check (edge::biteMaxDrive (0.0f) == 0.0f && edge::colourDrivePercent (0.0f, 1.0f) == 0.0f
+                   && edge::biteMaxDrive (0.0f, 1) == 0.0f
+                   && edge::colourDrivePercent (0.0f, 1.0f, 1) == 0.0f,
                "BITE 0 gives exactly zero drive at any activity",
                "maxDrive(0) = " + f (edge::biteMaxDrive (0.0f), 9));
 
@@ -1178,17 +1180,18 @@ namespace
             edge::param::highShoulder, edge::param::highReso,
             edge::param::mode, edge::param::edge, edge::param::follow,
             edge::param::spread, edge::param::bite, edge::param::output, edge::param::bypass,
-            edge::param::followSens, edge::param::followAttack, edge::param::followRelease };
+            edge::param::followSens, edge::param::followAttack, edge::param::followRelease,
+            edge::param::character };
 
-        check (apvts.processor.getParameters().size() == 20,
-               "20 host parameters, exactly as specified",
+        check (apvts.processor.getParameters().size() == 21,
+               "21 host parameters (20 specified, plus CHARACTER)",
                juce::String (apvts.processor.getParameters().size()));
 
         bool allPresent = true;
         for (auto* id : ids)
             allPresent = allPresent && apvts.getParameter (id) != nullptr;
 
-        check (allPresent, "every documented parameter ID exists", "20 / 20");
+        check (allPresent, "every documented parameter ID exists", "21 / 21");
 
         juce::Random rng (31);
         std::vector<float> written;
@@ -1566,6 +1569,325 @@ namespace
                f (maxStep (buf), 6) + " vs source " + f (sourceStep, 6));
     }
 
+    void testFreeMode()
+    {
+        section ("16. FREE band");
+
+        edge::EdgeEngine e;
+        e.prepare (kSr, 512, 2);
+
+        //  In FREE the corners do NOT travel in from the range boundaries:
+        //  EDGE becomes purely "how deep" and the band stays where it was put.
+        {
+            Settings half = openBand();
+            half.mode = (int) edge::Mode::freeBand;
+            half.edgePercent = 40.0f;
+            half.lowFreqHz = 600.0f; half.highFreqHz = 2400.0f;
+
+            const auto sh = shapeFor (shapeEngine(), half);
+
+            Settings full = half;
+            full.edgePercent = 100.0f;
+            const auto shFull = shapeFor (shapeEngine(), full);
+
+            check (std::abs (std::log2 (sh.lowHz / shFull.lowHz)) < 0.01
+                       && std::abs (std::log2 (sh.highHz / shFull.highHz)) < 0.01
+                       && sh.lowDepthDb > shFull.lowDepthDb + 10.0f,
+                   "FREE: EDGE changes the depth, not the corners",
+                   "EDGE 40 %: " + f (sh.lowHz, 0) + "-" + f (sh.highHz, 0)
+                       + " Hz at " + f (sh.lowDepthDb, 1) + " dB;  EDGE 100 %: "
+                       + f (shFull.lowHz, 0) + "-" + f (shFull.highHz, 0)
+                       + " Hz at " + f (shFull.lowDepthDb, 1) + " dB");
+        }
+
+        //  ... and EDGE 0 is still bit-exact there.
+        {
+            edge::EdgeEngine n;
+            n.prepare (kSr, 512, 2);
+            Settings s = neutral();
+            s.mode = (int) edge::Mode::freeBand;
+            s.bitePercent = 100.0f;
+            n.snapToSettings (s);
+
+            juce::Random rng (606);
+            juce::AudioBuffer<float> out (2, 8192);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    out.setSample (c, i, rng.nextFloat() * 2.0f - 1.0f);
+
+            juce::AudioBuffer<float> ref (out);
+            run (n, out, 128);
+
+            double worst = 0.0;
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    worst = juce::jmax (worst, (double) std::abs (out.getSample (c, i)
+                                                                - ref.getSample (c, i)));
+
+            check (worst == 0.0, "FREE at EDGE 0 is still bit-exact",
+                   "max |out-in| = " + f (worst, 12));
+        }
+
+        //  FOLLOW moves the band's CENTRE and keeps its width.
+        {
+            Settings s = openBand();
+            s.mode = (int) edge::Mode::freeBand;
+            s.lowFreqHz = 500.0f; s.highFreqHz = 2000.0f;
+            s.followPercent = 100.0f;
+            s.followAttackMs = 1.0f;
+            s.followReleaseMs = 40.0f;
+            s.bitePercent = 0.0f;
+
+            edge::EdgeEngine q;
+            q.prepare (kSr, 512, 2);
+            q.snapToSettings (s);
+
+            //  Loud enough to saturate the detector.
+            juce::AudioBuffer<float> b (2, (int) (kSr * 0.6));
+            juce::Random rng (17);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    b.setSample (c, i, 0.8f * (rng.nextFloat() * 2.0f - 1.0f));
+            run (q, b, 128);
+
+            const auto moved = q.getDisplayShape();
+            const double octaves = q.getFreeTravelOctaves();
+            const double widthNow = std::log2 (moved.highHz / moved.lowHz);
+            const double widthTarget = std::log2 (2000.0 / 500.0);
+
+            check (octaves > 1.5 && std::abs (widthNow - widthTarget) < 0.02,
+                   "FREE: FOLLOW moves the centre and keeps the width",
+                   "travelled " + f (octaves, 2) + " oct, width " + f (widthNow, 3)
+                       + " vs " + f (widthTarget, 3) + " oct");
+        }
+
+        //  Switching into and out of FREE must be as quiet as any other mode
+        //  change, because it re-routes both the corner travel and FOLLOW.
+        {
+            Settings s = openBand();
+            s.edgePercent = 60.0f;
+            s.followPercent = 80.0f;
+            s.lowFreqHz = 400.0f; s.highFreqHz = 3000.0f;
+
+            const double w = juce::MathConstants<double>::twoPi * 700.0 / kSr;
+            const float sourceStep = 0.5f * (float) std::abs (std::sin (w));
+
+            auto buf = sweep (e, s, 700.0, 0.5f, 4.0, 64,
+                              [] (Settings& t, double u)
+                              {
+                                  t.mode = ((int) (u * 8.0)) % 2 == 0
+                                             ? (int) edge::Mode::band
+                                             : (int) edge::Mode::freeBand;
+                              });
+
+            const float excess = juce::jmax (0.0f, maxStep (buf) - sourceStep);
+            const float excessDb = juce::Decibels::gainToDecibels (juce::jmax (1.0e-9f, excess));
+
+            check (allFinite (buf) && excessDb < -80.0f,
+                   "eight BAND<->FREE switches during playback: excess step",
+                   f (excessDb, 1) + " dBFS");
+        }
+    }
+
+    void testCharacter()
+    {
+        section ("17. CHARACTER");
+
+        edge::EdgeEngine e;
+        e.prepare (kSr, 512, 2);
+
+        //  Both characters must fully disengage at BITE 0, and both must leave
+        //  EDGE 0 bit-exact.
+        for (int ch : { (int) edge::Character::warm, (int) edge::Character::iron })
+        {
+            edge::EdgeEngine n;
+            n.prepare (kSr, 512, 2);
+            Settings s = neutral();
+            s.character = ch;
+            s.bitePercent = 100.0f;
+            n.snapToSettings (s);
+
+            juce::Random rng (808 + ch);
+            juce::AudioBuffer<float> out (2, 8192);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    out.setSample (c, i, rng.nextFloat() * 2.0f - 1.0f);
+
+            juce::AudioBuffer<float> ref (out);
+            run (n, out, 128);
+
+            double worst = 0.0;
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    worst = juce::jmax (worst, (double) std::abs (out.getSample (c, i)
+                                                                - ref.getSample (c, i)));
+
+            check (worst == 0.0,
+                   (juce::String (edge::characterName (ch))
+                        + " at EDGE 0 is bit-exact").toRawUTF8(),
+                   "max |out-in| = " + f (worst, 12));
+        }
+
+        //  They must actually sound different: the same filter, the same BITE,
+        //  a different harmonic signature.
+        {
+            auto harmonics = [&] (int ch)
+            {
+                edge::EdgeEngine q;
+                q.prepare (kSr, 1024, 1);
+
+                Settings s = openBand();
+                s.mode = (int) edge::Mode::highPass;
+                s.lowFreqHz = 20.0f; s.lowCurvePercent = 0.0f;
+                s.bitePercent = 100.0f;
+                s.character = ch;
+                q.snapToSettings (s);
+
+                constexpr int n = 1 << 15;
+                juce::AudioBuffer<float> b (1, n * 2);
+                const double w = juce::MathConstants<double>::twoPi * 683.0 * kSr / n / kSr;
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    b.setSample (0, i, 0.5f * (float) std::sin (w * (double) i));
+
+                run (q, b, 256);
+
+                const double f0 = 683.0 * kSr / n;
+                const double fund = binLevelDb (b, kSr, f0, n, n);
+
+                std::vector<double> profile;
+                for (int h = 2; h <= 5; ++h)
+                    profile.push_back (binLevelDb (b, kSr, f0 * (double) h, n, n) - fund);
+
+                return profile;
+            };
+
+            const auto warm = harmonics ((int) edge::Character::warm);
+            const auto iron = harmonics ((int) edge::Character::iron);
+
+            //  The whole profile, not one partial: two saturators can agree on
+            //  the second harmonic and disagree everywhere else.
+            double total = 0.0;
+            juce::String detail;
+            for (size_t i = 0; i < warm.size(); ++i)
+            {
+                total += std::abs (warm[i] - iron[i]);
+                detail += "h" + juce::String ((int) i + 2) + " "
+                        + juce::String (warm[i], 1) + "/" + juce::String (iron[i], 1) + "  ";
+            }
+
+            check (total > 12.0,
+                   "WARM and IRON produce measurably different harmonics",
+                   "sum|delta| = " + f (total, 1) + " dB over h2..h5  [WARM/IRON  "
+                       + detail.trim() + "]");
+        }
+
+        //  IRON has to meet the same aliasing bar as WARM, at the same worst
+        //  case. If it did not, kBiteMaxDrive would have to come down - the
+        //  cap is set by this measurement, never by taste.
+        {
+            edge::EdgeEngine en;
+            en.prepare (kSr, 1024, 1);
+
+            Settings s = openBand();
+            s.mode = (int) edge::Mode::highPass;
+            s.lowFreqHz = 20.0f; s.lowCurvePercent = 0.0f;
+            s.bitePercent = 100.0f;
+            s.character = (int) edge::Character::iron;
+            en.snapToSettings (s);
+
+            constexpr int fftOrder = 15;
+            constexpr int fftSize = 1 << fftOrder;
+            const int bin = 683;
+            const double f0 = bin * kSr / fftSize;
+
+            juce::AudioBuffer<float> b (1, fftSize * 2);
+            const double w = juce::MathConstants<double>::twoPi * f0 / kSr;
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                b.setSample (0, i, 0.5f * (float) std::sin (w * (double) i));
+
+            run (en, b, 256);
+
+            std::vector<float> fftData ((size_t) fftSize * 2, 0.0f);
+            for (int i = 0; i < fftSize; ++i)
+            {
+                const double t = (double) i / (fftSize - 1);
+                const double win = 0.35875 - 0.48829 * std::cos (juce::MathConstants<double>::twoPi * t)
+                                 + 0.14128 * std::cos (2.0 * juce::MathConstants<double>::twoPi * t)
+                                 - 0.01168 * std::cos (3.0 * juce::MathConstants<double>::twoPi * t);
+                fftData[(size_t) i] = b.getSample (0, fftSize + i) * (float) win;
+            }
+
+            juce::dsp::FFT fft (fftOrder);
+            fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+            double fundamental = 0.0, alias = 0.0;
+            for (int k = 1; k < fftSize / 2; ++k)
+            {
+                const double mag = fftData[(size_t) k];
+                const bool isHarmonic = (k % bin) <= 3 || (bin - (k % bin)) <= 3;
+
+                if (k == bin)          fundamental = juce::jmax (fundamental, mag);
+                else if (! isHarmonic) alias = juce::jmax (alias, mag);
+            }
+
+            const double aliasDb = 20.0 * std::log10 (
+                juce::jmax (1.0e-12, alias / juce::jmax (1.0e-12, fundamental)));
+
+            check (aliasDb <= -70.0, "IRON aliasing at BITE 100, 1x, full cut",
+                   f (aliasDb, 1) + " dBc  (ceiling "
+                       + f (edge::biteMaxDrive (100.0f, (int) edge::Character::iron), 1) + " %)");
+        }
+
+        //  Switching character during playback is a crossfade, not a step.
+        {
+            Settings s = openBand();
+            s.lowFreqHz = 300.0f; s.highFreqHz = 6000.0f;
+            s.bitePercent = 100.0f;
+
+            const double w = juce::MathConstants<double>::twoPi * 440.0 / kSr;
+            const float sourceStep = 0.5f * (float) std::abs (std::sin (w));
+
+            auto buf = sweep (e, s, 440.0, 0.5f, 4.0, 64,
+                              [] (Settings& t, double u)
+                              {
+                                  t.character = ((int) (u * 8.0)) % 2 == 0
+                                                  ? (int) edge::Character::warm
+                                                  : (int) edge::Character::iron;
+                              });
+
+            const float excess = juce::jmax (0.0f, maxStep (buf) - sourceStep);
+            const float excessDb = juce::Decibels::gainToDecibels (juce::jmax (1.0e-9f, excess));
+
+            check (allFinite (buf) && excessDb < -60.0f,
+                   "eight character switches during playback: excess step",
+                   f (excessDb, 1) + " dBFS");
+        }
+
+        //  Each character carries its own measured level trim, so swapping does
+        //  not change the level of passband material.
+        {
+            juce::String detail;
+            double worst = 0.0;
+
+            for (int ch : { (int) edge::Character::warm, (int) edge::Character::iron })
+            {
+                Settings s = openBand();
+                s.mode = (int) edge::Mode::highPass;
+                s.lowFreqHz = 100.0f;
+                s.bitePercent = 100.0f;
+                s.character = ch;
+
+                const double got = measuredGainDb (e, s, kSr, 5000.0);
+                worst = juce::jmax (worst, std::abs (got));
+                detail += juce::String (edge::characterName (ch)) + " "
+                        + juce::String (got, 2) + " dB   ";
+            }
+
+            check (worst < 1.0, "both characters are level-matched in the passband",
+                   detail.trim());
+        }
+    }
+
     void testRealtimeSafety()
     {
         section ("13. Real-time safety and CPU");
@@ -1686,6 +2008,8 @@ int main()
     testMonotonicAndShape();
     testColourPlacement();
     testImpulseNoiseAndRecall();
+    testFreeMode();
+    testCharacter();
     testRealtimeSafety();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

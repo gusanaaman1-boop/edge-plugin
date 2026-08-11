@@ -45,8 +45,13 @@ namespace edge::ui
         void mouseMove (const juce::MouseEvent&) override;
         void mouseExit (const juce::MouseEvent&) override;
 
+        //  FREE mode adds a third grab target: the band itself. The editor
+        //  tells the view rather than the view reading the parameter, so the
+        //  cursor and the hit test change on the same frame the button does.
+        void setFreeMode (bool shouldBeFree);
+
     private:
-        enum class Grab { none, low, high };
+        enum class Grab { none, low, high, band };
 
         static constexpr int fftOrder = 11;
         static constexpr int fftSize  = 1 << fftOrder;   // 2048
@@ -72,8 +77,11 @@ namespace edge::ui
 
         Grab dragging = Grab::none;
         Grab hovered = Grab::none;
+        bool freeMode = false;
         float dragStartDepth = 0.0f;
         float dragStartY = 0.0f;
+        float dragStartX = 0.0f;
+        float dragStartLowHz = 0.0f, dragStartHighHz = 0.0f;
 
         //  --- analyser --------------------------------------------------------
         juce::dsp::FFT fft { fftOrder };
