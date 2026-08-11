@@ -410,15 +410,22 @@ namespace edge
         r.lowRes01       = lowE  * lowRes.getCurrentValue();
         r.highRes01      = highE * highRes.getCurrentValue();
 
-        //  MID. The frequency travels geometrically from the bottom of its own
-        //  range up to the target, so opening EDGE walks the peak across the
-        //  spectrum - and the gain scales with EDGE too, which is what keeps
-        //  EDGE 0 a bit-exact wire even with a MID target set.
-        const float logMidOrigin = std::log2 (kMidFreqMin);
+        //  MID. The frequency does NOT travel with EDGE - it stays exactly
+        //  where it was put, and only the GAIN scales, which is still enough to
+        //  keep EDGE 0 a bit-exact wire.
+        //
+        //  It used to sweep from the bottom of its range up to the target, on
+        //  the theory that opening EDGE would walk the peak across the spectrum.
+        //  In use that was wrong twice over: the bell was never at the frequency
+        //  the knob said unless EDGE happened to be at 100 %, and its handle
+        //  therefore floated somewhere the curve was not. A control you place
+        //  has to stay placed.
+        //
+        //  The peak still travels - with SPREAD, and with FREE's centre move,
+        //  both of which are octave offsets on everything at once, so the whole
+        //  shape moves as one shape.
         r.midHz = juce::jlimit (kMidFreqMin, kMidFreqMax,
-                                std::exp2 (logMidOrigin
-                                           + e * (logMidFreq.getCurrentValue() - logMidOrigin)
-                                           + octaveOffset));
+                                std::exp2 (logMidFreq.getCurrentValue() + octaveOffset));
         r.midGainDb = e * midGain.getCurrentValue();
         r.midReso01 = midRes.getCurrentValue() * 0.01f;
 

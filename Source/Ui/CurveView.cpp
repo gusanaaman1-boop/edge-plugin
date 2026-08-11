@@ -224,11 +224,20 @@ namespace edge::ui
         //  The handles are TARGET handles: they sit on the ghost curve, which
         //  is what dragging them edits. With EDGE at 100 % the two curves
         //  coincide and the handle sits on the bright line as well.
-        const auto t = processor.getEngine().getTargetShape();
+        auto t = processor.getEngine().getTargetShape();
         const float hz = which == Grab::low  ? t.lowHz
                        : which == Grab::high ? t.highHz
                                              : t.midHz;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
+
+        //  An EDGE handle sits on the response of the EDGES, with the bell
+        //  taken out. Leaving it in meant that touching MID's gain slid the LOW
+        //  and HIGH handles - and their labels - up and down the display, which
+        //  reads as the whole layout moving when one unrelated control is
+        //  turned. The MID handle keeps the bell, because the bell is what it
+        //  is showing.
+        if (which != Grab::mid)
+            t.midGainDb = 0.0f;
 
         return { xForHz (hz), yForDb ((float) magnitudeDb (t, sr, hz)) };
     }
@@ -485,11 +494,23 @@ namespace edge::ui
         }
 
         // --- target (ghost) --------------------------------------------------
+        //
+        //  DASHED, and bright enough to read. The handles are TARGET handles -
+        //  they sit on this line, not on the solid one - and when EDGE is part
+        //  way open the two curves are far apart in the middle, which made the
+        //  handles look like they were floating in empty space. Dashed means
+        //  "where this is going", solid means "where it is"; at EDGE 100 they
+        //  coincide and the dashes vanish under the solid line.
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.toNearestInt());
-            g.setColour (colour::text.withAlpha (0.22f));
-            g.strokePath (targetPath, { 1.0f, juce::PathStrokeType::curved });
+
+            juce::Path dashed;
+            const float dashes[] = { 4.0f, 4.0f };
+            juce::PathStrokeType (1.1f).createDashedStroke (dashed, targetPath, dashes, 2);
+
+            g.setColour (colour::text.withAlpha (0.45f));
+            g.fillPath (dashed);
         }
 
         // --- per-channel traces when SPREAD is doing something ----------------
@@ -549,6 +570,7 @@ namespace edge::ui
 
         // --- handles ----------------------------------------------------------
         const auto target = engine.getTargetShape();
+        const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
         //  An edge that MODE has turned into an identity still has a handle -
         //  you may want to place it before switching - but it must not look
@@ -572,6 +594,28 @@ namespace edge::ui
 
             g.setColour (accent.withAlpha (active ? 0.40f : 0.18f));
             g.drawVerticalLine ((int) pos.x, plot.getY(), plot.getBottom());
+
+            //  Where the target and the current response have pulled apart,
+            //  a short tick on the solid curve at the same frequency says which
+            //  one the handle is going to become.
+            {
+                auto live = processor.getEngine().getDisplayShape();
+                const float hz = which == Grab::low  ? target.lowHz
+                               : which == Grab::high ? target.highHz
+                                                     : target.midHz;
+
+                if (which != Grab::mid)
+                    live.midGainDb = 0.0f;
+
+                const float liveY = yForDb ((float) (magnitudeDb (live, sr, hz)
+                                                     + engine.getColourTrimDb()));
+
+                if (std::abs (liveY - pos.y) > 6.0f)
+                {
+                    g.setColour (accent.withAlpha (0.75f));
+                    g.fillRect (pos.x - 5.0f, liveY - 1.0f, 10.0f, 2.0f);
+                }
+            }
 
             if (active)
             {

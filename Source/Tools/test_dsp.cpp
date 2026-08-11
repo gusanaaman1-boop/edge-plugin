@@ -2008,13 +2008,17 @@ namespace
                    "reso 0: " + f (wide, 2) + " oct, reso 100: " + f (narrow, 2) + " oct");
         }
 
-        //  EDGE walks it across the spectrum - the wah gesture.
+        //  A control you place stays placed: EDGE scales the bell's GAIN and
+        //  leaves its frequency alone. It used to sweep the frequency too,
+        //  which meant the bell was never where the knob said unless EDGE
+        //  happened to be at 100 %.
         {
             juce::String detail;
-            double prev = 0.0;
-            bool rises = true;
+            double first = 0.0;
+            bool anchored = true, gainGrows = true;
+            double prevGain = -1000.0;
 
-            for (float edgePercent : { 0.0f, 25.0f, 50.0f, 75.0f, 100.0f })
+            for (float edgePercent : { 25.0f, 50.0f, 75.0f, 100.0f })
             {
                 Settings s = openBand();
                 s.edgePercent = edgePercent;
@@ -2022,14 +2026,36 @@ namespace
                 s.midGainDb = 12.0f;
 
                 const auto sh = shapeFor (shapeEngine(), s);
-                if (prev > 0.0 && sh.midHz <= prev * 1.05)
-                    rises = false;
 
-                prev = sh.midHz;
-                detail += juce::String (edgePercent, 0) + "%:" + juce::String (sh.midHz, 0) + "Hz  ";
+                if (first == 0.0) first = sh.midHz;
+                if (std::abs (std::log2 (sh.midHz / first)) > 0.005) anchored = false;
+                if (sh.midGainDb <= prevGain) gainGrows = false;
+                prevGain = sh.midGainDb;
+
+                detail += juce::String (edgePercent, 0) + "%:" + juce::String (sh.midHz, 0)
+                        + "Hz/" + juce::String (sh.midGainDb, 1) + "dB  ";
             }
 
-            check (rises, "EDGE sweeps the MID peak up the spectrum", detail.trim());
+            check (anchored && gainGrows,
+                   "EDGE scales the MID gain and leaves its frequency put",
+                   detail.trim());
+        }
+
+        //  It does travel - but only when the whole shape travels, so the band
+        //  and the bell inside it stay one shape.
+        {
+            Settings s = openBand();
+            s.midFreqHz = 1000.0f;
+            s.midGainDb = 12.0f;
+            s.spreadPercent = 100.0f;
+
+            const auto left  = shapeFor (shapeEngine(), s);
+            const auto right = shapeEngine().getDisplayShape (1);
+            const double semis = 12.0 * std::log2 (right.midHz / left.midHz);
+
+            check (std::abs (semis - edge::kSpreadMaxSemitones) < 0.05,
+                   "SPREAD moves the MID bell with the rest of the shape",
+                   f (semis, 3) + " semitones");
         }
 
         //  And it must not click while being swept hard.
@@ -2105,22 +2131,36 @@ namespace
                "no heap allocation in 10,000 blocks, analyser off and on",
                juce::String (allocClosed) + " off, " + juce::String (allocOpen) + " on");
 
+        //  BEST of three passes, not one.
+        //
+        //  This is a throughput measurement on a machine that is also running
+        //  everything else the user has open. A single pass taken while a
+        //  browser was decoding video measured 115x for code that measures 315x
+        //  when nothing else is competing - and that reads exactly like a
+        //  regression. The least-contended pass is the one that measures the
+        //  plug-in rather than the machine.
         auto measureCpu = [&] (bool analyzer)
         {
             e.setAnalyzerEnabled (analyzer);
-            e.setSettings (s);
 
-            const int blocks = 20000;
-            const auto t0 = juce::Time::getHighResolutionTicks();
-            for (int i = 0; i < blocks; ++i)
+            double best = 0.0;
+
+            for (int pass = 0; pass < 3; ++pass)
             {
-                e.setSettings (s);
-                e.process (buf);
-            }
-            const double secs = juce::Time::highResolutionTicksToSeconds (
-                juce::Time::getHighResolutionTicks() - t0);
+                const int blocks = 8000;
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                for (int i = 0; i < blocks; ++i)
+                {
+                    e.setSettings (s);
+                    e.process (buf);
+                }
+                const double secs = juce::Time::highResolutionTicksToSeconds (
+                    juce::Time::getHighResolutionTicks() - t0);
 
-            return ((double) blocks * 512.0 / kSr) / secs;
+                best = juce::jmax (best, ((double) blocks * 512.0 / kSr) / secs);
+            }
+
+            return best;
         };
 
         const double closed = measureCpu (false);

@@ -40,7 +40,7 @@ namespace edge::ui
         inline constexpr int minWidth      = 720;
         inline constexpr int maxWidth      = 1800;
 
-        inline constexpr int shapeHeight   = 190;   // extra height when SHAPE is open
+        inline constexpr int shapeHeight   = 252;   // extra height when SHAPE is open
 
         //  One vertical rhythm for every knob column in the plug-in, so the
         //  main strip and the SHAPE panel line up with each other instead of

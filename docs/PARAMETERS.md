@@ -49,12 +49,16 @@ anything at 0 dB, and what keeps EDGE 0 bit-exact with a MID target set.
 * Positive gain is a peak, negative is a notch. Measured: 12 / 6 / −6 / −12 dB
   all deliver within 0.01 dB at the corner and leave 60 Hz within 0.2 dB.
 * Resonance narrows it: **4.12 octaves** wide at 0 %, **0.71 octaves** at 100 %.
-* **EDGE sweeps it up the spectrum** from the bottom of its range to the target,
-  on the same geometric travel every other frequency uses. Measured with a
-  8 kHz target: 60 → 204 → 693 → 2354 → 8000 Hz across EDGE 0 → 100 %. That is
-  the wah gesture, and FOLLOW driving EDGE is what makes it automatic.
-* SPREAD and FREE's travel move it along with the two edges, so the whole shape
-  stays one shape.
+* **EDGE scales its gain and leaves its frequency alone.** The first version
+  swept the frequency too, from the bottom of the range up to the target, so
+  that opening EDGE would walk the peak across the spectrum. In use that was
+  wrong twice over: the bell was never at the frequency the knob said unless
+  EDGE happened to sit at 100 %, and its handle therefore floated somewhere the
+  curve was not. A control you place has to stay placed.
+* It still travels — with **SPREAD** and with **FREE**'s centre move, both of
+  which are octave offsets applied to everything at once, so the band and the
+  bell inside it stay one shape. Measured: SPREAD 100 % moves it 12.000
+  semitones, the same as the edges.
 * It counts as filter activity, so a big bell engages the colour like anything
   else does.
 * It is drawn in the neutral colour on the display, not a third accent — orange

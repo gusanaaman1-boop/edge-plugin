@@ -88,7 +88,7 @@ namespace edge::ui
 
         //  A hairline between the target columns and the follower's row, so the
         //  panel reads as two ideas rather than eleven knobs.
-        const float y = r.getBottom() - 78.0f;
+        const float y = r.getBottom() - 112.0f;
         g.setColour (colour::panelEdge.withAlpha (0.7f));
         g.drawHorizontalLine ((int) y, r.getX() + 14.0f, r.getRight() - 14.0f);
     }
@@ -97,8 +97,11 @@ namespace edge::ui
     {
         auto r = getLocalBounds().reduced (14, 10);
 
-        auto bottomRow = r.removeFromBottom (74);
-        r.removeFromBottom (6);
+        //  The MID and FOLLOW rows get a full knob column each, the same as
+        //  the target rows above them. Sharing 74 px between them squeezed both
+        //  down to nothing the moment MID arrived.
+        auto bottomRow = r.removeFromBottom (108);
+        r.removeFromBottom (10);
 
         //  --- the two targets --------------------------------------------------
         auto titles = r.removeFromTop (14);
