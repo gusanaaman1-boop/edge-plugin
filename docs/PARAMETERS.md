@@ -197,16 +197,16 @@ At EDGE 0 the plug-in is **bit-exact and zero-latency, at any BITE**.
 
 ## Depth's taper
 
-| % | 0 | 20 | 33 | 48 | 65 | 100 |
+| % | 0 | 20 | 33 | 48 | 60 | 100 |
 |---|---|----|----|----|----|-----|
-| dB | 0 | −3 | −6 | −12 | −24 | −110 (`CUT`) |
+| dB | 0 | −3 | −6 | −12 | −24 | −132 (`CUT`) |
 
-The positions are chosen so the steepest segment is **2.5 dB per 1 % of
+The positions are chosen so the steepest segment is **2.7 dB per 1 % of
 travel** — EDGE walks this taper, and anything steeper than 3 dB/% breaks its
 continuity budget. The first version put −24 dB at 78 % and −48 dB at 92 %,
 which is 9 dB/% at the top and measured 0.39 dB per EDGE step.
 
-`CUT` is −110 dB rather than −∞: a literal zero makes the composite slope jump
+`CUT` is −132 dB rather than −∞: a literal zero makes the composite slope jump
 by 12 dB/oct the instant Curve gives a section a non-zero share of the depth.
 
 ## Shoulder
@@ -224,25 +224,37 @@ Curve is continuous: 0 → 50 widens the knee at constant order, 50 → 100 adds
 order at constant knee. The display's combo snaps it to a whole slope and writes
 the same parameter the knob does.
 
-| entry | Curve % | nominal | measured, −20 → −50 dB window |
+| entry | Curve % | poles | measured steepest slope |
 |---|---|---|---|
-| SOFT | 0 | wide knee | ~10 dB/oct |
-| 12 dB/oct | 50 | 2 poles | 12.0 |
-| 24 dB/oct | 75 | 4 poles | 23.4 |
-| 36 dB/oct | 100 | 6 poles | 32.9 |
+| SOFT | 0 | 2, wide knee | ~10 dB/oct |
+| 12 dB/oct | 50 | 2 | **12.0** |
+| 24 dB/oct | 60 | 4 | **24.1** |
+| 36 dB/oct | 70 | 6 | **35.7** |
+| 48 dB/oct | 80 | 8 | **46.0** |
+| 72 dB/oct | 100 | 12 | **61.4** |
 
 The names describe **pole count**, which is what the cascade has and what the
-industry labels. The measured figure is shallower than the asymptote because the
-composite knee and the finite depth floor both shallow it: for three cascaded
-Butterworth-2 sections at one corner, `|H|² = (u⁴ + G²)/(1 + u⁴)` per section,
-and solving that for the two crossings predicts **32.97 dB/oct**. Measured 32.9 —
-the filter is exactly right, the asymptote simply is not reached until much
-further down.
+industry labels. The shallow entries hit their number exactly. **The steep ones
+fall short of their asymptote, for a structural reason worth stating plainly:**
+a slope can only develop over the depth there is to fall through, and 72 dB/oct
+needs a whole octave to drop 72 dB. With Depth's floor at −132 dB there are
+under two octaves of fall before the response flattens onto it, so the asymptote
+never fully arrives. Deepening the floor further would break EDGE's continuity
+budget — a worse trade than a label named by pole count and documented by
+measurement.
 
-**There is no 6, 18 or 30 dB/oct**, because at full Depth every section carrying
-a share of the dB becomes a full second-order cut, so the slope is
-`12 × (active sections)` — an integer. Odd slopes need an extra first-order
-stage, which is a topology change on an automatable control.
+The figure quoted is the **steepest local slope anywhere in the transition**,
+measured over a third of an octave. A fixed dB window cannot serve every entry:
+the same −132 dB is split across however many sections Curve has engaged, so a
+12-pole cascade flattens onto its own share far sooner than a 2-pole one does.
+Probing at −20/−50 dB read 72 dB/oct as 49; at −12/−36 it read 24 dB/oct as 21.9.
+
+**There is no 6, 18, 30 or 60 dB/oct entry.** At full Depth every section
+carrying a share of the dB becomes a full *second-order* cut, so the slope is
+`12 × (active sections)` — always even. Odd slopes need an extra first-order
+stage, which is a topology change on an automatable control. 60 dB/oct exists
+(5 pole pairs, Curve 90 %) and simply is not in the list, because the list is
+the set you asked for.
 
 ## SPREAD
 

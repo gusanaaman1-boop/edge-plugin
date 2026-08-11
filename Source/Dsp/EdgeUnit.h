@@ -63,7 +63,9 @@ namespace edge
             }
             else
             {
-                poles   = 1.0f + 4.0f * (c - 0.5f);
+                //  1 -> 6 pole pairs across the tight half: 12, 24, 36, 48, 60
+                //  and 72 dB/oct all land on it.
+                poles   = 1.0f + 10.0f * (c - 0.5f);
                 damping = kCurveNeutralDamping;
             }
         }

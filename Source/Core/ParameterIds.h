@@ -127,7 +127,7 @@ namespace edge
     //  below the -20..-50 dB window that a 36 dB/oct setting actually measures
     //  36 there. At -90 dB it measured 32.4: each of the three sections was
     //  only 30 dB from its own floor and had already started to flatten.
-    inline constexpr float kDepthFloorDb = -110.0f;
+    inline constexpr float kDepthFloorDb = -132.0f;
 
     inline constexpr float kCurveSoftDamping    = 3.6f;
     inline constexpr float kCurveNeutralDamping = 1.41421356f;
@@ -136,7 +136,11 @@ namespace edge
     //  Smallest ratio allowed between the two effective corner frequencies.
     inline constexpr float kMinEdgeRatio = 1.05f;
 
-    inline constexpr int kNumSections = 3;
+    //  Six second-order sections per edge, so Curve's tight half reaches
+    //  72 dB/oct. Each one is a bit-exact wire until Curve gives it a share of
+    //  the depth, so the ones a gentle setting does not use cost nothing beyond
+    //  their own (still-running, still-warm) state.
+    inline constexpr int kNumSections = 6;
 
     //  SHOULDER: a second, much gentler shelf six octaves INTO the passband from
     //  the cut's corner, so the whole passing side leans down towards it and the

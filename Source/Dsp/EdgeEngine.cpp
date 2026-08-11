@@ -50,7 +50,7 @@ namespace edge
             {  20.0f,   -3.0f },
             {  33.0f,   -6.0f },
             {  48.0f,  -12.0f },
-            {  65.0f,  -24.0f },
+            {  60.0f,  -24.0f },
             { 100.0f, kDepthFloorDb }
         };
 
@@ -83,9 +83,11 @@ namespace edge
     const SlopeChoice kSlopeChoices[kNumSlopeChoices] =
     {
         { "SOFT",       0.0f  },
-        { "12 dB/oct", 50.0f  },
-        { "24 dB/oct", 75.0f  },
-        { "36 dB/oct", 100.0f },
+        { "12 dB/oct", 50.0f  },   // 1 pole pair
+        { "24 dB/oct", 60.0f  },   // 2
+        { "36 dB/oct", 70.0f  },   // 3
+        { "48 dB/oct", 80.0f  },   // 4
+        { "72 dB/oct", 100.0f },   // 6
     };
 
     int slopeIndexFor (float curvePercent) noexcept
@@ -477,6 +479,11 @@ namespace edge
             dispChannel[c].store (r);
         }
 
+        //  The centre: what the plug-in is doing now, without SPREAD's
+        //  per-channel offset. This is what the main curve and every handle are
+        //  drawn from, so they cannot disagree.
+        dispCentre.store (resolveFor (liveEdge01, freeTravelOctaves));
+
         //  The ghost curve: what EDGE at 100 % would do, without spread but
         //  WITH FREE's travel - the band's target is where it has travelled to,
         //  not where it started.
@@ -696,7 +703,15 @@ namespace edge
         return s;
     }
 
-    EdgeShape EdgeEngine::getDisplayShape() const noexcept { return getDisplayShape (0); }
+    EdgeShape EdgeEngine::getDisplayShape() const noexcept
+    {
+        EdgeShape s;
+        dispCentre.load (s);
+        s.outputDb     = dispOutputDb.load (std::memory_order_relaxed);
+        s.colourEngage = dispColourEngage.load (std::memory_order_relaxed);
+        s.colourGain   = dispColourGain.load (std::memory_order_relaxed);
+        return s;
+    }
 
     EdgeShape EdgeEngine::getTargetShape() const noexcept
     {

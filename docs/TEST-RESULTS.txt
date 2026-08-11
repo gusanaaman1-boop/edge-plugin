@@ -8,32 +8,32 @@ EDGE test suite
 
 == 2. Drawn curve == measured response ==
   [PASS] low -6 dB @200 Hz                                          worst |drawn-measured| = 0.003 dB @ 30 Hz
-  [PASS] HP mode, CUT @100 Hz, 36 dB/oct                            worst |drawn-measured| = 0.009 dB @ 30 Hz
+  [PASS] HP mode, CUT @100 Hz, 36 dB/oct                            worst |drawn-measured| = 0.009 dB @ 60 Hz
   [PASS] LP mode, -12 dB @4 kHz, soft                               worst |drawn-measured| = 0.006 dB @ 30 Hz
-  [PASS] band + resonance + shoulder                                worst |drawn-measured| = 0.009 dB @ 60 Hz
+  [PASS] band + resonance + shoulder                                worst |drawn-measured| = 0.008 dB @ 120 Hz
   [PASS] mid-travel: EDGE 45 %                                      worst |drawn-measured| = 0.004 dB @ 30 Hz
 
 == 3. Filter modes ==
-  [PASS] LP: low edge is an identity, high edge cuts                30 Hz 0.00, 1 kHz -0.01, 15 kHz -51.6 dB
-  [PASS] HP: high edge is an identity, low edge cuts                30 Hz -95.9, 2 kHz -0.03, 15 kHz -0.00 dB
-  [PASS] BAND defaults give a real band-pass at EDGE 100            30 Hz -74.0, 1 kHz -0.05, 18 kHz -61.2 dB
-  [PASS] eight mode switches during playback: excess step           -100.0 dBFS  (step 0.04330182 vs source 0.04575081)
+  [PASS] LP: low edge is an identity, high edge cuts                30 Hz -0.00, 1 kHz -0.02, 15 kHz -94.6 dB
+  [PASS] HP: high edge is an identity, low edge cuts                30 Hz -131.0, 2 kHz -0.07, 15 kHz -0.00 dB
+  [PASS] BAND defaults give a real band-pass at EDGE 100            30 Hz -122.0, 1 kHz -0.09, 18 kHz -108.1 dB
+  [PASS] eight mode switches during playback: excess step           -100.0 dBFS  (step 0.04155342 vs source 0.04575081)
 
 == 4. EDGE macro ==
-  [PASS] EDGE 0->100 in 2000 steps @ 60 Hz                          largest step 0.1046 dB at EDGE 65.1 %
-  [PASS] EDGE 0->100 in 2000 steps @ 300 Hz                         largest step 0.0470 dB at EDGE 100.0 %
-  [PASS] EDGE 0->100 in 2000 steps @ 2000 Hz                        largest step 0.0044 dB at EDGE 100.0 %
-  [PASS] EDGE 0->100 in 2000 steps @ 9000 Hz                        largest step 0.0443 dB at EDGE 65.1 %
+  [PASS] EDGE 0->100 in 2000 steps @ 60 Hz                          largest step 0.1280 dB at EDGE 63.8 %
+  [PASS] EDGE 0->100 in 2000 steps @ 300 Hz                         largest step 0.0862 dB at EDGE 100.0 %
+  [PASS] EDGE 0->100 in 2000 steps @ 2000 Hz                        largest step 0.0061 dB at EDGE 100.0 %
+  [PASS] EDGE 0->100 in 2000 steps @ 9000 Hz                        largest step 0.0724 dB at EDGE 60.0 %
   [PASS] EDGE 0 leaves the response flat                            30 Hz -0.0000, 10 kHz -0.0000 dB
-  [PASS] six full EDGE sweeps in 3 s: no clicks, nothing non-finite largest step 0.031615 vs source 0.028782, peak 0.5093
+  [PASS] six full EDGE sweeps in 3 s: no clicks, nothing non-finite largest step 0.031642 vs source 0.028782, peak 0.5000
 
 == 5. FOLLOW ==
   [PASS] FOLLOW 0 returns the base position bit-exactly             applyFollow(0.5, 0, 1) = 0.500000000
   [PASS] full FOLLOW reaches the boundary from any base, both ways  base 0.1: + -> 1.000, - -> 0.000   base 0.5: + -> 1.000, - -> 0.000   base 0.9: + -> 1.000, - -> 0.000
   [PASS] at FOLLOW 0 the detector cannot affect the output          max difference = 0.000000000000
-  [PASS] positive FOLLOW cuts more, negative opens up               0 % -10.5 dB, +90 % -83.6 dB, -90 % -0.9 dB
-  [PASS] FOLLOW stays finite over silence and full scale            silence peak 0.000000000, full-scale peak 0.188
-  [PASS] FOLLOW driven hard by a pulsing tone: no click             largest step 0.004745 vs source 0.017276
+  [PASS] positive FOLLOW cuts more, negative opens up               0 % -12.0 dB, +90 % -119.1 dB, -90 % -0.9 dB
+  [PASS] FOLLOW stays finite over silence and full scale            silence peak 0.000000000, full-scale peak 0.168
+  [PASS] FOLLOW driven hard by a pulsing tone: no click             largest step 0.003129 vs source 0.017276
 
 == 6. SPREAD ==
   [PASS] SPREAD 0: L and R coefficients match exactly               max |L-R| = 0.000000000000
@@ -46,14 +46,14 @@ EDGE test suite
   [PASS] zero activity gives exactly zero drive at any BITE         drive(100 %, 0) = 0.000000000
   [PASS] drive is monotonic in BITE and in activity                 ok
   [PASS] at BITE 35 a -4 dB shelf clears the engine's engage window new drive 5.97 % vs old 3.00 % (engage needs 5 %)
-  [PASS] BITE 0 fully disengages WARM                               engage = 0.000000000, 30 Hz -41.90 dB
+  [PASS] BITE 0 fully disengages WARM                               engage = 0.000000000, 30 Hz -79.37 dB
   [PASS] aliasing at BITE 100, 1x, full cut                         -73.9 dBc  (max drive 24.0 %)
 
 == 8. Signal hygiene ==
   [PASS] silence in -> silence out (worst-case settings)            0.000000000000
   [PASS] DC input is removed                                        -100.0 dBFS
-  [PASS] +6 dBFS noise stays finite and bounded                     peak 0.039
-  [PASS] no denormal state left in the tail                         |tail| = 3.041e-37
+  [PASS] +6 dBFS noise stays finite and bounded                     peak 0.024
+  [PASS] no denormal state left in the tail                         |tail| = 8.886e-38
 
 == 9. Block sizes, sample rates, layouts ==
   [PASS] block size 1 vs 512: worst deviation                       0.000000000
@@ -62,9 +62,9 @@ EDGE test suite
   [PASS] block size 64 vs 512: worst deviation                      0.000000000
   [PASS] block size 127 vs 512: worst deviation                     0.000000000
   [PASS] block size 256 vs 512: worst deviation                     0.000000000
-  [PASS] block larger than the announced size is handled            128 announced, 1024 delivered, peak 0.171
+  [PASS] block larger than the announced size is handled            128 announced, 1024 delivered, peak 0.167
   [PASS] mono layout processes correctly, SPREAD is inert           ok
-  [PASS] -3 dB corner is rate-independent (prewarping)              44.1k:1246.6Hz  48.0k:1246.8Hz  88.2k:1247.5Hz  96.0k:1247.5Hz  192.0k:1247.7Hz  
+  [PASS] -3 dB corner is rate-independent (prewarping)              44.1k:1512.8Hz  48.0k:1513.3Hz  88.2k:1515.3Hz  96.0k:1515.4Hz  192.0k:1515.9Hz  
 
 == 10. Bypass and Output ==
   [PASS] six bypass toggles during playback: largest sample step    0.014398 vs source 0.014397
@@ -82,25 +82,25 @@ EDGE test suite
   [PASS] v0.1 state migrates: targets kept, EDGE opened, BAND selected edge 100 %, bite 28.6 %, version 2
   [PASS] migrated BITE reproduces v0.1's drive at a full cut        10.000 % (v0.1 was 10.0 %)
   [PASS] migration is not applied twice                             ok
-  [PASS] Depth displays dB of attenuation                           65 % reads "-24.0 dB"
-  [PASS] Curve reads a real slope                                   75 % reads "24 dB/oct"
+  [PASS] Depth displays dB of attenuation                           60 % reads "-24.0 dB"
+  [PASS] Curve reads a real slope                                   60 % reads "24 dB/oct"
 
 == 12. Response shape invariants ==
   [PASS] EDGES stay monotonic and never above 0 dB (MID at unity)   worst dip 0.000000 dB, worst peak 0.000000 dB   
-  [PASS] every slope in the combo delivers its stated dB/oct        worst error 8.7 %   [12 dB/oct=12.0  24 dB/oct=23.4  36 dB/oct=32.9]  (6-pole predicts 33.0)
+  [PASS] every slope in the combo delivers its stated dB/oct        worst error 14.8 %   [12 dB/oct=12.0  24 dB/oct=24.1  36 dB/oct=35.7  48 dB/oct=46.0  72 dB/oct=61.4]
   [PASS] Resonance 100 % at Depth 0 changes nothing                 worst |dB| = 0.000000000
 
 == 14. Colour placement: pre vs post ==
-  [PASS] post-filter colour puts IMD back under the cut             100 Hz product: pre -86.5 dBc, post -34.6 dBc  (advantage 51.9 dB)
-  [PASS] shipping default is pre-filter                             100 Hz product -86.5 dBc
+  [PASS] post-filter colour puts IMD back under the cut             100 Hz product: pre -86.4 dBc, post -35.1 dBc  (advantage 51.3 dB)
+  [PASS] shipping default is pre-filter                             100 Hz product -86.4 dBc
 
 == 15. Impulse, noise, preset recall ==
-  [PASS] impulse response is finite and decays                      early -8.9 dB, late -300.0 dB
-  [PASS] 0 dBFS white noise stays finite and bounded                peak 0.558
+  [PASS] impulse response is finite and decays                      early -9.8 dB, late -300.0 dB
+  [PASS] 0 dBFS white noise stays finite and bounded                peak 0.494
   [PASS] six full preset changes during playback: largest sample step 0.019298 vs source 0.017273
 
 == 16. FREE band ==
-  [PASS] FREE: EDGE changes the depth, not the corners              EDGE 40 %: 600-2400 Hz at -8.8 dB;  EDGE 100 %: 600-2400 Hz at -110.0 dB
+  [PASS] FREE: EDGE changes the depth, not the corners              EDGE 40 %: 600-2400 Hz at -8.8 dB;  EDGE 100 %: 600-2400 Hz at -132.0 dB
   [PASS] FREE at EDGE 0 is still bit-exact                          max |out-in| = 0.000000000000
   [PASS] FREE: FOLLOW moves the centre and keeps the width          travelled 2.00 oct, width 2.000 vs 2.000 oct
   [PASS] eight BAND<->FREE switches during playback: excess step    -100.0 dBFS
@@ -108,8 +108,8 @@ EDGE test suite
 == 17. CHARACTER ==
   [PASS] WARM at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
   [PASS] IRON at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
-  [PASS] all three characters are measurably different from each other closest pair differs by 43.8 dB over h2..h5  [WARM -37.4724 -19.9348 -45.0599 -31.365   IRON -68.3172 -15.1342 -40.7059 -27.5203]
-  [PASS] every character meets -70 dBc at its own ceiling           worst -73.9 dBc   [WARM -73.9 dBc @ 24 %   IRON -89.8 dBc @ 46 %]
+  [PASS] all three characters are measurably different from each other closest pair differs by 43.5 dB over h2..h5  [WARM -37.4695 -19.9334 -45.0562 -31.3628   IRON -67.9225 -15.1287 -40.711 -27.5083]
+  [PASS] every character meets -70 dBc at its own ceiling           worst -73.9 dBc   [WARM -73.9 dBc @ 24 %   IRON -89.7 dBc @ 46 %]
   [PASS] nine character switches during playback: excess step       -100.0 dBFS
   [PASS] every character is level-matched in the passband           WARM -0.03 dB   IRON 0.31 dB
 
@@ -122,11 +122,11 @@ EDGE test suite
   [PASS] MID Resonance narrows the bell                             reso 0: 4.12 oct, reso 100: 0.71 oct
   [PASS] EDGE scales the MID gain and leaves its frequency put      25%:8000Hz/3.0dB  50%:8000Hz/6.0dB  75%:8000Hz/9.0dB  100%:8000Hz/12.0dB
   [PASS] SPREAD moves the MID bell with the rest of the shape       12.000 semitones
-  [PASS] six MID sweeps in 3 s: no clicks                           largest step 0.035203 vs source 0.026161
+  [PASS] six MID sweeps in 3 s: no clicks                           largest step 0.030050 vs source 0.026161
 
 == 13. Real-time safety and CPU ==
   [PASS] no heap allocation in 10,000 blocks, analyser off and on   0 off, 0 on
-  [PASS] CPU with the analyser feeding: real-time factor            315.46x realtime (0.32 % of one core, bar 200x)
-  [PASS] analyser costs no more than 10 % of throughput             closed 315.219x, open 315.46x, delta -0.1 %
+  [PASS] CPU with the analyser feeding: real-time factor            262.628x realtime (0.38 % of one core, bar 200x)
+  [PASS] analyser costs no more than 10 % of throughput             closed 262.754x, open 262.628x, delta 0.0 %
 
 93 checks, 0 failed

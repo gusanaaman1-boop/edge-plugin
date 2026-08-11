@@ -65,12 +65,14 @@ namespace edge
     //  MID Resonance (0..100 %) -> damping. Wide tilt to formant.
     float midResoToDamping (float percent) noexcept;
 
-    //  The Curve percentages that land on a whole dB/oct slope. 12 / 24 / 36 and
-    //  no odd slopes, because at full Depth every section carrying a share of
-    //  the dB becomes a full second-order cut, so the slope is 12 x (active
-    //  sections) - an integer. Curve 62.5 % measures 23.5 dB/oct, not 18.
+    //  The Curve percentages that land on a whole dB/oct slope: 12, 24, 36, 48
+    //  and 72, one per pole pair. There are no ODD slopes, because at full
+    //  Depth every section carrying a share of the dB becomes a full
+    //  second-order cut, so the slope is 12 x (active sections) - an integer.
+    //  Curve between two entries is a voicing, not a slope, and reads as a
+    //  percentage rather than claiming a number it does not deliver.
     struct SlopeChoice { const char* name; float curvePercent; };
-    inline constexpr int kNumSlopeChoices = 4;
+    inline constexpr int kNumSlopeChoices = 6;
     extern const SlopeChoice kSlopeChoices[kNumSlopeChoices];
     int slopeIndexFor (float curvePercent) noexcept;
     juce::String slopeTextFor (float curvePercent);
@@ -139,7 +141,15 @@ namespace edge
         //  Written on the audio thread, read on the message thread. Each field
         //  is a plain float; a torn read costs one stale frame of a curve.
 
-        //  The shape actually being applied, channel 0.
+        //  The shape the main curve is drawn from: the CENTRE, with SPREAD's
+        //  per-channel offset left out.
+        //
+        //  It used to return channel 0, which is the LEFT channel - so with
+        //  SPREAD up, the solid curve sat up to half an octave away from the
+        //  handles, and a MID bell would visibly notch somewhere its own handle
+        //  was not. The handles are centre-aligned targets; the curve they
+        //  belong to has to be as well, and the two channels get their own
+        //  faint traces.
         EdgeShape getDisplayShape() const noexcept;
 
         //  The same, for one channel - so the editor can draw the two faint
@@ -265,6 +275,7 @@ namespace edge
         };
 
         DisplayShape dispChannel[maxChannels];
+        DisplayShape dispCentre;
         DisplayShape dispTarget;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EdgeEngine)
