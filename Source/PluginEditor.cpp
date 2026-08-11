@@ -369,9 +369,9 @@ void EdgeAudioProcessorEditor::resized()
     const int gap = 8;
 
     //  Everything in the strip hangs off this one line.
-    auto column = [rowTop, rowH] (juce::Rectangle<int> r)
+    auto column = [rowTop, rowH] (juce::Rectangle<int> box)
     {
-        return r.withY (rowTop).withHeight (rowH);
+        return box.withY (rowTop).withHeight (rowH);
     };
 
     //  --- left: MODE over SHAPE ---------------------------------------------
@@ -407,10 +407,10 @@ void EdgeAudioProcessorEditor::resized()
 
     //  --- the three performance knobs ----------------------------------------
     auto perf = strip.removeFromRight (knobSize * 3 + gap * 2);
-    auto place = [knobSize, gap, &column] (juce::Rectangle<int>& area, Knob& k)
+    auto place = [knobSize, &column] (juce::Rectangle<int>& area, Knob& k)
     {
         k.setBounds (column (area.removeFromLeft (knobSize)));
-        area.removeFromLeft (gap);
+        area.removeFromLeft (8);
     };
 
     place (perf, followKnob);
