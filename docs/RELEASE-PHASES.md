@@ -103,7 +103,10 @@ law, so the two cannot drift apart.
 ### Still unverified
 
 pluginval itself, at strictness 10, against the built VST3 and AU — which
-exercises the SDK wrapper rather than the processor directly.
+exercises the SDK wrapper rather than the processor directly. **Deferred by
+decision on 2026-08-11**: it is not installed here and was not fetched. The gap
+it leaves is the wrapper layer — VST3 bus/parameter negotiation and the AU
+property interface — not the processor, which the 35 checks above cover.
 
 ---
 
