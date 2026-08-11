@@ -51,7 +51,7 @@ namespace edge::ui
         void setFreeMode (bool shouldBeFree);
 
     private:
-        enum class Grab { none, low, high, band };
+        enum class Grab { none, low, high, mid, band };
 
         static constexpr int fftOrder = 11;
         static constexpr int fftSize  = 1 << fftOrder;   // 2048
@@ -82,6 +82,7 @@ namespace edge::ui
         float dragStartY = 0.0f;
         float dragStartX = 0.0f;
         float dragStartLowHz = 0.0f, dragStartHighHz = 0.0f;
+        float dragStartMidGain = 0.0f;
 
         //  --- analyser --------------------------------------------------------
         juce::dsp::FFT fft { fftOrder };

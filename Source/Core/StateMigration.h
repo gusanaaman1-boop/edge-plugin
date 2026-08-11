@@ -118,6 +118,9 @@ namespace edge
         //  New in v0.3: a v0.1 project had neither, and the defaults are the
         //  behaviour it had.
         put (param::character, (float) (int) Character::warm);
+        put (param::midFreq, 1000.0f);
+        put (param::midGain,    0.0f);      // a wire, which is what v0.1 had
+        put (param::midReso,   40.0f);
 
         put (param::followSens,    -12.0f);
         put (param::followAttack,   10.0f);

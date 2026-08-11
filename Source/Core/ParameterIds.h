@@ -29,6 +29,11 @@ namespace edge
         inline constexpr const char* highShoulder = "high.shoulder";
         inline constexpr const char* highReso     = "high.reso";
 
+        // --- MID band (new in v0.5) ------------------------------------------
+        inline constexpr const char* midFreq = "mid.freq";
+        inline constexpr const char* midGain = "mid.gain";
+        inline constexpr const char* midReso = "mid.reso";
+
         // --- performance -----------------------------------------------------
         inline constexpr const char* mode   = "mode";
         inline constexpr const char* edge   = "edge";
@@ -175,6 +180,24 @@ namespace edge
     inline constexpr float kBiteDriveCurve = 0.70f;   // maxDrive shape vs BITE
     inline constexpr float kBiteGammaLow   = 0.65f;   // gamma at BITE -> 0
     inline constexpr float kBiteGammaHigh  = 0.35f;   // gamma at BITE 100
+
+    // --- MID -----------------------------------------------------------------
+    //
+    //  A movable bell inside whatever the two edges are letting through. EDGE
+    //  sweeps it up from the bottom of its range to its target frequency, the
+    //  same geometric travel every other frequency in the plug-in uses, so
+    //  opening EDGE walks the peak across the spectrum - the wah gesture.
+    //
+    //  Positive gain is a peak, negative is a notch; 0 dB is a bit-exact wire.
+    inline constexpr float kMidFreqMin = 60.0f;
+    inline constexpr float kMidFreqMax = 12000.0f;
+    inline constexpr float kMidMaxGainDb = 18.0f;
+
+    //  Damping at the two ends of Resonance. 2.0 is a broad tilt; 0.25 is
+    //  Q = 4, a formant. A bell is unconditionally stable at any positive k,
+    //  so there is no self-oscillation to guard against here.
+    inline constexpr float kMidWideDamping   = 2.0f;
+    inline constexpr float kMidNarrowDamping = 0.25f;
 
     // --- SPREAD --------------------------------------------------------------
     //

@@ -74,6 +74,12 @@ namespace edge
         return kShoulderMaxDb * juce::jlimit (0.0f, 100.0f, percent) * 0.01f;
     }
 
+    float midResoToDamping (float percent) noexcept
+    {
+        const float r = juce::jlimit (0.0f, 1.0f, percent * 0.01f);
+        return kMidWideDamping + (kMidNarrowDamping - kMidWideDamping) * r;
+    }
+
     const SlopeChoice kSlopeChoices[kNumSlopeChoices] =
     {
         { "SOFT",       0.0f  },
@@ -180,7 +186,17 @@ namespace edge
         hi.setShape (0, sampleRate, shape.highHz, shape.highDepthDb, shape.highCurve01,
                      shape.highRes01, shape.highShoulderDb);
 
+        BellSection mid;
+        mid.setShape (0, fourcolor::dsp::svfG (sampleRate, shape.midHz),
+                      midResoToDamping (shape.midReso01 * 100.0f),
+                      juce::Decibels::decibelsToGain (shape.midGainDb));
+
+        const double limitedMid = std::fmin (freqHz, sampleRate * 0.4999);
+        const double omegaMid = std::tan (juce::MathConstants<double>::pi * limitedMid / sampleRate)
+                              / (double) fourcolor::dsp::svfG (sampleRate, shape.midHz);
+
         const auto h = lo.responseAt (freqHz, sampleRate) * hi.responseAt (freqHz, sampleRate)
+                     * mid.responseAt (omegaMid, 0)
                      * colourMagnitude (shape, sampleRate, freqHz);
 
         const double trim = -(double) kResonanceTrimDb
@@ -195,6 +211,8 @@ namespace edge
     void EdgeEngine::DisplayShape::store (const Resolved& r) noexcept
     {
         constexpr auto o = std::memory_order_relaxed;
+        midHz.store (r.midHz, o);            midGainDb.store (r.midGainDb, o);
+        midReso.store (r.midReso01, o);
         lowHz.store (r.lowHz, o);            lowDepthDb.store (r.lowDepthDb, o);
         lowCurve.store (r.lowCurve01, o);    lowRes.store (r.lowRes01, o);
         lowShoulderDb.store (r.lowShoulderDb, o);
@@ -206,6 +224,8 @@ namespace edge
     void EdgeEngine::DisplayShape::load (EdgeShape& s) const noexcept
     {
         constexpr auto o = std::memory_order_relaxed;
+        s.midHz = midHz.load (o);              s.midGainDb = midGainDb.load (o);
+        s.midReso01 = midReso.load (o);
         s.lowHz = lowHz.load (o);              s.lowDepthDb = lowDepthDb.load (o);
         s.lowCurve01 = lowCurve.load (o);      s.lowRes01 = lowRes.load (o);
         s.lowShoulderDb = lowShoulderDb.load (o);
@@ -230,8 +250,11 @@ namespace edge
         const double shapeSmooth = 0.020;
         for (auto* v : { &lowDepth, &highDepth, &lowCurve, &highCurve,
                          &lowShoulder, &highShoulder, &lowRes, &highRes,
+                         &midGain, &midRes,
                          &edgeBase, &followAmount, &spreadOctaves, &bite })
             v->reset (sampleRate, shapeSmooth);
+
+        logMidFreq.reset (sampleRate, freqSmooth);
 
         freeAmount.reset (sampleRate, 0.050);
 
@@ -256,6 +279,7 @@ namespace edge
     {
         lowEdge.reset();
         highEdge.reset();
+        midBand.reset();
         colour.reset();
         follower.reset();
         dryBuffer.clear();
@@ -278,6 +302,10 @@ namespace edge
         highShoulder.setTargetValue (s.highShoulderPercent);
         lowRes.setTargetValue (s.lowResPercent * 0.01f);
         highRes.setTargetValue (s.highResPercent * 0.01f);
+
+        logMidFreq.setTargetValue (std::log2 (juce::jlimit (kMidFreqMin, kMidFreqMax, s.midFreqHz)));
+        midGain.setTargetValue (s.midGainDb);
+        midRes.setTargetValue (s.midResPercent);
 
         //  MODE: an inactive edge is driven to a bit-exact wire, not switched
         //  out. LP keeps the HIGH edge (the low-pass target); HP keeps the LOW.
@@ -311,6 +339,7 @@ namespace edge
         for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
                          &lowCurve, &highCurve, &lowShoulder, &highShoulder,
                          &lowRes, &highRes, &lowEnable, &highEnable, &freeAmount,
+                         &logMidFreq, &midGain, &midRes,
                          &edgeBase, &followAmount, &spreadOctaves, &bite, &bypassFade })
             v->setCurrentAndTargetValue (v->getTargetValue());
 
@@ -381,6 +410,18 @@ namespace edge
         r.lowRes01       = lowE  * lowRes.getCurrentValue();
         r.highRes01      = highE * highRes.getCurrentValue();
 
+        //  MID. The frequency travels geometrically from the bottom of its own
+        //  range up to the target, so opening EDGE walks the peak across the
+        //  spectrum - and the gain scales with EDGE too, which is what keeps
+        //  EDGE 0 a bit-exact wire even with a MID target set.
+        const float logMidOrigin = std::log2 (kMidFreqMin);
+        r.midHz = juce::jlimit (kMidFreqMin, kMidFreqMax,
+                                std::exp2 (logMidOrigin
+                                           + e * (logMidFreq.getCurrentValue() - logMidOrigin)
+                                           + octaveOffset));
+        r.midGainDb = e * midGain.getCurrentValue();
+        r.midReso01 = midRes.getCurrentValue() * 0.01f;
+
         //  Curve is a SHAPE, not an amount, so EDGE does not interpolate it.
         //  There is no meaningful "curve of an inactive filter" to travel from,
         //  and at EDGE 0 the depth is 0 so the curve is unobservable anyway.
@@ -397,6 +438,7 @@ namespace edge
             for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
                              &lowCurve, &highCurve, &lowShoulder, &highShoulder,
                              &lowRes, &highRes, &lowEnable, &highEnable, &freeAmount,
+                             &logMidFreq, &midGain, &midRes,
                              &edgeBase, &followAmount, &spreadOctaves, &bite })
                 v->skip (chunkLength);
         }
@@ -415,6 +457,11 @@ namespace edge
 
             const auto r = resolveFor (liveEdge01, offset);
 
+            midBand.setShape (c, fourcolor::dsp::svfG (rate, r.midHz),
+                              midResoToDamping (r.midReso01 * 100.0f),
+                              juce::Decibels::decibelsToGain (r.midGainDb),
+                              chunkLength);
+
             lowEdge.setShape  (c, rate, r.lowHz,  r.lowDepthDb,  r.lowCurve01,
                                r.lowRes01,  r.lowShoulderDb,  chunkLength);
             highEdge.setShape (c, rate, r.highHz, r.highDepthDb, r.highCurve01,
@@ -431,7 +478,16 @@ namespace edge
         //  Hidden colour, from the FILTER's activity and BITE. Channel 0's
         //  activity: SPREAD moves frequencies, not gains, so both channels have
         //  the same activity by construction.
-        const float activity = juce::jmax (lowEdge.activity (0), highEdge.activity (0));
+        //  The MID band counts as filter activity: a +-18 dB bell IS the
+        //  filter working, and the colour should know about it.
+        const float midActivity = juce::jlimit (0.0f, 1.0f,
+                                                std::abs (midGain.getCurrentValue())
+                                                    / kMidMaxGainDb);
+
+        const float activity = juce::jmax (juce::jmax (lowEdge.activity (0),
+                                                       highEdge.activity (0)),
+                                           midActivity * juce::jlimit (0.0f, 1.0f,
+                                                                       edgeBase.getCurrentValue()));
         colourDrive.setTargetValue (colourDrivePercent (bite.getCurrentValue(), activity,
                                                         pendingCharacter));
 
@@ -580,6 +636,13 @@ namespace edge
 
             if (placement == ColourPlacement::pre)
                 colour.process (view, chunk);
+
+            for (int c = 0; c < chans; ++c)
+            {
+                auto* d = chunkPtrs[c];
+                for (int i = 0; i < chunk; ++i)
+                    d[i] = midBand.processSample (d[i], c);
+            }
 
             lowEdge.processChunk (chunkPtrs, chans, chunk);
             highEdge.processChunk (chunkPtrs, chans, chunk);

@@ -106,6 +106,13 @@ namespace edge
         addFloat (param::highShoulder, "High Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText);
         addFloat (param::highReso,     "High Reso",     { 0.0f, 100.0f },   0.0f, percentText);
 
+        //  --- MID band --------------------------------------------------------
+        addFloat (param::midFreq, "Mid Freq",
+                  frequencyRange (kMidFreqMin, kMidFreqMax, 800.0f), 1000.0f, hzText, hzValue);
+        addFloat (param::midGain, "Mid Gain",
+                  { -kMidMaxGainDb, kMidMaxGainDb, 0.0f }, 0.0f, dbText);
+        addFloat (param::midReso, "Mid Reso", { 0.0f, 100.0f }, 40.0f, percentText);
+
         //  --- performance -----------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { param::mode, kStateVersion }, "Mode",
@@ -163,6 +170,10 @@ namespace edge
         s.highCurvePercent    = get (param::highCurve);
         s.highShoulderPercent = get (param::highShoulder);
         s.highResPercent      = get (param::highReso);
+
+        s.midFreqHz     = get (param::midFreq);
+        s.midGainDb     = get (param::midGain);
+        s.midResPercent = get (param::midReso);
 
         s.mode          = (int) get (param::mode);
         s.edgePercent   = get (param::edge);

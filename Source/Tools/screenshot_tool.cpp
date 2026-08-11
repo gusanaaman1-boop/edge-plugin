@@ -63,12 +63,22 @@ namespace
                 { edge::param::character, (float) (int) edge::Character::iron },
                 { edge::param::bite,       70.0f } } },
 
-            { "06-shape-open", true, {
+            { "06-mid-wah", false, {
+                { edge::param::edge,       72.0f },
+                { edge::param::lowFreq,   120.0f }, { edge::param::highFreq, 9000.0f },
+                { edge::param::midFreq,  4000.0f }, { edge::param::midGain,   14.0f },
+                { edge::param::midReso,    75.0f },
+                { edge::param::follow,     55.0f },
+                { edge::param::bite,       40.0f } } },
+
+            { "07-shape-open", true, {
                 { edge::param::edge,       90.0f },
                 { edge::param::lowFreq,   140.0f }, { edge::param::highFreq, 9000.0f },
                 { edge::param::lowShoulder, 55.0f }, { edge::param::highShoulder, 70.0f },
                 { edge::param::lowReso,    40.0f }, { edge::param::highReso,   35.0f },
                 { edge::param::follow,    -45.0f },
+                { edge::param::midFreq,   1800.0f }, { edge::param::midGain, -10.0f },
+                { edge::param::midReso,    55.0f },
                 { edge::param::bite,       50.0f } } },
         };
 

@@ -225,7 +225,9 @@ namespace edge::ui
         //  is what dragging them edits. With EDGE at 100 % the two curves
         //  coincide and the handle sits on the bright line as well.
         const auto t = processor.getEngine().getTargetShape();
-        const float hz = which == Grab::low ? t.lowHz : t.highHz;
+        const float hz = which == Grab::low  ? t.lowHz
+                       : which == Grab::high ? t.highHz
+                                             : t.midHz;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
         return { xForHz (hz), yForDb ((float) magnitudeDb (t, sr, hz)) };
@@ -253,6 +255,14 @@ namespace edge::ui
         const float dLow  = std::abs (p.x - xLow);
         const float dHigh = std::abs (p.x - xHigh);
 
+        //  The MID handle is checked FIRST, and by real distance rather than
+        //  by frequency alone: it lives inside the band the other two define,
+        //  so an x-only test would hand every grab in the middle to whichever
+        //  edge happened to be nearer.
+        const auto midPos = handlePosition (Grab::mid);
+        if (midPos.getDistanceFrom (p) <= kHandleRadius * 1.8f)
+            return Grab::mid;
+
         if (juce::jmin (dLow, dHigh) <= r)
             return dLow <= dHigh ? Grab::low : Grab::high;
 
@@ -267,12 +277,19 @@ namespace edge::ui
 
     juce::RangedAudioParameter* CurveView::freqParam (Grab g) const noexcept
     {
-        return processor.getState().getParameter (g == Grab::low ? param::lowFreq : param::highFreq);
+        return processor.getState().getParameter (g == Grab::low  ? param::lowFreq
+                                                : g == Grab::high ? param::highFreq
+                                                                  : param::midFreq);
     }
 
+    //  The MID handle's vertical axis is its GAIN, not a depth - dragging up
+    //  makes a peak, dragging down makes a notch, which is the whole point of
+    //  it being one control rather than two.
     juce::RangedAudioParameter* CurveView::depthParam (Grab g) const noexcept
     {
-        return processor.getState().getParameter (g == Grab::low ? param::lowDepth : param::highDepth);
+        return processor.getState().getParameter (g == Grab::low  ? param::lowDepth
+                                                : g == Grab::high ? param::highDepth
+                                                                  : param::midGain);
     }
 
     void CurveView::mouseMove (const juce::MouseEvent& e)
@@ -362,10 +379,23 @@ namespace edge::ui
 
         if (auto* dp = depthParam (dragging))
         {
-            const float delta = (e.position.y - dragStartY)
-                              / juce::jmax (1.0f, plot.getHeight()) * 100.0f;
-            dp->setValueNotifyingHost (dp->convertTo0to1 (juce::jlimit (0.0f, 100.0f,
-                                                                        dragStartDepth + delta)));
+            if (dragging == Grab::mid)
+            {
+                //  Gain follows the display's own dB scale, so the handle stays
+                //  under the cursor instead of drifting away from it.
+                const float perPixel = (metric::displayTopDb - metric::displayBottomDb)
+                                     / juce::jmax (1.0f, plot.getHeight());
+                const float want = dragStartDepth - (e.position.y - dragStartY) * perPixel;
+                dp->setValueNotifyingHost (dp->convertTo0to1 (
+                    juce::jlimit (-kMidMaxGainDb, kMidMaxGainDb, want)));
+            }
+            else
+            {
+                const float delta = (e.position.y - dragStartY)
+                                  / juce::jmax (1.0f, plot.getHeight()) * 100.0f;
+                dp->setValueNotifyingHost (dp->convertTo0to1 (
+                    juce::jlimit (0.0f, 100.0f, dragStartDepth + delta)));
+            }
         }
     }
 
@@ -529,8 +559,10 @@ namespace edge::ui
 
         auto drawHandle = [&] (Grab which, juce::Colour accentIn, const juce::String& name)
         {
-            const bool edgeLive = which == Grab::low ? mode != (int) Mode::lowPass
-                                                     : mode != (int) Mode::highPass;
+            const bool edgeLive = which == Grab::mid
+                                    ? std::abs (processor.getEngine().getTargetShape().midGainDb) > 0.05f
+                                    : which == Grab::low ? mode != (int) Mode::lowPass
+                                                         : mode != (int) Mode::highPass;
             const auto accent = edgeLive ? accentIn
                                          : accentIn.withSaturation (0.15f).withAlpha (0.45f);
 
@@ -554,20 +586,32 @@ namespace edge::ui
 
             //  The name sits above the handle permanently, as in the mockup;
             //  the numbers only appear while it is being touched.
+            //  Clamped into the plot: a MID peak near the top of the scale
+            //  puts its handle at the very edge, and an unclamped name is drawn
+            //  off the display entirely.
             g.setColour (accent);
-            g.setFont (juce::FontOptions (10.5f).withStyle ("Bold"));
-            g.drawText (name, (int) pos.x - 30, (int) pos.y - 32, 60, 12,
-                        juce::Justification::centred, false);
+            g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
+            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 32, 60, 12);
+            if (nameBox.getY() < (int) plot.getY() + 2)
+                nameBox.setY ((int) pos.y + 20);
+
+            g.drawText (name, nameBox, juce::Justification::centred, false);
 
             if (! active)
                 return;
 
-            const float hz = which == Grab::low ? target.lowHz : target.highHz;
-            const float depthDb = which == Grab::low ? target.lowDepthDb : target.highDepthDb;
+            const float hz = which == Grab::low  ? target.lowHz
+                           : which == Grab::high ? target.highHz
+                                                 : target.midHz;
+
+            const float depthDb = which == Grab::low  ? target.lowDepthDb
+                                : which == Grab::high ? target.highDepthDb
+                                                      : target.midGainDb;
 
             const juce::String label = formatHz (hz) + "   "
-                + (depthDb <= kDepthFloorDb + 0.5f ? juce::String ("CUT")
-                                                   : juce::String (depthDb, 1) + " dB");
+                + (which != Grab::mid && depthDb <= kDepthFloorDb + 0.5f
+                       ? juce::String ("CUT")
+                       : (depthDb > 0.0f ? "+" : "") + juce::String (depthDb, 1) + " dB");
 
             g.setFont (juce::FontOptions (10.5f));
             auto box = juce::Rectangle<int> ((int) pos.x - 62, (int) pos.y - 50, 124, 16);
@@ -607,6 +651,10 @@ namespace edge::ui
 
         drawHandle (Grab::low,  colour::low,  "LOW");
         drawHandle (Grab::high, colour::high, "HIGH");
+
+        //  MID is drawn in the neutral colour: it is neither edge, and a third
+        //  accent would stop the other two from meaning anything.
+        drawHandle (Grab::mid, colour::textBright, "MID");
 
         juce::ignoreUnused (shape);
     }

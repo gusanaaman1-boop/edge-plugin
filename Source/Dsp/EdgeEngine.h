@@ -41,6 +41,7 @@ namespace edge
         float lowHz = kLowFreqMin,   lowDepthDb = 0.0f,  lowCurve01 = 0.5f,  lowRes01 = 0.0f;
         float highHz = kHighFreqMax, highDepthDb = 0.0f, highCurve01 = 0.5f, highRes01 = 0.0f;
         float lowShoulderDb = 0.0f, highShoulderDb = 0.0f;
+        float midHz = 1000.0f, midGainDb = 0.0f, midReso01 = 0.4f;
         float outputDb = 0.0f;
 
         //  The colour stage's LINEAR contribution. It has no EQ curve of its
@@ -60,6 +61,9 @@ namespace edge
 
     //  Shoulder control (0..100 %) -> dB, linear.
     float shoulderPercentToDb (float percent) noexcept;
+
+    //  MID Resonance (0..100 %) -> damping. Wide tilt to formant.
+    float midResoToDamping (float percent) noexcept;
 
     //  The Curve percentages that land on a whole dB/oct slope. 12 / 24 / 36 and
     //  no odd slopes, because at full Depth every section carrying a share of
@@ -92,6 +96,9 @@ namespace edge
                   lowCurvePercent = 75.0f, lowShoulderPercent = 0.0f, lowResPercent = 0.0f;
             float highFreqHz = 6000.0f, highDepthPercent = 100.0f,
                   highCurvePercent = 75.0f, highShoulderPercent = 0.0f, highResPercent = 0.0f;
+
+            // mid band
+            float midFreqHz = 1000.0f, midGainDb = 0.0f, midResPercent = 40.0f;
 
             // performance
             int   mode = (int) Mode::band;
@@ -182,6 +189,7 @@ namespace edge
         {
             float lowHz, lowDepthDb, lowCurve01, lowShoulderDb, lowRes01;
             float highHz, highDepthDb, highCurve01, highShoulderDb, highRes01;
+            float midHz, midGainDb, midReso01;
         };
 
         void applyChunkShape (int chunkLength, float liveEdge01) noexcept;
@@ -191,6 +199,7 @@ namespace edge
 
         EdgeUnit<Side::low>  lowEdge;
         EdgeUnit<Side::high> highEdge;
+        BellSection midBand;
         ColorStage colour;
         FollowDetector follower;
 
@@ -207,6 +216,7 @@ namespace edge
         juce::SmoothedValue<float> lowCurve, highCurve;
         juce::SmoothedValue<float> lowShoulder, highShoulder; // percent
         juce::SmoothedValue<float> lowRes, highRes;
+        juce::SmoothedValue<float> logMidFreq, midGain, midRes;
         juce::SmoothedValue<float> lowEnable, highEnable;     // MODE, 0..1
         //  1 in FREE mode. Smoothed, because it re-routes both the corner
         //  travel and FOLLOW's destination, and a step in either is a click.
@@ -248,6 +258,7 @@ namespace edge
             std::atomic<float> lowCurve { 0.5f }, lowRes { 0.0f }, lowShoulderDb { 0.0f };
             std::atomic<float> highHz { kHighFreqMax }, highDepthDb { 0.0f };
             std::atomic<float> highCurve { 0.5f }, highRes { 0.0f }, highShoulderDb { 0.0f };
+            std::atomic<float> midHz { 1000.0f }, midGainDb { 0.0f }, midReso { 0.4f };
 
             void store (const Resolved& r) noexcept;
             void load (EdgeShape& s) const noexcept;

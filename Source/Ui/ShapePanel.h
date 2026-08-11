@@ -42,10 +42,11 @@ namespace edge::ui
 
         juce::AudioProcessorValueTreeState& state;
 
-        juce::Label lowTitle, highTitle, followTitle;
+        juce::Label lowTitle, highTitle, followTitle, midTitle;
         Control lowDepth, lowCurve, lowShoulder, lowReso;
         Control highDepth, highCurve, highShoulder, highReso;
         Control followSens, followAttack, followRelease;
+        Control midFreq, midGain, midReso;
 
         juce::ToggleButton linkButton { "LINK" };
 

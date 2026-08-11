@@ -1181,17 +1181,18 @@ namespace
             edge::param::mode, edge::param::edge, edge::param::follow,
             edge::param::spread, edge::param::bite, edge::param::output, edge::param::bypass,
             edge::param::followSens, edge::param::followAttack, edge::param::followRelease,
-            edge::param::character };
+            edge::param::character,
+            edge::param::midFreq, edge::param::midGain, edge::param::midReso };
 
-        check (apvts.processor.getParameters().size() == 21,
-               "21 host parameters (20 specified, plus CHARACTER)",
+        check (apvts.processor.getParameters().size() == 24,
+               "24 host parameters (20 specified, plus CHARACTER and the MID band)",
                juce::String (apvts.processor.getParameters().size()));
 
         bool allPresent = true;
         for (auto* id : ids)
             allPresent = allPresent && apvts.getParameter (id) != nullptr;
 
-        check (allPresent, "every documented parameter ID exists", "21 / 21");
+        check (allPresent, "every documented parameter ID exists", "24 / 24");
 
         juce::Random rng (31);
         std::vector<float> written;
@@ -1311,6 +1312,7 @@ namespace
                         s.lowCurvePercent = 33.3f * (float) c;
                         s.lowShoulderPercent = 50.0f * (float) sh;
                         s.bitePercent = 0.0f;      // isolate the filter
+                        s.midGainDb = 0.0f;        // ... and the EDGES from the bell
 
                         const auto shape = shapeFor (shapeEngine(), s);
 
@@ -1334,7 +1336,7 @@ namespace
                     }
 
         check (worstBulge < 0.01 && worstOver < 0.01,
-               "monotonic, and never above 0 dB, across the whole space",
+               "EDGES stay monotonic and never above 0 dB (MID at unity)",
                "worst dip " + f (worstBulge, 6) + " dB, worst peak "
                    + f (worstOver, 6) + " dB   " + where);
 
@@ -1912,6 +1914,147 @@ namespace
         }
     }
 
+    void testMidBand()
+    {
+        section ("18. MID band");
+
+        edge::EdgeEngine e;
+        e.prepare (kSr, 512, 2);
+
+        //  0 dB is a wire, so a MID target costs nothing until it is used - and
+        //  EDGE 0 stays bit-exact with one set.
+        {
+            edge::EdgeEngine n;
+            n.prepare (kSr, 512, 2);
+            Settings s = neutral();
+            s.midFreqHz = 900.0f;
+            s.midGainDb = 12.0f;      // a target, but EDGE is closed
+            s.midResPercent = 70.0f;
+            s.bitePercent = 100.0f;
+            n.snapToSettings (s);
+
+            juce::Random rng (515);
+            juce::AudioBuffer<float> out (2, 8192);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    out.setSample (c, i, rng.nextFloat() * 2.0f - 1.0f);
+
+            juce::AudioBuffer<float> ref (out);
+            run (n, out, 128);
+
+            double worst = 0.0;
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 8192; ++i)
+                    worst = juce::jmax (worst, (double) std::abs (out.getSample (c, i)
+                                                                - ref.getSample (c, i)));
+
+            check (worst == 0.0, "a MID target with EDGE 0 is still bit-exact",
+                   "max |out-in| = " + f (worst, 12));
+        }
+
+        //  The bell delivers its stated gain at its corner, up and down.
+        for (double gain : { 12.0, 6.0, -6.0, -12.0 })
+        {
+            Settings s = openBand();
+            s.mode = (int) edge::Mode::highPass;
+            s.lowDepthPercent = 0.0f;          // isolate the bell
+            s.midFreqHz = 1000.0f;
+            s.midGainDb = (float) gain;
+            s.midResPercent = 60.0f;
+            s.bitePercent = 0.0f;
+
+            const double at1k = measuredGainDb (e, s, kSr, 1000.0);
+            const double at60 = measuredGainDb (e, s, kSr, 60.0);
+
+            check (std::abs (at1k - gain) < 0.4 && std::abs (at60) < 0.4,
+                   ("MID " + juce::String (gain, 0) + " dB peaks there and nowhere else").toRawUTF8(),
+                   "1 kHz " + f (at1k, 2) + " dB, 60 Hz " + f (at60, 2) + " dB");
+        }
+
+        //  Resonance narrows it: the same gain over fewer octaves.
+        {
+            auto widthOctaves = [&] (float reso)
+            {
+                Settings s = openBand();
+                s.mode = (int) edge::Mode::highPass;
+                s.lowDepthPercent = 0.0f;
+                s.midFreqHz = 1000.0f;
+                s.midGainDb = 12.0f;
+                s.midResPercent = reso;
+                s.bitePercent = 0.0f;
+
+                const auto sh = shapeFor (shapeEngine(), s);
+
+                //  Where the bell has fallen to half its gain, either side.
+                auto edgeAt = [&sh] (double from, double towards)
+                {
+                    double lo = from, hi = towards;
+                    for (int i = 0; i < 50; ++i)
+                    {
+                        const double mid = std::sqrt (lo * hi);
+                        (edge::magnitudeDb (sh, kSr, mid) > 6.0 ? lo : hi) = mid;
+                    }
+                    return std::sqrt (lo * hi);
+                };
+
+                return std::log2 (edgeAt (1000.0, 20000.0) / edgeAt (1000.0, 20.0));
+            };
+
+            const double wide = widthOctaves (0.0f);
+            const double narrow = widthOctaves (100.0f);
+
+            check (narrow < wide * 0.5,
+                   "MID Resonance narrows the bell",
+                   "reso 0: " + f (wide, 2) + " oct, reso 100: " + f (narrow, 2) + " oct");
+        }
+
+        //  EDGE walks it across the spectrum - the wah gesture.
+        {
+            juce::String detail;
+            double prev = 0.0;
+            bool rises = true;
+
+            for (float edgePercent : { 0.0f, 25.0f, 50.0f, 75.0f, 100.0f })
+            {
+                Settings s = openBand();
+                s.edgePercent = edgePercent;
+                s.midFreqHz = 8000.0f;
+                s.midGainDb = 12.0f;
+
+                const auto sh = shapeFor (shapeEngine(), s);
+                if (prev > 0.0 && sh.midHz <= prev * 1.05)
+                    rises = false;
+
+                prev = sh.midHz;
+                detail += juce::String (edgePercent, 0) + "%:" + juce::String (sh.midHz, 0) + "Hz  ";
+            }
+
+            check (rises, "EDGE sweeps the MID peak up the spectrum", detail.trim());
+        }
+
+        //  And it must not click while being swept hard.
+        {
+            Settings s = openBand();
+            s.midFreqHz = 6000.0f;
+            s.midGainDb = 15.0f;
+            s.midResPercent = 85.0f;
+
+            const double w = juce::MathConstants<double>::twoPi * 500.0 / kSr;
+            const float sourceStep = 0.4f * (float) std::abs (std::sin (w));
+
+            auto buf = sweep (e, s, 500.0, 0.4f, 3.0, 64,
+                              [] (Settings& t, double u)
+                              {
+                                  const double phase = u * 6.0 * juce::MathConstants<double>::twoPi;
+                                  t.edgePercent = (float) (50.0 * (1.0 - std::cos (phase)));
+                              });
+
+            check (allFinite (buf) && maxStep (buf) < sourceStep * 4.0f,
+                   "six MID sweeps in 3 s: no clicks",
+                   "largest step " + f (maxStep (buf), 6) + " vs source " + f (sourceStep, 6));
+        }
+    }
+
     void testRealtimeSafety()
     {
         section ("13. Real-time safety and CPU");
@@ -2034,6 +2177,7 @@ int main()
     testImpulseNoiseAndRecall();
     testFreeMode();
     testCharacter();
+    testMidBand();
     testRealtimeSafety();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

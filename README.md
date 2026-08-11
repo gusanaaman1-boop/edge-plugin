@@ -17,7 +17,7 @@ PERFORMANCE                 TARGETS (inside SHAPE)
   FOLLOW the sound moves it               Curve
   SPREAD stereo movement                  Shoulder
   BITE   hidden colour macro               Resonance
-  CHARACTER  WARM / IRON
+  CHARACTER  WARM / IRON            MID   Freq / Gain / Reso
   Output, Bypass                          Follow Sens / Attack / Release
 ```
 
@@ -25,6 +25,8 @@ One large control drives both spectral edges from open, through shelf, to a real
 cut. FOLLOW lets the signal drive it. SPREAD moves the two channels apart in
 semitones without changing either one's bandwidth. FREE turns the pair into a
 band you can drag across the spectrum, and points FOLLOW at its centre instead.
+A movable MID bell rides inside whatever the two edges let through, and EDGE
+sweeps it — the wah gesture.
 
 No LFO. No sequencer. No drawable modulation. No randomisation. One envelope
 follower, and one hidden colour engine whose only public control is BITE.
@@ -58,7 +60,7 @@ workspace. Add `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster local build.
 cmake --build build --target EdgeTests -j8 && ./build/EdgeTests_artefacts/Release/EdgeTests
 ```
 
-84 checks. Every one prints the number it measured. Exit code 0 means all
+92 checks. Every one prints the number it measured. Exit code 0 means all
 passed; the last run is kept in `docs/TEST-RESULTS.txt`.
 
 ### Sanitisers
@@ -111,7 +113,7 @@ script verifies every macOS binary is genuinely universal before zipping.
 
 ## Status
 
-v0.4 complete and measured on macOS: 84 checks green, `auval` PASS, ASan+UBSan
+v0.5 complete and measured on macOS: 92 checks green, `auval` PASS, ASan+UBSan
 clean, 0 heap allocations in 10,000 audio blocks, ~458x realtime with the
 analyser feeding. v0.1 ran in Cubase; v0.2 has not been re-checked there yet,
 and there is still no Windows build, no presets and no installer.

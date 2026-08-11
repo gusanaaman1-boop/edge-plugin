@@ -53,6 +53,7 @@ namespace edge::ui
         title (lowTitle,    "LOW TARGET",  colour::low,  juce::Justification::centredLeft);
         title (highTitle,   "HIGH TARGET", colour::high, juce::Justification::centredRight);
         title (followTitle, "FOLLOW",      colour::text, juce::Justification::centred);
+        title (midTitle,    "MID",          colour::textBright, juce::Justification::centred);
 
         lowDepth   .attach (*this, state, param::lowDepth,    "DEPTH",    colour::low);
         lowCurve   .attach (*this, state, param::lowCurve,    "CURVE",    colour::low);
@@ -63,6 +64,13 @@ namespace edge::ui
         highCurve   .attach (*this, state, param::highCurve,    "CURVE",    colour::high);
         highShoulder.attach (*this, state, param::highShoulder, "SHOULDER", colour::high);
         highReso    .attach (*this, state, param::highReso,     "RESO",     colour::high);
+
+        //  The MID band is neither edge, so it is drawn in the neutral colour:
+        //  a third accent would stop "orange means low, cyan means high" from
+        //  being true.
+        midFreq.attach (*this, state, param::midFreq, "FREQ", colour::textBright);
+        midGain.attach (*this, state, param::midGain, "GAIN", colour::textBright);
+        midReso.attach (*this, state, param::midReso, "RESO", colour::textBright);
 
         followSens   .attach (*this, state, param::followSens,    "SENS",    colour::text);
         followAttack .attach (*this, state, param::followAttack,  "ATTACK",  colour::text);
@@ -89,7 +97,7 @@ namespace edge::ui
     {
         auto r = getLocalBounds().reduced (14, 10);
 
-        auto followRow = r.removeFromBottom (74);
+        auto bottomRow = r.removeFromBottom (74);
         r.removeFromBottom (6);
 
         //  --- the two targets --------------------------------------------------
@@ -122,8 +130,17 @@ namespace edge::ui
         //  LINK sits between the two columns, where its meaning is obvious.
         linkButton.setBounds (r.withSizeKeepingCentre (juce::jmin (r.getWidth(), 76), 24));
 
-        //  --- the follower -----------------------------------------------------
+        //  --- MID on the left, the follower on the right ------------------------
+        auto midRow = bottomRow.removeFromLeft (bottomRow.getWidth() / 2);
+        auto followRow = bottomRow;
+
+        midTitle.setBounds (midRow.removeFromTop (13));
         followTitle.setBounds (followRow.removeFromTop (13));
+
+        auto midCentre = midRow.withSizeKeepingCentre (knob * 3 + gap * 2, midRow.getHeight());
+        place (midCentre, midFreq);
+        place (midCentre, midGain);
+        place (midCentre, midReso);
 
         auto centre = followRow.withSizeKeepingCentre (knob * 3 + gap * 2, followRow.getHeight());
         place (centre, followSens);

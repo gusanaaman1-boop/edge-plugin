@@ -160,4 +160,97 @@ namespace edge
 
         Ch ch[maxChannels];
     };
+
+    //  The MID band: a peaking bell on the same TPT section.
+    //
+    //      low + k*band + high == x
+    //      y = low + G*(k*band) + high  =  x + (G-1)*(k*band)
+    //
+    //  which is  H(s) = (s^2 + G*k*s + 1) / (s^2 + k*s + 1)  -  unity at DC and
+    //  at Nyquist, exactly G at the corner. One multiply-add on top of the SVF.
+    //
+    //  G = 1 gives y = x + 0*(k*band), bit-exact, for the same reason every
+    //  other section in EDGE is a wire at unity: that is what lets the MID band
+    //  exist at all without costing anything when its gain is 0 dB, and what
+    //  keeps EDGE 0 bit-exact with a MID target set.
+    //
+    //  A bell is deliberately NOT monotonic. It is the one thing in the
+    //  plug-in allowed above 0 dB, and the shape tests know it.
+    class BellSection
+    {
+    public:
+        static constexpr int maxChannels = MorphSection::maxChannels;
+
+        void reset() noexcept
+        {
+            for (auto& c : ch)
+            {
+                c.svf.reset();
+                c.gm1 = c.targetGm1;
+                c.gm1Step = 0.0f;
+                c.rampLeft = 0;
+            }
+        }
+
+        void setShape (int channel, float g, float damping, float peakGain,
+                       int rampSamples = 0) noexcept
+        {
+            auto& c = ch[channel];
+            c.k = damping;
+            c.svf.setCoefficients (g, damping);
+            c.targetGm1 = peakGain - 1.0f;
+
+            if (rampSamples > 0)
+            {
+                c.gm1Step = (c.targetGm1 - c.gm1) / (float) rampSamples;
+                c.rampLeft = rampSamples;
+            }
+            else
+            {
+                c.gm1 = c.targetGm1;
+                c.gm1Step = 0.0f;
+                c.rampLeft = 0;
+            }
+        }
+
+        float processSample (float x, int channel) noexcept
+        {
+            auto& c = ch[channel];
+
+            if (c.rampLeft > 0)
+            {
+                c.gm1 += c.gm1Step;
+                if (--c.rampLeft == 0)
+                    c.gm1 = c.targetGm1;
+            }
+
+            const auto o = c.svf.process (x);
+            return x + c.gm1 * (c.k * o.band);
+        }
+
+        std::complex<double> responseAt (double omega, int channel) const noexcept
+        {
+            const auto& c = ch[channel];
+            const std::complex<double> s { 0.0, omega };
+            const double G = (double) c.gm1 + 1.0;
+
+            return (s * s + G * (double) c.k * s + 1.0)
+                 / (s * s + (double) c.k * s + 1.0);
+        }
+
+        float peakGain (int channel) const noexcept { return ch[channel].targetGm1 + 1.0f; }
+
+    private:
+        struct Ch
+        {
+            fourcolor::dsp::TptSvf svf;
+            float k = 1.0f;
+            float gm1 = 0.0f;
+            float targetGm1 = 0.0f;
+            float gm1Step = 0.0f;
+            int rampLeft = 0;
+        };
+
+        Ch ch[maxChannels];
+    };
 }

@@ -4,7 +4,8 @@
 (`lowFreq`, `focus`, `link`, …) are gone; a v0.1 project is **migrated on load**
 rather than reset — see `Core/StateMigration.h` and §"Migration" below.
 
-21 host parameters: the 20 specified, plus CHARACTER. Nothing else about the
+24 host parameters: the 20 specified, plus CHARACTER and the three-control MID
+band. Nothing else about the
 internal colour engines appears — no drive, no bias, no mix, no oversampling.
 BITE is how much; CHARACTER is which of two voicings.
 
@@ -25,6 +26,43 @@ BITE is how much; CHARACTER is which of two voicings.
 
 Depth defaults to **CUT on both sides** so that selecting BAND and opening EDGE
 immediately produces a real band-pass, as specified.
+
+## MID — the movable bell
+
+| ID | Name | Range | Default |
+|---|---|---|---|
+| `mid.freq` | Mid Freq | 60 – 12000 Hz, log (knob centre 800 Hz) | 1000 Hz |
+| `mid.gain` | Mid Gain | −18 … +18 dB | 0 dB |
+| `mid.reso` | Mid Reso | 0 – 100 % | 40 |
+
+A peaking bell on the same TPT section the rest of the filter is built from:
+
+```
+low + k·band + high == x
+y = x + (G−1)·(k·band)     →     H(s) = (s² + G·k·s + 1) / (s² + k·s + 1)
+```
+
+Unity at DC and at Nyquist, exactly G at the corner, and **`G = 1` is a
+bit-exact wire** — which is what lets the MID band exist without costing
+anything at 0 dB, and what keeps EDGE 0 bit-exact with a MID target set.
+
+* Positive gain is a peak, negative is a notch. Measured: 12 / 6 / −6 / −12 dB
+  all deliver within 0.01 dB at the corner and leave 60 Hz within 0.2 dB.
+* Resonance narrows it: **4.12 octaves** wide at 0 %, **0.71 octaves** at 100 %.
+* **EDGE sweeps it up the spectrum** from the bottom of its range to the target,
+  on the same geometric travel every other frequency uses. Measured with a
+  8 kHz target: 60 → 204 → 693 → 2354 → 8000 Hz across EDGE 0 → 100 %. That is
+  the wah gesture, and FOLLOW driving EDGE is what makes it automatic.
+* SPREAD and FREE's travel move it along with the two edges, so the whole shape
+  stays one shape.
+* It counts as filter activity, so a big bell engages the colour like anything
+  else does.
+* It is drawn in the neutral colour on the display, not a third accent — orange
+  means low and cyan means high, and a third would stop that being true.
+
+**A bell is deliberately not monotonic.** It is the one thing in the plug-in
+allowed above 0 dB, and the shape-invariant test now isolates the two edges by
+holding MID at unity rather than pretending the rule still covers everything.
 
 ## Performance — what you play
 
