@@ -242,8 +242,24 @@ int main (int argc, char* argv[])
         return writeParameterTable (juce::File::getCurrentWorkingDirectory().getChildFile (path));
     }
 
-    const juce::File dir = argc > 1
-        ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1])
+    //  An unrecognised switch is a mistake, not a folder name. A stale build of
+    //  this tool once took "--parameter-table" for an output directory and
+    //  rendered seven PNGs into a folder of that name, which then went into a
+    //  commit and a release zip.
+    for (const auto& a : args)
+    {
+        if (a.startsWith ("--"))
+        {
+            std::fprintf (stderr, "unknown option: %s\n"
+                                  "usage: EdgeShot [<output-dir>]\n"
+                                  "       EdgeShot --parameter-table [<file.md>]\n",
+                          a.toRawUTF8());
+            return 2;
+        }
+    }
+
+    const juce::File dir = args.size() > 0
+        ? juce::File::getCurrentWorkingDirectory().getChildFile (args[0])
         : juce::File::getCurrentWorkingDirectory().getChildFile ("ui-shots");
 
     return render (dir);

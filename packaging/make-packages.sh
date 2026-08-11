@@ -45,6 +45,10 @@ done
 
 # The parameter table is generated FROM the binary being packaged. A table
 # copied from the repository could describe a different build.
+#
+# Built explicitly first: a stale EdgeShot took "--parameter-table" for an
+# output directory and rendered seven PNGs into a folder of that name.
+cmake --build build-universal --target EdgeShot -j8 >/dev/null
 "$ROOT/build-universal/EdgeShot_artefacts/Release/EdgeShot" --parameter-table docs/PARAMETER-TABLE.md
 
 STAGE="$DIST/stage-mac/EDGE-$VERSION"
