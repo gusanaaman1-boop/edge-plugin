@@ -64,6 +64,7 @@ set(EDGE_PLUGIN_SOURCES
     Source/PluginEditor.cpp
     Source/PluginProcessor.cpp
     Source/Ui/CurveView.cpp
+    Source/Ui/ShapePanel.cpp
     Source/Ui/Theme.cpp)
 
 set(EDGE_OWN_SOURCES ${EDGE_PLUGIN_SOURCES} Source/Tools/test_dsp.cpp

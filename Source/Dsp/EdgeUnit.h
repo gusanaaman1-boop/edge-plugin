@@ -1,17 +1,17 @@
-// One EDGE: three MorphSections in series at a shared corner frequency.
+// One EDGE: three MorphSections in series at a shared corner frequency, plus a
+// fourth, much gentler one for the Shoulder.
 //
-// Curve decides how the total Depth (in dB) is SHARED between the sections.
-// Section i takes a fraction w_i of the dB, with sum(w_i) = 1, so the total
-// shelf depth is exactly what the user asked for at every Curve setting and
-// Curve only changes how many octaves it takes to get there:
+// Curve decides how the total Depth (in dB) is SHARED between the three:
 //
 //     P    = continuous pole-pair count in [1, 3]
-//     w_i  = clamp(P - i, 0, 1) / P
+//     w_i  = smoothstep(clamp(P - i, 0, 1)) / sum, so sum(w_i) = 1
 //     G_i  = 10^(w_i * depthDb / 20)
 //
 // w_i = 0 gives G_i = 1, and a MorphSection at G = 1 is a bit-exact wire. So a
 // section leaves the cascade by becoming an identity, never by being switched
 // out, and it keeps running so its state stays warm for when it comes back.
+// That property is what makes MODE switching (an edge becoming an identity),
+// the EDGE macro at 0, and Depth 0 all click-free by construction.
 //
 // Curve's soft half widens the knee (damping k from 3.6 down to sqrt(2)) and
 // its tight half adds order (P from 1 to 3). The two halves meet at P = 1,
@@ -20,6 +20,9 @@
 //
 // Resonance lowers k on SECTION 0 ONLY, so the peak height cannot compound
 // with Curve's pole count.
+//
+// EVERYTHING IS PER CHANNEL. setShape takes a channel index because SPREAD
+// gives the two channels different corner frequencies.
 
 #pragma once
 
@@ -36,6 +39,8 @@ namespace edge
     class EdgeUnit
     {
     public:
+        static constexpr int maxChannels = MorphSection::maxChannels;
+
         void reset() noexcept
         {
             for (auto& s : sections)
@@ -76,15 +81,11 @@ namespace edge
                 //  that kink is enormous: the section's share of -120 dB starts
                 //  moving at 120 dB per unit P the instant P leaves 1, which
                 //  measured as a 1.8 dB jump for a 0.5 % nudge of Curve.
-                //  Smoothstep makes dw/dP zero at both ends of each section's
-                //  window, so a section enters and leaves the cascade with zero
-                //  rate of change.
                 const float t = juce::jlimit (0.0f, 1.0f, p - (float) i);
                 w[(size_t) i] = t * t * (3.0f - 2.0f * t);
                 sum += w[(size_t) i];
             }
 
-            //  sum >= 1 always: section 0's t is 1 for every legal P.
             for (auto& v : w)
                 v /= sum;
 
@@ -92,9 +93,10 @@ namespace edge
         }
 
         //  Coefficient work only - no allocation, safe on the audio thread.
-        //  Called once per automation chunk (<= 32 samples).
-        void setShape (double sampleRate, float freqHz, float depthDb,
-                       float curve01, float res01, float shoulderDb = 0.0f) noexcept
+        //  Called once per automation chunk (<= 32 samples), per channel.
+        void setShape (int channel, double sampleRate, float freqHz, float depthDb,
+                       float curve01, float res01, float shoulderDb,
+                       int rampSamples = 0) noexcept
         {
             float poles = 1.0f, damping = kCurveNeutralDamping;
             curveToShape (curve01, poles, damping);
@@ -109,37 +111,36 @@ namespace edge
             for (int i = 0; i < kNumSections; ++i)
             {
                 //  Splitting in dB rather than calling pow() on the linear gain
-                //  keeps the deep end well conditioned: at the -120 dB floor the
-                //  linear gain is 1e-6 and pow(1e-6, 1/3) loses precision, while
-                //  -40 dB per section does not.
+                //  keeps the deep end well conditioned.
                 const float sectionDb = w[(size_t) i] * depthDb;
                 const float gain = w[(size_t) i] <= 0.0f
                                      ? 1.0f     // exact identity, not 10^0
                                      : juce::Decibels::decibelsToGain (sectionDb, kDepthFloorDb * 2.0f);
 
-                sections[(size_t) i].setShape (g, i == 0 ? k0 : damping, gain);
+                sections[(size_t) i].setShape (channel, g, i == 0 ? k0 : damping, gain,
+                                               rampSamples);
             }
 
-            //  SHOULDER: the same section type, one shelf, three octaves into
-            //  the passband with a deliberately wide knee. At 0 dB it is a
-            //  bit-exact wire (MorphSvf.h), so the control is free when unused,
-            //  and because it is another `side` shelf with k > sqrt(2) the
+            //  SHOULDER: the same section type, one shelf, six octaves into the
+            //  passband with a deliberately wide knee. At 0 dB it is a bit-exact
+            //  wire, and because it is another `side` shelf with k > sqrt(2) the
             //  cascade stays monotonic by the same proof.
             const float shoulderHz = side == Side::low
                 ? freqHz * std::exp2 (kShoulderOctaves)
                 : freqHz * std::exp2 (-kShoulderOctaves);
 
-            lastShoulderHz = juce::jlimit (10.0f, (float) sampleRate * 0.45f, shoulderHz);
+            auto& c = ch[channel];
+            c.shoulderHz = juce::jlimit (10.0f, (float) sampleRate * 0.45f, shoulderHz);
+            c.freqHz = freqHz;
 
-            shoulder.setShape (fourcolor::dsp::svfG (sampleRate, lastShoulderHz),
+            shoulder.setShape (channel, fourcolor::dsp::svfG (sampleRate, c.shoulderHz),
                                kShoulderDamping,
-                               juce::Decibels::decibelsToGain (shoulderDb, kDepthFloorDb * 2.0f));
-
-            lastFreqHz = freqHz;
+                               juce::Decibels::decibelsToGain (shoulderDb, kDepthFloorDb * 2.0f),
+                               rampSamples);
 
             //  What a resonance make-up should be scaled by: 0 when section 0 is
             //  a wire, 1 when it is a full cut.
-            resonanceActivity = res * (1.0f - sections[0].shelfGain());
+            c.resonanceActivity = res * (1.0f - sections[0].shelfGain (channel));
         }
 
         void processChunk (float* const* data, int numChannels, int numSamples) noexcept
@@ -164,46 +165,55 @@ namespace edge
         }
 
         //  Exact linear response of the whole unit at freqHz, from the live
-        //  coefficients. Used by the editor and by the tests.
-        std::complex<double> responseAt (double freqHz, double sampleRate) const noexcept
+        //  coefficients of one channel.
+        std::complex<double> responseAt (double freqHz, double sampleRate,
+                                         int channel = 0) const noexcept
         {
-            const double g = (double) fourcolor::dsp::svfG (sampleRate, lastFreqHz);
+            const auto& c = ch[channel];
             const double limited = std::fmin (freqHz, sampleRate * 0.4999);
-            const double omega = std::tan (juce::MathConstants<double>::pi * limited / sampleRate) / g;
+            const double warped = std::tan (juce::MathConstants<double>::pi * limited / sampleRate);
+
+            const double g = (double) fourcolor::dsp::svfG (sampleRate, c.freqHz);
+            const double omega = warped / g;
 
             std::complex<double> h { 1.0, 0.0 };
 
             for (const auto& s : sections)
-                h *= s.template responseAt<side> (omega);
+                h *= s.template responseAt<side> (omega, channel);
 
             //  The shoulder sits at its own corner, so it needs its own omega.
-            const double gS = (double) fourcolor::dsp::svfG (sampleRate, lastShoulderHz);
-            const double omegaS = std::tan (juce::MathConstants<double>::pi * limited / sampleRate) / gS;
-
-            return h * shoulder.template responseAt<side> (omegaS);
+            const double gS = (double) fourcolor::dsp::svfG (sampleRate, c.shoulderHz);
+            return h * shoulder.template responseAt<side> (warped / gS, channel);
         }
 
         //  0 at Depth 0, -> 1 as the edge approaches a full cut. Drives the
-        //  hidden colour law; see EdgeEngine.
-        float activity() const noexcept
+        //  hidden colour law. Shoulder counts: leaning 12 dB off the passband
+        //  IS the filter working.
+        float activity (int channel = 0) const noexcept
         {
-            //  Composite shelf gain is the product of every section's,
-            //  shoulder included: leaning 12 dB off the passband IS the filter
-            //  working, so it should engage the colour like anything else.
-            float g = shoulder.shelfGain();
+            float g = shoulder.shelfGain (channel);
             for (const auto& s : sections)
-                g *= s.shelfGain();
+                g *= s.shelfGain (channel);
 
             return juce::jlimit (0.0f, 1.0f, 1.0f - std::sqrt (g));
         }
 
-        float resonanceMakeup() const noexcept { return resonanceActivity; }
+        float resonanceMakeup (int channel = 0) const noexcept
+        {
+            return ch[channel].resonanceActivity;
+        }
 
     private:
         std::array<MorphSection, (size_t) kNumSections> sections;
         MorphSection shoulder;
-        float lastFreqHz = 1000.0f;
-        float lastShoulderHz = 8000.0f;
-        float resonanceActivity = 0.0f;
+
+        struct Ch
+        {
+            float freqHz = 1000.0f;
+            float shoulderHz = 8000.0f;
+            float resonanceActivity = 0.0f;
+        };
+
+        Ch ch[maxChannels];
     };
 }

@@ -18,8 +18,7 @@ namespace edge
         constexpr double kSeparationEps = 0.05;   // octaves
     }
 
-    void resolveFrequencies (float lowHz, float highHz, float focus,
-                             float& outLowHz, float& outHighHz) noexcept
+    void resolveSeparation (float& lowHz, float& highHz) noexcept
     {
         const double logLowMin  = std::log2 ((double) kLowFreqMin);
         const double logLowMax  = std::log2 ((double) kLowFreqMax);
@@ -29,46 +28,29 @@ namespace edge
         double lLow  = juce::jlimit (logLowMin,  logLowMax,  std::log2 ((double) juce::jmax (1.0f, lowHz)));
         double lHigh = juce::jlimit (logHighMin, logHighMax, std::log2 ((double) juce::jmax (1.0f, highHz)));
 
-        const double want = (double) juce::jlimit (-1.0f, 1.0f, focus) * (double) kFocusOctaves;
-
-        //  How far the pair can still travel in the requested direction before
-        //  one of them hits the end of its own range.
-        const double headroom = want >= 0.0
-            ? juce::jmin (logLowMax - lLow, lHigh - logHighMin)
-            : juce::jmin (lLow - logLowMin, logHighMax - lHigh);
-
-        //  Soft limit: h*tanh(x/h) equals x while x << h and approaches h
-        //  asymptotically. Focus therefore slows down near the boundary rather
-        //  than stopping at it - no jump, and no dead zone at the end of the
-        //  control's travel.
-        double applied = 0.0;
-        if (headroom > 1.0e-6)
-            applied = std::copysign (headroom * std::tanh (std::abs (want) / headroom), want);
-
-        lLow  += applied;
-        lHigh -= applied;
-
-        //  Keep a small minimum separation, softly.
         lHigh = softMax (lHigh, lLow + std::log2 ((double) kMinEdgeRatio), kSeparationEps);
 
-        outLowHz  = (float) std::exp2 (juce::jlimit (logLowMin,  logLowMax,  lLow));
-        outHighHz = (float) std::exp2 (juce::jlimit (logHighMin, logHighMax, lHigh));
+        lowHz  = (float) std::exp2 (juce::jlimit (logLowMin,  logLowMax,  lLow));
+        highHz = (float) std::exp2 (juce::jlimit (logHighMin, logHighMax, lHigh));
     }
 
     float depthPercentToDb (float percent) noexcept
     {
-        //  The perceptual table from the work order, interpolated linearly in
-        //  dB. The labelled values land exactly on their control positions,
-        //  which matters more here than a smooth second derivative: the map is
-        //  monotonic and continuous, so the audio is too.
+        //  The perceptual anchors from the work order, at control positions
+        //  chosen so that the STEEPEST segment is 2.5 dB per 1 % of travel.
+        //
+        //  That number is the EDGE macro's continuity budget. EDGE walks this
+        //  same taper, and the acceptance test asks for under 0.15 dB of change
+        //  per 0.05 % of EDGE - so any segment steeper than 3 dB/% fails it. The
+        //  first version put -24 dB at 78 % and -48 dB at 92 %, which is 9 dB/%
+        //  at the top and measured 0.39 dB per step.
         static constexpr float pts[][2] =
         {
             {   0.0f,    0.0f },
-            {  25.0f,   -3.0f },
-            {  40.0f,   -6.0f },
-            {  58.0f,  -12.0f },
-            {  78.0f,  -24.0f },
-            {  92.0f,  -48.0f },
+            {  20.0f,   -3.0f },
+            {  33.0f,   -6.0f },
+            {  48.0f,  -12.0f },
+            {  65.0f,  -24.0f },
             { 100.0f, kDepthFloorDb }
         };
 
@@ -85,6 +67,11 @@ namespace edge
         }
 
         return kDepthFloorDb;
+    }
+
+    float shoulderPercentToDb (float percent) noexcept
+    {
+        return kShoulderMaxDb * juce::jlimit (0.0f, 100.0f, percent) * 0.01f;
     }
 
     const SlopeChoice kSlopeChoices[kNumSlopeChoices] =
@@ -116,35 +103,43 @@ namespace edge
         return juce::String (curvePercent, 0) + " %";
     }
 
-    float shoulderPercentToDb (float percent) noexcept
+    // --- BITE ----------------------------------------------------------------
+
+    float biteMaxDrive (float bitePercent) noexcept
     {
-        return kShoulderMaxDb * juce::jlimit (0.0f, 100.0f, percent) * 0.01f;
+        const float b = juce::jlimit (0.0f, 1.0f, bitePercent * 0.01f);
+
+        //  b == 0 must give EXACTLY zero, which pow() does, and which is what
+        //  makes "BITE 0 fully disengages" a bit-exact statement rather than a
+        //  very quiet one.
+        return kBiteMaxDrive * std::pow (b, kBiteDriveCurve);
     }
 
-    float colourDrivePercent (float lowActivity, float highActivity,
-                              float lowResonance, float highResonance) noexcept
+    float biteGamma (float bitePercent) noexcept
     {
-        //  A pure function of the PARAMETER state. No envelope follower, no
-        //  level detector: the colour cannot pump, because nothing in this
-        //  expression varies with the audio.
-        //
-        //  The resonance terms are EdgeUnit::resonanceMakeup(), not the raw
-        //  Resonance controls. Raw Resonance was wrong: at Depth 0 a section is
-        //  a wire whatever its Q is, so turning Resonance up did nothing audible
-        //  while still engaging the colour engine - and the colour engine's
-        //  internal DC blocker then high-passed the whole signal by 0.97 dB at
-        //  20 Hz. resonanceMakeup is already gated by the section's shelf gain,
-        //  so it is 0 at Depth 0.
-        const float a = juce::jmax (juce::jmax (lowActivity, highActivity),
-                                    juce::jmax (lowResonance, highResonance));
-
-        return kColorDriveMax * juce::jlimit (0.0f, 1.0f, a);
+        const float b = juce::jlimit (0.0f, 1.0f, bitePercent * 0.01f);
+        return kBiteGammaLow + (kBiteGammaHigh - kBiteGammaLow) * b;
     }
+
+    float colourDrivePercent (float bitePercent, float activity) noexcept
+    {
+        //  A pure function of the PARAMETER state and the FILTER's activity.
+        //  No envelope follower, no level detector, no adaptation: the colour
+        //  cannot pump, because nothing in this expression varies with the
+        //  audio. (FOLLOW moves the filter; the colour then follows the filter,
+        //  which is a different thing from the colour following the signal.)
+        const float a = juce::jlimit (0.0f, 1.0f, activity);
+
+        if (a <= 0.0f)
+            return 0.0f;
+
+        return biteMaxDrive (bitePercent) * std::pow (a, biteGamma (bitePercent));
+    }
+
+    // --- response ------------------------------------------------------------
 
     namespace
     {
-        //  The colour stage's linear transfer, as a magnitude.
-        //
         //  ColorEngine::blend() is  y = x + e*(shaped*comp - x), so at small
         //  signal  y = (1-e)*x + e*G*HP(x)  where HP is the engine's internal
         //  DC blocker and G its small-signal gain. EDGE then multiplies by
@@ -158,7 +153,6 @@ namespace edge
             if (e <= 0.0 || m <= 0.0)
                 return 1.0;
 
-            //  DcBlocker: y = x - x1 + R*y1  ->  H(z) = (1 - z^-1)/(1 - R z^-1)
             const double R = juce::jmax (0.9, 1.0 - juce::MathConstants<double>::twoPi
                                                       * (double) ColorStage::kDcBlockerHz / sampleRate);
 
@@ -179,9 +173,9 @@ namespace edge
         EdgeUnit<Side::low>  lo;
         EdgeUnit<Side::high> hi;
 
-        lo.setShape (sampleRate, shape.lowHz,  shape.lowDepthDb,  shape.lowCurve01,
+        lo.setShape (0, sampleRate, shape.lowHz,  shape.lowDepthDb,  shape.lowCurve01,
                      shape.lowRes01,  shape.lowShoulderDb);
-        hi.setShape (sampleRate, shape.highHz, shape.highDepthDb, shape.highCurve01,
+        hi.setShape (0, sampleRate, shape.highHz, shape.highDepthDb, shape.highCurve01,
                      shape.highRes01, shape.highShoulderDb);
 
         const auto h = lo.responseAt (freqHz, sampleRate) * hi.responseAt (freqHz, sampleRate)
@@ -196,44 +190,60 @@ namespace edge
 
     // -------------------------------------------------------------------------
 
+    void EdgeEngine::DisplayShape::store (const Resolved& r) noexcept
+    {
+        constexpr auto o = std::memory_order_relaxed;
+        lowHz.store (r.lowHz, o);            lowDepthDb.store (r.lowDepthDb, o);
+        lowCurve.store (r.lowCurve01, o);    lowRes.store (r.lowRes01, o);
+        lowShoulderDb.store (r.lowShoulderDb, o);
+        highHz.store (r.highHz, o);          highDepthDb.store (r.highDepthDb, o);
+        highCurve.store (r.highCurve01, o);  highRes.store (r.highRes01, o);
+        highShoulderDb.store (r.highShoulderDb, o);
+    }
+
+    void EdgeEngine::DisplayShape::load (EdgeShape& s) const noexcept
+    {
+        constexpr auto o = std::memory_order_relaxed;
+        s.lowHz = lowHz.load (o);              s.lowDepthDb = lowDepthDb.load (o);
+        s.lowCurve01 = lowCurve.load (o);      s.lowRes01 = lowRes.load (o);
+        s.lowShoulderDb = lowShoulderDb.load (o);
+        s.highHz = highHz.load (o);            s.highDepthDb = highDepthDb.load (o);
+        s.highCurve01 = highCurve.load (o);    s.highRes01 = highRes.load (o);
+        s.highShoulderDb = highShoulderDb.load (o);
+    }
+
     void EdgeEngine::prepare (double sampleRate, int maxBlockSize, int numChannels)
     {
         rate = sampleRate;
         maxBlock = juce::jmax (1, maxBlockSize);
-        channels = juce::jlimit (1, 2, numChannels);
+        channels = juce::jlimit (1, maxChannels, numChannels);
 
         colour.prepare (sampleRate, maxBlock, channels);
+        follower.prepare (sampleRate);
 
-        //  Cutoff is smoothed in LOG frequency, so a sweep is perceptually even
-        //  and a jump from 20 Hz to 20 kHz does not spend most of its time in
-        //  the top octave.
         const double freqSmooth = 0.012;
         logLowFreq.reset (sampleRate, freqSmooth);
         logHighFreq.reset (sampleRate, freqSmooth);
 
         const double shapeSmooth = 0.020;
-        lowDepthDb.reset (sampleRate, shapeSmooth);
-        highDepthDb.reset (sampleRate, shapeSmooth);
-        lowCurve.reset (sampleRate, shapeSmooth);
-        highCurve.reset (sampleRate, shapeSmooth);
-        lowRes.reset (sampleRate, shapeSmooth);
-        highRes.reset (sampleRate, shapeSmooth);
-        lowShoulder.reset (sampleRate, shapeSmooth);
-        highShoulder.reset (sampleRate, shapeSmooth);
-        focusSmoothed.reset (sampleRate, shapeSmooth);
+        for (auto* v : { &lowDepth, &highDepth, &lowCurve, &highCurve,
+                         &lowShoulder, &highShoulder, &lowRes, &highRes,
+                         &edgeBase, &followAmount, &spreadOctaves, &bite })
+            v->reset (sampleRate, shapeSmooth);
 
-        //  The colour follows the filter slowly enough that a fast Depth ramp
-        //  fades it in rather than stepping it.
+        //  MODE is a step. 30 ms of ramp on an edge's enable is what turns a
+        //  discrete switch into a click-free transition, and it is the only
+        //  thing MODE does.
+        lowEnable.reset (sampleRate, 0.050);
+        highEnable.reset (sampleRate, 0.050);
+
         colourDrive.reset (sampleRate, 0.030);
         outputGain.reset (sampleRate, 0.020);
         bypassFade.reset (sampleRate, 0.010);
 
         dryBuffer.setSize (channels, maxBlock);
-
-        const int delaySamples = (int) std::lround (colour.getLatencySamples());
-        dryDelay.setMaximumDelayInSamples (juce::jmax (1, delaySamples) + 4);
-        dryDelay.prepare ({ sampleRate, (juce::uint32) maxBlock, (juce::uint32) channels });
-        dryDelay.setDelay ((float) delaySamples);
+        analyzerBuffer.assign ((size_t) kAnalyzerFifoSize, 0.0f);
+        analyzerFifo.reset();
 
         reset();
     }
@@ -243,30 +253,41 @@ namespace edge
         lowEdge.reset();
         highEdge.reset();
         colour.reset();
-        dryDelay.reset();
+        follower.reset();
         dryBuffer.clear();
+        analyzerFifo.reset();
     }
 
     void EdgeEngine::setSettings (const Settings& s) noexcept
     {
-        float effLow = s.lowFreqHz, effHigh = s.highFreqHz;
-        resolveFrequencies (s.lowFreqHz, s.highFreqHz, s.focus, effLow, effHigh);
+        float lowHz = s.lowFreqHz, highHz = s.highFreqHz;
+        resolveSeparation (lowHz, highHz);
 
-        //  Focus is folded into the target frequencies here rather than being
-        //  smoothed separately, so the two controls cannot fight each other's
-        //  smoothers and produce a wobble.
-        logLowFreq.setTargetValue (std::log2 (effLow));
-        logHighFreq.setTargetValue (std::log2 (effHigh));
+        logLowFreq.setTargetValue (std::log2 (lowHz));
+        logHighFreq.setTargetValue (std::log2 (highHz));
 
-        lowDepthDb.setTargetValue (depthPercentToDb (s.lowDepthPercent));
-        highDepthDb.setTargetValue (depthPercentToDb (s.highDepthPercent));
+        lowDepth.setTargetValue (s.lowDepthPercent);
+        highDepth.setTargetValue (s.highDepthPercent);
         lowCurve.setTargetValue (s.lowCurvePercent * 0.01f);
         highCurve.setTargetValue (s.highCurvePercent * 0.01f);
+        lowShoulder.setTargetValue (s.lowShoulderPercent);
+        highShoulder.setTargetValue (s.highShoulderPercent);
         lowRes.setTargetValue (s.lowResPercent * 0.01f);
         highRes.setTargetValue (s.highResPercent * 0.01f);
-        lowShoulder.setTargetValue (shoulderPercentToDb (s.lowShoulderPercent));
-        highShoulder.setTargetValue (shoulderPercentToDb (s.highShoulderPercent));
-        focusSmoothed.setTargetValue (s.focus);
+
+        //  MODE: an inactive edge is driven to a bit-exact wire, not switched
+        //  out. LP keeps the HIGH edge (the low-pass target); HP keeps the LOW.
+        lowEnable.setTargetValue (s.mode == (int) Mode::lowPass ? 0.0f : 1.0f);
+        highEnable.setTargetValue (s.mode == (int) Mode::highPass ? 0.0f : 1.0f);
+
+        edgeBase.setTargetValue (juce::jlimit (0.0f, 1.0f, s.edgePercent * 0.01f));
+        followAmount.setTargetValue (juce::jlimit (-1.0f, 1.0f, s.followPercent * 0.01f));
+        spreadOctaves.setTargetValue (juce::jlimit (-1.0f, 1.0f, s.spreadPercent * 0.01f)
+                                          * (kSpreadMaxSemitones * 0.5f / 12.0f));
+        bite.setTargetValue (juce::jlimit (0.0f, 100.0f, s.bitePercent));
+
+        follower.setSensitivity (s.followSensDb);
+        follower.setTimes (s.followAttackMs, s.followReleaseMs);
 
         pendingOutputDb = s.outputDb;
         bypassFade.setTargetValue (s.bypass ? 1.0f : 0.0f);
@@ -276,25 +297,132 @@ namespace edge
     {
         setSettings (s);
 
-        logLowFreq.setCurrentAndTargetValue (logLowFreq.getTargetValue());
-        logHighFreq.setCurrentAndTargetValue (logHighFreq.getTargetValue());
-        lowDepthDb.setCurrentAndTargetValue (lowDepthDb.getTargetValue());
-        highDepthDb.setCurrentAndTargetValue (highDepthDb.getTargetValue());
-        lowCurve.setCurrentAndTargetValue (lowCurve.getTargetValue());
-        highCurve.setCurrentAndTargetValue (highCurve.getTargetValue());
-        lowRes.setCurrentAndTargetValue (lowRes.getTargetValue());
-        highRes.setCurrentAndTargetValue (highRes.getTargetValue());
-        lowShoulder.setCurrentAndTargetValue (lowShoulder.getTargetValue());
-        highShoulder.setCurrentAndTargetValue (highShoulder.getTargetValue());
-        focusSmoothed.setCurrentAndTargetValue (focusSmoothed.getTargetValue());
-        bypassFade.setCurrentAndTargetValue (bypassFade.getTargetValue());
+        for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
+                         &lowCurve, &highCurve, &lowShoulder, &highShoulder,
+                         &lowRes, &highRes, &lowEnable, &highEnable,
+                         &edgeBase, &followAmount, &spreadOctaves, &bite, &bypassFade })
+            v->setCurrentAndTargetValue (v->getTargetValue());
 
-        applyChunkShape (0);
+        applyChunkShape (0, edgeBase.getCurrentValue());
 
         colourDrive.setCurrentAndTargetValue (colourDrive.getTargetValue());
         colour.setDrive (colourDrive.getCurrentValue());
         updateOutputTarget();
         outputGain.setCurrentAndTargetValue (outputGain.getTargetValue());
+    }
+
+    //  The EDGE macro. Everything an edge does is a journey from "open" to its
+    //  target, and this is the only place that journey is defined.
+    //
+    //  Frequency travels GEOMETRICALLY (linear in log2) from the range boundary
+    //  to the target, so the movement is perceptually even rather than spending
+    //  most of its travel in the top octave.
+    //
+    //  Depth travels in the CONTROL domain, not in dB. Interpolating the dB
+    //  linearly would put a -120 dB target at -12 dB by EDGE 10 %, which is
+    //  already a deep cut; interpolating the percentage keeps EDGE on the same
+    //  perceptual taper the Depth knob uses, and it is still continuous.
+    EdgeEngine::Resolved EdgeEngine::resolveFor (float edge01, float octaveOffset) const noexcept
+    {
+        const float e = juce::jlimit (0.0f, 1.0f, edge01);
+
+        const float lowOn  = lowEnable.getCurrentValue();
+        const float highOn = highEnable.getCurrentValue();
+
+        const float lowE  = e * lowOn;
+        const float highE = e * highOn;
+
+        const float logLowOrigin  = std::log2 (kLowFreqMin);
+        const float logHighOrigin = std::log2 (kHighFreqMax);
+
+        //  The FREQUENCY travel follows EDGE alone, not EDGE x enable.
+        //
+        //  Letting MODE drag the corner back to its origin as well meant that
+        //  switching an edge off swept its cutoff across the spectrum in the
+        //  30 ms the enable took - a coefficient sweep that produced -43 dBFS
+        //  of discontinuity for no benefit, since an edge whose gains are 1 is
+        //  a bit-exact wire and its corner is unobservable. MODE now only
+        //  drives the gains.
+        //
+        //  SPREAD shifts BOTH corners of a channel by the same number of
+        //  octaves, which is exactly what preserves the band's width.
+        const float logLow  = (logLowOrigin  + e * (logLowFreq.getCurrentValue()  - logLowOrigin))
+                            + octaveOffset;
+        const float logHigh = (logHighOrigin + e * (logHighFreq.getCurrentValue() - logHighOrigin))
+                            + octaveOffset;
+
+        Resolved r;
+        r.lowHz  = juce::jlimit (kLowFreqMin,  kLowFreqMax,  std::exp2 (logLow));
+        r.highHz = juce::jlimit (kHighFreqMin, kHighFreqMax, std::exp2 (logHigh));
+        resolveSeparation (r.lowHz, r.highHz);
+
+        r.lowDepthDb     = depthPercentToDb (lowE  * lowDepth.getCurrentValue());
+        r.highDepthDb    = depthPercentToDb (highE * highDepth.getCurrentValue());
+        r.lowShoulderDb  = shoulderPercentToDb (lowE  * lowShoulder.getCurrentValue());
+        r.highShoulderDb = shoulderPercentToDb (highE * highShoulder.getCurrentValue());
+        r.lowRes01       = lowE  * lowRes.getCurrentValue();
+        r.highRes01      = highE * highRes.getCurrentValue();
+
+        //  Curve is a SHAPE, not an amount, so EDGE does not interpolate it.
+        //  There is no meaningful "curve of an inactive filter" to travel from,
+        //  and at EDGE 0 the depth is 0 so the curve is unobservable anyway.
+        r.lowCurve01  = lowCurve.getCurrentValue();
+        r.highCurve01 = highCurve.getCurrentValue();
+
+        return r;
+    }
+
+    void EdgeEngine::applyChunkShape (int chunkLength, float liveEdge01) noexcept
+    {
+        if (chunkLength > 0)
+        {
+            for (auto* v : { &logLowFreq, &logHighFreq, &lowDepth, &highDepth,
+                             &lowCurve, &highCurve, &lowShoulder, &highShoulder,
+                             &lowRes, &highRes, &lowEnable, &highEnable,
+                             &edgeBase, &followAmount, &spreadOctaves, &bite })
+                v->skip (chunkLength);
+        }
+
+        const float spread = spreadOctaves.getCurrentValue();
+
+        for (int c = 0; c < channels; ++c)
+        {
+            //  Left goes down, right goes up. With one channel there is no
+            //  spread to apply.
+            const float offset = channels < 2 ? 0.0f
+                                              : (c == 0 ? -spread : spread);
+
+            const auto r = resolveFor (liveEdge01, offset);
+
+            lowEdge.setShape  (c, rate, r.lowHz,  r.lowDepthDb,  r.lowCurve01,
+                               r.lowRes01,  r.lowShoulderDb,  chunkLength);
+            highEdge.setShape (c, rate, r.highHz, r.highDepthDb, r.highCurve01,
+                               r.highRes01, r.highShoulderDb, chunkLength);
+
+            dispChannel[c].store (r);
+        }
+
+        //  The ghost curve: what EDGE at 100 % would do, without spread.
+        dispTarget.store (resolveFor (1.0f, 0.0f));
+
+        //  Hidden colour, from the FILTER's activity and BITE. Channel 0's
+        //  activity: SPREAD moves frequencies, not gains, so both channels have
+        //  the same activity by construction.
+        const float activity = juce::jmax (lowEdge.activity (0), highEdge.activity (0));
+        colourDrive.setTargetValue (colourDrivePercent (bite.getCurrentValue(), activity));
+
+        const auto shape0 = getDisplayShape (0);
+        colour.setSpectrum (shape0.lowHz, shape0.highHz);
+
+        //  Static make-up for Resonance only. Self-gating: at Depth 0 section 0
+        //  is a wire, resonanceMakeup() is 0, and this is exactly 0 dB.
+        resonanceTrimDb = -kResonanceTrimDb
+                        * juce::jmax (lowEdge.resonanceMakeup (0), highEdge.resonanceMakeup (0));
+
+        lastResTrimDb.store (resonanceTrimDb, std::memory_order_relaxed);
+        dispLiveEdge.store (liveEdge01, std::memory_order_relaxed);
+        dispSpreadActive.store (std::abs (spread) > 1.0e-4f, std::memory_order_relaxed);
+        dispOutputDb.store (pendingOutputDb, std::memory_order_relaxed);
     }
 
     void EdgeEngine::updateOutputTarget() noexcept
@@ -306,59 +434,47 @@ namespace edge
         dispColourGain.store (colour.getMeasuredGain(), std::memory_order_relaxed);
     }
 
-    //  Coefficient work for one automation chunk. `chunkLength` samples are
-    //  consumed from every shape smoother; pass 0 to evaluate without advancing.
-    void EdgeEngine::applyChunkShape (int chunkLength) noexcept
+    void EdgeEngine::pushAnalyzer (const juce::AudioBuffer<float>& buffer, int n) noexcept
     {
-        auto take = [chunkLength] (juce::SmoothedValue<float>& v)
+        if (! analyzerEnabled.load (std::memory_order_relaxed))
+            return;
+
+        //  Never blocks and never grows: if the editor is not draining fast
+        //  enough the oldest samples are simply dropped.
+        const auto scope = analyzerFifo.write (n);
+        const int chans = juce::jmin (channels, buffer.getNumChannels());
+
+        auto fill = [&] (int startIndex, int size, int offset)
         {
-            return chunkLength > 0 ? v.skip (chunkLength) : v.getCurrentValue();
+            for (int i = 0; i < size; ++i)
+            {
+                float mono = 0.0f;
+                for (int c = 0; c < chans; ++c)
+                    mono += buffer.getReadPointer (c)[offset + i];
+
+                analyzerBuffer[(size_t) (startIndex + i)] = mono / (float) juce::jmax (1, chans);
+            }
         };
 
-        const float lowHz   = std::exp2 (take (logLowFreq));
-        const float highHz  = std::exp2 (take (logHighFreq));
-        const float lowDb   = take (lowDepthDb);
-        const float highDb  = take (highDepthDb);
-        const float lowC    = take (lowCurve);
-        const float highC   = take (highCurve);
-        const float lowR    = take (lowRes);
-        const float highR   = take (highRes);
-        const float lowSh   = take (lowShoulder);
-        const float highSh  = take (highShoulder);
-        take (focusSmoothed);
+        fill (scope.startIndex1, scope.blockSize1, 0);
+        fill (scope.startIndex2, scope.blockSize2, scope.blockSize1);
+    }
 
-        lowEdge.setShape (rate, lowHz, lowDb, lowC, lowR, lowSh);
-        highEdge.setShape (rate, highHz, highDb, highC, highR, highSh);
+    int EdgeEngine::readAnalyzerSamples (float* dest, int maxSamples) noexcept
+    {
+        const int ready = juce::jmin (maxSamples, analyzerFifo.getNumReady());
+        if (ready <= 0)
+            return 0;
 
-        //  Hidden colour: driven by what the filter is doing, nothing else.
-        const float drive = colourDrivePercent (lowEdge.activity(), highEdge.activity(),
-                                                lowEdge.resonanceMakeup(),
-                                                highEdge.resonanceMakeup());
-        colourDrive.setTargetValue (drive);
-        colour.setSpectrum (lowHz, highHz);
+        const auto scope = analyzerFifo.read (ready);
 
-        //  Static make-up for Resonance only. Self-gating: at Depth 0 section 0
-        //  is a wire, resonanceMakeup() is 0, and this is exactly 0 dB - so the
-        //  neutral state is still bit-exact.
-        resonanceTrimDb = -kResonanceTrimDb
-                        * juce::jmax (lowEdge.resonanceMakeup(), highEdge.resonanceMakeup());
+        for (int i = 0; i < scope.blockSize1; ++i)
+            dest[i] = analyzerBuffer[(size_t) (scope.startIndex1 + i)];
 
-        lastResTrimDb.store (resonanceTrimDb, std::memory_order_relaxed);
+        for (int i = 0; i < scope.blockSize2; ++i)
+            dest[scope.blockSize1 + i] = analyzerBuffer[(size_t) (scope.startIndex2 + i)];
 
-        dispLowHz.store (lowHz, std::memory_order_relaxed);
-        dispLowDepthDb.store (lowDb, std::memory_order_relaxed);
-        dispLowCurve.store (lowC, std::memory_order_relaxed);
-        dispLowRes.store (lowR, std::memory_order_relaxed);
-        dispHighHz.store (highHz, std::memory_order_relaxed);
-        dispHighDepthDb.store (highDb, std::memory_order_relaxed);
-        dispHighCurve.store (highC, std::memory_order_relaxed);
-        dispHighRes.store (highR, std::memory_order_relaxed);
-        dispLowShoulderDb.store (lowSh, std::memory_order_relaxed);
-        dispHighShoulderDb.store (highSh, std::memory_order_relaxed);
-        //  The USER's Output only. magnitudeDb() derives the resonance trim
-        //  from the same resonance values, so storing the summed number here
-        //  would count it twice in the drawn curve.
-        dispOutputDb.store (pendingOutputDb, std::memory_order_relaxed);
+        return ready;
     }
 
     void EdgeEngine::process (juce::AudioBuffer<float>& buffer) noexcept
@@ -371,15 +487,14 @@ namespace edge
 
         //  Hosts are supposed to honour the block size they announced, and not
         //  all of them do. dryBuffer was sized for it, so a bigger block would
-        //  be a buffer overrun. Slice instead of resizing: resizing here would
-        //  allocate on the audio thread.
+        //  be a buffer overrun. Slice instead of resizing.
         if (n > maxBlock)
         {
             for (int pos = 0; pos < n; pos += maxBlock)
             {
                 const int slice = juce::jmin (maxBlock, n - pos);
-                float* slicePtrs[2] = { buffer.getWritePointer (0) + pos,
-                                        chans > 1 ? buffer.getWritePointer (1) + pos : nullptr };
+                float* slicePtrs[maxChannels] = { buffer.getWritePointer (0) + pos,
+                                                  chans > 1 ? buffer.getWritePointer (1) + pos : nullptr };
                 juce::AudioBuffer<float> view (slicePtrs, chans, slice);
                 process (view);
             }
@@ -387,35 +502,39 @@ namespace edge
             return;
         }
 
-        //  Latency-matched dry, for the bypass fade. When the colour stage runs
-        //  at 1x this delay is 0 and the dry path is the input itself.
+        //  The dry copy is the bypass path AND the follower's detector input.
+        //  Latency is zero, so it is the input itself.
         for (int c = 0; c < chans; ++c)
-        {
-            const auto* src = buffer.getReadPointer (c);
-            auto* dst = dryBuffer.getWritePointer (c);
+            dryBuffer.copyFrom (c, 0, buffer, c, 0, n);
 
-            for (int i = 0; i < n; ++i)
-            {
-                dryDelay.pushSample (c, src[i]);
-                dst[i] = dryDelay.popSample (c);
-            }
-        }
-
-        float* channelPtrs[2] = { buffer.getWritePointer (0),
-                                  chans > 1 ? buffer.getWritePointer (1) : nullptr };
+        float* channelPtrs[maxChannels] = { buffer.getWritePointer (0),
+                                            chans > 1 ? buffer.getWritePointer (1) : nullptr };
 
         for (int pos = 0; pos < n; )
         {
             const int chunk = juce::jmin (kAutomationChunk, n - pos);
 
-            applyChunkShape (chunk);
+            //  FOLLOW. The detector consumes every sample of the chunk's INPUT,
+            //  then its value drives that chunk's coefficients.
+            const float* detectPtrs[maxChannels] =
+            {
+                dryBuffer.getReadPointer (0) + pos,
+                chans > 1 ? dryBuffer.getReadPointer (1) + pos : nullptr
+            };
+
+            const float env = follower.processBlock (detectPtrs, chans, chunk);
+            const float liveEdge = applyFollow (edgeBase.getCurrentValue(),
+                                                followAmount.getCurrentValue(), env);
+
+            dispFollowEnv.store (env, std::memory_order_relaxed);
+
+            applyChunkShape (chunk, liveEdge);
             colour.setDrive (colourDrive.skip (chunk));
             updateOutputTarget();
 
-            float* chunkPtrs[2] = { channelPtrs[0] + pos,
-                                    channelPtrs[1] != nullptr ? channelPtrs[1] + pos : nullptr };
+            float* chunkPtrs[maxChannels] = { channelPtrs[0] + pos,
+                                              channelPtrs[1] != nullptr ? channelPtrs[1] + pos : nullptr };
 
-            //  Non-owning view; no allocation.
             juce::AudioBuffer<float> view (chunkPtrs, chans, chunk);
 
             if (placement == ColourPlacement::pre)
@@ -432,8 +551,7 @@ namespace edge
 
         lastColourDrive.store (colourDrive.getCurrentValue(), std::memory_order_relaxed);
 
-        //  Output trim and the bypass fade, per sample. Samples outer so both
-        //  channels see identical gains and every smoother steps exactly once.
+        //  Output trim and the bypass fade, per sample.
         for (int i = 0; i < n; ++i)
         {
             const float g = outputGain.getNextValue();
@@ -446,32 +564,36 @@ namespace edge
                 const float wet = d[i] * g;
 
                 //  The two endpoints are assigned, not interpolated to. Writing
-                //  wet + 1.0f*(dry-wet) leaves a rounding residue of about
-                //  6e-8, which is enough to stop a bypassed instance from
-                //  nulling against the source.
+                //  wet + 1.0f*(dry-wet) leaves a rounding residue of about 6e-8,
+                //  which is enough to stop a bypassed instance nulling.
                 d[i] = b >= 1.0f ? dry
                      : b <= 0.0f ? wet
                                  : wet + b * (dry - wet);
             }
         }
+
+        pushAnalyzer (buffer, n);
     }
 
-    EdgeShape EdgeEngine::getDisplayShape() const noexcept
+    EdgeShape EdgeEngine::getDisplayShape (int channel) const noexcept
     {
         EdgeShape s;
-        s.lowHz       = dispLowHz.load (std::memory_order_relaxed);
-        s.lowDepthDb  = dispLowDepthDb.load (std::memory_order_relaxed);
-        s.lowCurve01  = dispLowCurve.load (std::memory_order_relaxed);
-        s.lowRes01    = dispLowRes.load (std::memory_order_relaxed);
-        s.highHz      = dispHighHz.load (std::memory_order_relaxed);
-        s.highDepthDb = dispHighDepthDb.load (std::memory_order_relaxed);
-        s.highCurve01 = dispHighCurve.load (std::memory_order_relaxed);
-        s.highRes01   = dispHighRes.load (std::memory_order_relaxed);
-        s.outputDb    = dispOutputDb.load (std::memory_order_relaxed);
-        s.lowShoulderDb  = dispLowShoulderDb.load (std::memory_order_relaxed);
-        s.highShoulderDb = dispHighShoulderDb.load (std::memory_order_relaxed);
+        dispChannel[juce::jlimit (0, maxChannels - 1, channel)].load (s);
+        s.outputDb     = dispOutputDb.load (std::memory_order_relaxed);
         s.colourEngage = dispColourEngage.load (std::memory_order_relaxed);
         s.colourGain   = dispColourGain.load (std::memory_order_relaxed);
+        return s;
+    }
+
+    EdgeShape EdgeEngine::getDisplayShape() const noexcept { return getDisplayShape (0); }
+
+    EdgeShape EdgeEngine::getTargetShape() const noexcept
+    {
+        EdgeShape s;
+        dispTarget.load (s);
+        s.outputDb = dispOutputDb.load (std::memory_order_relaxed);
+        //  The ghost curve is the FILTER's target, so it deliberately carries
+        //  no colour contribution.
         return s;
     }
 }

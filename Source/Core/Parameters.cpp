@@ -27,15 +27,11 @@ namespace edge
             if (db <= kDepthFloorDb + 0.5f)
                 return "CUT";
 
-            return juce::String (db, db > -10.0f ? 1 : 1) + " dB";
+            return juce::String (db, 1) + " dB";
         }
 
         //  Exactly what the display's slope combo shows, from the same table.
-        //  The knob used to say "NEUTRAL" where the combo said "12 dB/oct" -
-        //  two names for one setting, on screen at the same time.
         juce::String curveText (float percent, int) { return slopeTextFor (percent); }
-
-        juce::String percentText (float v, int) { return juce::String (v, 0) + " %"; }
 
         juce::String shoulderText (float percent, int)
         {
@@ -44,15 +40,23 @@ namespace edge
 
             return juce::String (shoulderPercentToDb (percent), 1) + " dB";
         }
+
+        juce::String percentText (float v, int) { return juce::String (v, 0) + " %"; }
         juce::String dbText (float v, int)      { return juce::String (v, 1) + " dB"; }
 
-        juce::String focusText (float v, int)
+        juce::String signedPercentText (float v, int)
         {
             if (std::abs (v) < 0.5f)
                 return "0";
 
-            return (v > 0.0f ? "+" : "") + juce::String (v, 0)
-                 + (v > 0.0f ? "  narrow" : "  wide");
+            return (v > 0.0f ? "+" : "") + juce::String (v, 0) + " %";
+        }
+
+        juce::String msText (float v, int)
+        {
+            if (v < 10.0f)  return juce::String (v, 2) + " ms";
+            if (v < 100.0f) return juce::String (v, 1) + " ms";
+            return juce::String (v, 0) + " ms";
         }
     }
 
@@ -79,42 +83,55 @@ namespace edge
                 attr = attr.withValueFromStringFunction (std::move (fromText));
 
             layout.add (std::make_unique<juce::AudioParameterFloat> (
-                juce::ParameterID { id, 1 }, name, range, def, attr));
+                juce::ParameterID { id, kStateVersion }, name, range, def, attr));
         };
 
-        //  --- LOW EDGE --------------------------------------------------------
-        //  Centre of the knob at 120 Hz: half the control lives below it, which
-        //  is where a bass-end filter is actually used.
+        //  --- LOW target ------------------------------------------------------
+        //  Knob centre at 120 Hz: half the control lives below it, which is
+        //  where a bass-end filter is actually used.
         addFloat (param::lowFreq, "Low Freq",
-                  frequencyRange (kLowFreqMin, kLowFreqMax, 120.0f), kLowFreqMin,
-                  hzText, hzValue);
-        addFloat (param::lowDepth, "Low Depth",  { 0.0f, 100.0f }, 0.0f,  depthText);
-        addFloat (param::lowCurve, "Low Curve",  { 0.0f, 100.0f }, 50.0f, curveText);
-        addFloat (param::lowRes,   "Low Reso",   { 0.0f, 100.0f }, 0.0f,  percentText);
+                  frequencyRange (kLowFreqMin, kLowFreqMax, 120.0f), 250.0f, hzText, hzValue);
+        //  Depth defaults to CUT on both sides so that selecting BAND and
+        //  opening EDGE immediately produces a real band-pass.
+        addFloat (param::lowDepth,    "Low Depth",    { 0.0f, 100.0f }, 100.0f, depthText);
+        addFloat (param::lowCurve,    "Low Curve",    { 0.0f, 100.0f },  75.0f, curveText);
+        addFloat (param::lowShoulder, "Low Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText);
+        addFloat (param::lowReso,     "Low Reso",     { 0.0f, 100.0f },   0.0f, percentText);
 
-        //  --- HIGH EDGE -------------------------------------------------------
+        //  --- HIGH target -----------------------------------------------------
         addFloat (param::highFreq, "High Freq",
-                  frequencyRange (kHighFreqMin, kHighFreqMax, 3000.0f), kHighFreqMax,
-                  hzText, hzValue);
-        addFloat (param::highDepth, "High Depth", { 0.0f, 100.0f }, 0.0f,  depthText);
-        addFloat (param::highCurve, "High Curve", { 0.0f, 100.0f }, 50.0f, curveText);
-        addFloat (param::highRes,   "High Reso",  { 0.0f, 100.0f }, 0.0f,  percentText);
+                  frequencyRange (kHighFreqMin, kHighFreqMax, 3000.0f), 6000.0f, hzText, hzValue);
+        addFloat (param::highDepth,    "High Depth",    { 0.0f, 100.0f }, 100.0f, depthText);
+        addFloat (param::highCurve,    "High Curve",    { 0.0f, 100.0f },  75.0f, curveText);
+        addFloat (param::highShoulder, "High Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText);
+        addFloat (param::highReso,     "High Reso",     { 0.0f, 100.0f },   0.0f, percentText);
 
-        //  --- SHARED ----------------------------------------------------------
-        layout.add (std::make_unique<juce::AudioParameterBool> (
-            juce::ParameterID { param::link, 1 }, "Link", false));
+        //  --- performance -----------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { param::mode, kStateVersion }, "Mode",
+            juce::StringArray { "LP", "BAND", "HP" }, (int) Mode::band));
 
-        addFloat (param::focus,  "Focus",  { -100.0f, 100.0f }, 0.0f, focusText);
+        addFloat (param::edge,   "Edge",   { 0.0f, 100.0f }, 0.0f, percentText);
+        addFloat (param::follow, "Follow", { -100.0f, 100.0f }, 0.0f, signedPercentText);
+        addFloat (param::spread, "Spread", { -100.0f, 100.0f }, 0.0f, signedPercentText);
+        addFloat (param::bite,   "Bite",   { 0.0f, 100.0f }, 35.0f, percentText);
         addFloat (param::output, "Output", { -24.0f, 24.0f, 0.0f }, 0.0f, dbText);
 
         layout.add (std::make_unique<juce::AudioParameterBool> (
-            juce::ParameterID { param::bypass, 1 }, "Bypass", false));
+            juce::ParameterID { param::bypass, kStateVersion }, "Bypass", false));
 
-        //  --- APPENDED after v0.1 ---------------------------------------------
-        //  New parameters go at the end so an existing project's automation
-        //  lanes keep pointing at the same controls.
-        addFloat (param::lowShoulder,  "Low Shoulder",  { 0.0f, 100.0f }, 0.0f, shoulderText);
-        addFloat (param::highShoulder, "High Shoulder", { 0.0f, 100.0f }, 0.0f, shoulderText);
+        //  --- follow setup, inside SHAPE --------------------------------------
+        addFloat (param::followSens, "Follow Sens", { -60.0f, 0.0f }, -12.0f, dbText);
+
+        {
+            juce::NormalisableRange<float> atk { 0.1f, 200.0f };
+            atk.setSkewForCentre (10.0f);
+            addFloat (param::followAttack, "Follow Attack", atk, 10.0f, msText);
+
+            juce::NormalisableRange<float> rel { 5.0f, 2000.0f };
+            rel.setSkewForCentre (150.0f);
+            addFloat (param::followRelease, "Follow Release", rel, 150.0f, msText);
+        }
 
         return layout;
     }
@@ -128,19 +145,29 @@ namespace edge
         };
 
         EdgeEngine::Settings s;
-        s.lowFreqHz        = get (param::lowFreq);
-        s.lowDepthPercent  = get (param::lowDepth);
-        s.lowCurvePercent  = get (param::lowCurve);
-        s.lowResPercent    = get (param::lowRes);
-        s.highFreqHz       = get (param::highFreq);
-        s.highDepthPercent = get (param::highDepth);
-        s.highCurvePercent = get (param::highCurve);
-        s.highResPercent   = get (param::highRes);
+        s.lowFreqHz           = get (param::lowFreq);
+        s.lowDepthPercent     = get (param::lowDepth);
+        s.lowCurvePercent     = get (param::lowCurve);
         s.lowShoulderPercent  = get (param::lowShoulder);
+        s.lowResPercent       = get (param::lowReso);
+
+        s.highFreqHz          = get (param::highFreq);
+        s.highDepthPercent    = get (param::highDepth);
+        s.highCurvePercent    = get (param::highCurve);
         s.highShoulderPercent = get (param::highShoulder);
-        s.focus            = get (param::focus) * 0.01f;
-        s.outputDb         = get (param::output);
-        s.bypass           = get (param::bypass) > 0.5f;
+        s.highResPercent      = get (param::highReso);
+
+        s.mode          = (int) get (param::mode);
+        s.edgePercent   = get (param::edge);
+        s.followPercent = get (param::follow);
+        s.spreadPercent = get (param::spread);
+        s.bitePercent   = get (param::bite);
+        s.outputDb      = get (param::output);
+        s.bypass        = get (param::bypass) > 0.5f;
+
+        s.followSensDb    = get (param::followSens);
+        s.followAttackMs  = get (param::followAttack);
+        s.followReleaseMs = get (param::followRelease);
         return s;
     }
 }

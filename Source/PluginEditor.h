@@ -4,9 +4,11 @@
 
 #include "PluginProcessor.h"
 #include "Ui/CurveView.h"
+#include "Ui/ShapePanel.h"
 #include "Ui/Theme.h"
 
-class EdgeAudioProcessorEditor : public juce::AudioProcessorEditor
+class EdgeAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                 private juce::Timer
 {
 public:
     explicit EdgeAudioProcessorEditor (EdgeAudioProcessor&);
@@ -19,41 +21,47 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    //  A knob plus its caption, so the layout code never positions two things
-    //  that have to stay together.
-    struct Control
+    struct Knob
     {
         juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag,
                               juce::Slider::TextBoxBelow };
         juce::Label caption;
         std::unique_ptr<SliderAttachment> attachment;
 
-        void attach (juce::Component& parent, juce::AudioProcessorValueTreeState& state,
-                     const juce::String& id, const juce::String& text, juce::Colour accent);
+        void attach (juce::Component& parent, juce::AudioProcessorValueTreeState&,
+                     const juce::String& id, const juce::String& text,
+                     juce::Colour accent, bool bipolar);
         void setBounds (juce::Rectangle<int>);
     };
+
+    void timerCallback() override;
+    void setShapeOpen (bool shouldBeOpen);
+    void applyLink (bool lowMoved);
+    void installLinkCoupling();
+    int  controlStripHeight() const noexcept;
 
     EdgeAudioProcessor& edgeProcessor;
     edge::ui::Look look;
     edge::ui::CurveView curve;
+    edge::ui::ShapePanel shape;
 
-    juce::Label title, lowLabel, highLabel;
+    //  The one control the whole product is named after.
+    juce::Slider edgeKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
+    std::unique_ptr<SliderAttachment> edgeAttachment;
 
-    Control lowCurveCtl, lowShoulderCtl, lowResCtl,
-            highCurveCtl, highShoulderCtl, highResCtl,
-            focusCtl, outputCtl;
+    Knob followKnob, spreadKnob, biteKnob, outputKnob;
 
-    juce::ToggleButton linkButton { "LINK" }, bypassButton { "BYPASS" };
-    std::unique_ptr<ButtonAttachment> linkAttachment, bypassAttachment;
+    juce::TextButton lpButton { "LP" }, bandButton { "BAND" }, hpButton { "HP" };
+    std::unique_ptr<juce::ParameterAttachment> modeAttachment;
 
-    //  Link is a GESTURE coupling, applied when the user moves a handle or a
-    //  frequency in the editor. It is deliberately not applied to incoming host
-    //  automation: having the processor write parameters back to the host turns
-    //  one automated lane into two fighting ones.
-    int controlStripHeight() const noexcept;
-    void installLinkCoupling();
-    void applyLink (bool lowMoved);
+    juce::TextButton shapeButton { "SHAPE" };
+    juce::ToggleButton bypassButton { "BYPASS" };
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
 
+    juce::Rectangle<int> warmLampArea;
+    bool warmLit = false;
+
+    //  LINK is an editor gesture, not a parameter.
     float lastLowFreq = 0.0f, lastHighFreq = 0.0f;
     bool applyingLink = false;
     std::unique_ptr<juce::ParameterAttachment> freqWatcherLow, freqWatcherHigh;

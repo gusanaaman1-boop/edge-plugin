@@ -14,18 +14,29 @@ namespace edge::ui
     {
         g.setGradientFill ({ colour::shellTop, b.getX(), b.getY(),
                              colour::shellBottom, b.getX(), b.getBottom(), false });
-        g.fillRect (b);
+        g.fillRoundedRectangle (b, 10.0f);
 
-        //  A wide, very low-contrast lift behind the middle. It is what stops
-        //  the background reading as a flat rectangle without ever becoming a
-        //  visible shape of its own.
-        juce::ColourGradient glow (colour::shellGlow.withAlpha (0.55f),
-                                   b.getCentreX(), b.getY() + b.getHeight() * 0.28f,
-                                   colour::shellGlow.withAlpha (0.0f),
-                                   b.getCentreX(), b.getY() + b.getHeight() * 1.15f, true);
-        glow.isRadial = true;
-        g.setGradientFill (glow);
-        g.fillRect (b);
+        g.setColour (colour::panelEdge.withAlpha (0.6f));
+        g.drawRoundedRectangle (b.reduced (0.5f), 10.0f, 1.0f);
+        g.setColour (colour::panelHilite.withAlpha (0.28f));
+        g.drawLine (b.getX() + 12.0f, b.getY() + 1.0f, b.getRight() - 12.0f, b.getY() + 1.0f, 1.0f);
+    }
+
+    void paintWell (juce::Graphics& g, juce::Rectangle<float> b, float corner)
+    {
+        g.setGradientFill ({ colour::wellTop, b.getX(), b.getY(),
+                             colour::wellBottom, b.getX(), b.getBottom(), false });
+        g.fillRoundedRectangle (b, corner);
+
+        //  Inner bevel: a dark top edge and a faint bottom one make the well
+        //  read as cut into the chassis rather than laid on top of it.
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.drawLine (b.getX() + corner, b.getY() + 0.5f, b.getRight() - corner, b.getY() + 0.5f, 1.4f);
+        g.setColour (colour::panelHilite.withAlpha (0.22f));
+        g.drawLine (b.getX() + corner, b.getBottom() - 0.5f,
+                    b.getRight() - corner, b.getBottom() - 0.5f, 1.0f);
+        g.setColour (colour::panelEdge);
+        g.drawRoundedRectangle (b.reduced (0.5f), corner, 1.0f);
     }
 
     void dropShadow (juce::Graphics& g, juce::Rectangle<float> b, float corner, int depth)
@@ -33,9 +44,21 @@ namespace edge::ui
         for (int i = depth; i > 0; --i)
         {
             const float t = (float) i / (float) depth;
-            g.setColour (juce::Colours::black.withAlpha (0.10f * (1.0f - t)));
+            g.setColour (juce::Colours::black.withAlpha (0.13f * (1.0f - t)));
             g.drawRoundedRectangle (b.expanded ((float) i), corner + (float) i, 1.6f);
         }
+    }
+
+    void drawLamp (juce::Graphics& g, juce::Point<float> c, float r, juce::Colour col, bool lit)
+    {
+        if (lit)
+        {
+            g.setColour (col.withAlpha (0.28f));
+            g.fillEllipse (c.x - r * 2.6f, c.y - r * 2.6f, r * 5.2f, r * 5.2f);
+        }
+
+        g.setColour (lit ? col : col.withMultipliedBrightness (0.22f).withAlpha (0.55f));
+        g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
     }
 
     Look::Look()
@@ -45,9 +68,11 @@ namespace edge::ui
         setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
         setColour (juce::Label::textColourId, colour::text);
         setColour (juce::ToggleButton::textColourId, colour::text);
-        setColour (juce::TooltipWindow::backgroundColourId, colour::panelTop);
+        setColour (juce::TooltipWindow::backgroundColourId, colour::chassis);
         setColour (juce::TooltipWindow::textColourId, colour::text);
         setColour (juce::CaretComponent::caretColourId, colour::textBright);
+        setColour (juce::PopupMenu::backgroundColourId, colour::chassis);
+        setColour (juce::PopupMenu::textColourId, colour::text);
     }
 
     juce::Label* Look::createSliderTextBox (juce::Slider& s)
@@ -55,7 +80,7 @@ namespace edge::ui
         auto* l = juce::LookAndFeel_V4::createSliderTextBox (s);
         l->setJustificationType (juce::Justification::centred);
         l->setColour (juce::Label::outlineWhenEditingColourId, colour::textDim);
-        l->setFont (juce::FontOptions (11.0f));
+        l->setFont (juce::FontOptions (10.5f));
         return l;
     }
 
@@ -63,57 +88,115 @@ namespace edge::ui
                                  float pos, float startAngle, float endAngle,
                                  juce::Slider& s)
     {
-        const auto accent = juce::Colour ((juce::uint32) (int) s.getProperties()
+        const auto& props = s.getProperties();
+        const auto accent = juce::Colour ((juce::uint32) (int) props
                                               .getWithDefault ("accent", (int) colour::low.getARGB()));
+        const bool hasSecond = props.contains ("accent2");
+        const auto accent2 = hasSecond
+            ? juce::Colour ((juce::uint32) (int) props["accent2"]) : accent;
+        const bool bipolar = (bool) props.getWithDefault ("bipolar", false);
+        const bool ticks   = (bool) props.getWithDefault ("ticks", false);
 
-        auto bounds = juce::Rectangle<int> (x, y, w, h).toFloat().reduced (4.0f);
-        const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-        const float thickness = juce::jmax (2.5f, radius * 0.17f);
+        auto bounds = juce::Rectangle<int> (x, y, w, h).toFloat().reduced (3.0f);
+        const float outer = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const auto centre = bounds.getCentre();
-        const float arcR = radius - thickness;
-        const float angle = startAngle + pos * (endAngle - startAngle);
 
-        //  Recessed body, so the knob sits IN the panel rather than on it.
+        //  Tick ring, outside everything.
+        if (ticks)
         {
-            juce::ColourGradient body (colour::panelBottom, centre.x, centre.y - radius,
-                                       colour::shellBottom, centre.x, centre.y + radius, false);
-            g.setGradientFill (body);
-            g.fillEllipse (bounds.reduced (thickness * 0.4f));
-
-            g.setColour (colour::panelHilite.withAlpha (0.35f));
-            g.drawEllipse (bounds.reduced (thickness * 0.4f), 1.0f);
+            g.setColour (colour::textDim.withAlpha (0.45f));
+            for (int i = 0; i <= 20; ++i)
+            {
+                const float a = startAngle + (endAngle - startAngle) * (float) i / 20.0f;
+                const float r0 = outer - 0.5f, r1 = outer - 3.0f;
+                g.drawLine (centre.x + r0 * std::sin (a), centre.y - r0 * std::cos (a),
+                            centre.x + r1 * std::sin (a), centre.y - r1 * std::cos (a), 1.0f);
+            }
         }
 
-        juce::Path track;
-        track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
-        g.setColour (colour::gridStrong);
-        g.strokePath (track, { thickness, juce::PathStrokeType::curved,
-                               juce::PathStrokeType::rounded });
+        const float arcR = outer - (ticks ? 7.0f : 2.0f);
+        const float thickness = juce::jmax (2.5f, arcR * 0.13f);
+        const float bodyR = arcR - thickness * 1.6f;
+        const float angle = startAngle + pos * (endAngle - startAngle);
 
-        if (pos > 0.0015f)
+        //  Track.
+        {
+            juce::Path track;
+            track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
+            g.setColour (colour::gridStrong);
+            g.strokePath (track, { thickness, juce::PathStrokeType::curved,
+                                   juce::PathStrokeType::rounded });
+        }
+
+        //  Value arc. Bipolar controls grow out of 12 o'clock so that "no
+        //  modulation" reads as an empty ring rather than a half-full one.
+        const float from = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
+
+        if (std::abs (angle - from) > 0.004f)
         {
             juce::Path value;
-            value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, angle, true);
+            value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
+                                 juce::jmin (from, angle), juce::jmax (from, angle), true);
 
-            //  Two passes: a wide, faint one is the glow, the crisp one is the
-            //  value. Cheaper and better behaved than a real blur.
-            g.setColour (accent.withAlpha (0.22f));
-            g.strokePath (value, { thickness * 2.6f, juce::PathStrokeType::curved,
-                                   juce::PathStrokeType::rounded });
-            g.setColour (accent);
+            if (hasSecond)
+                g.setGradientFill ({ accent, centre.x - arcR, centre.y,
+                                     accent2, centre.x + arcR, centre.y, false });
+            else
+                g.setColour (accent.withAlpha (0.22f));
+
+            if (! hasSecond)
+            {
+                g.strokePath (value, { thickness * 2.4f, juce::PathStrokeType::curved,
+                                       juce::PathStrokeType::rounded });
+                g.setColour (accent);
+            }
+
             g.strokePath (value, { thickness, juce::PathStrokeType::curved,
                                    juce::PathStrokeType::rounded });
         }
 
-        //  Pointer: a short spoke that stops well short of the arc.
-        const float tipR = arcR - thickness * 1.1f;
-        const juce::Point<float> tip { centre.x + tipR * std::sin (angle),
-                                       centre.y - tipR * std::cos (angle) };
-        const juce::Point<float> root { centre.x + tipR * 0.30f * std::sin (angle),
-                                        centre.y - tipR * 0.30f * std::cos (angle) };
+        //  Body: a dark disc with a rim, lifted at the top.
+        {
+            juce::ColourGradient body (colour::shellTop, centre.x, centre.y - bodyR,
+                                       juce::Colour (0xff0b0c0d), centre.x, centre.y + bodyR, false);
+            g.setGradientFill (body);
+            g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.2f);
+            g.setColour (colour::panelHilite.withAlpha (0.30f));
+            g.drawEllipse (centre.x - bodyR + 1.2f, centre.y - bodyR + 1.2f,
+                           bodyR * 2.0f - 2.4f, bodyR * 2.0f - 2.4f, 1.0f);
+        }
+
+        //  Pointer: a bright spoke from the middle of the body to its rim.
+        const juce::Point<float> tip { centre.x + (bodyR - 3.0f) * std::sin (angle),
+                                       centre.y - (bodyR - 3.0f) * std::cos (angle) };
+        const juce::Point<float> root { centre.x + bodyR * 0.28f * std::sin (angle),
+                                        centre.y - bodyR * 0.28f * std::cos (angle) };
 
         g.setColour (colour::textBright);
-        g.drawLine ({ root, tip }, juce::jmax (1.6f, thickness * 0.5f));
+        g.drawLine ({ root, tip }, juce::jmax (1.5f, bodyR * 0.075f));
+
+        //  "live" is where the control actually IS after modulation, as opposed
+        //  to where the parameter is. FOLLOW moves EDGE without moving its
+        //  automation lane, and a knob that shows only the lane is lying about
+        //  what the filter is doing.
+        if (props.contains ("live"))
+        {
+            const float liveAngle = startAngle
+                + juce::jlimit (0.0f, 1.0f, (float) props["live"]) * (endAngle - startAngle);
+
+            if (std::abs (liveAngle - angle) > 0.01f)
+            {
+                const float r0 = arcR + thickness * 0.75f;
+                const float r1 = arcR - thickness * 0.75f;
+                g.setColour (colour::textBright.withAlpha (0.85f));
+                g.drawLine (centre.x + r0 * std::sin (liveAngle), centre.y - r0 * std::cos (liveAngle),
+                            centre.x + r1 * std::sin (liveAngle), centre.y - r1 * std::cos (liveAngle),
+                            2.0f);
+            }
+        }
     }
 
     void Look::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b,
@@ -123,32 +206,68 @@ namespace edge::ui
         const auto accent = juce::Colour ((juce::uint32) (int) b.getProperties()
                                               .getWithDefault ("accent", (int) colour::high.getARGB()));
         const bool on = b.getToggleState();
+        const bool lamp = (bool) b.getProperties().getWithDefault ("lamp", false);
         const float corner = 5.0f;
 
-        if (on)
-        {
-            g.setColour (accent.withAlpha (0.16f));
-            g.fillRoundedRectangle (r.expanded (2.0f), corner + 2.0f);
-        }
-
-        juce::ColourGradient face (on ? accent.withAlpha (0.30f) : colour::panelTop,
-                                   r.getX(), r.getY(),
-                                   on ? accent.withAlpha (0.14f) : colour::panelBottom,
-                                   r.getX(), r.getBottom(), false);
+        juce::ColourGradient face (colour::shellTop, r.getX(), r.getY(),
+                                   juce::Colour (0xff17181a), r.getX(), r.getBottom(), false);
         g.setGradientFill (face);
         g.fillRoundedRectangle (r, corner);
 
-        g.setColour (on ? accent : (highlighted ? colour::panelHilite : colour::panelEdge));
+        g.setColour (on && ! lamp ? accent : colour::panelEdge);
         g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
 
-        g.setColour (on ? colour::textBright : (highlighted ? colour::text : colour::textDim));
-        g.setFont (juce::FontOptions (r.getHeight() > 26.0f ? 12.0f : 11.0f).withStyle ("Bold"));
-        g.drawText (b.getButtonText(), r, juce::Justification::centred, false);
-    }
-}
+        auto textArea = r;
 
-namespace edge::ui
-{
+        if (lamp)
+        {
+            drawLamp (g, { r.getX() + 12.0f, r.getY() + 11.0f }, 3.0f, accent, on);
+            textArea = r.withTrimmedTop (6.0f);
+        }
+
+        g.setColour (on ? colour::textBright : (highlighted ? colour::text : colour::textDim));
+        g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
+        g.drawText (b.getButtonText(), textArea, juce::Justification::centred, false);
+    }
+
+    //  TextButtons are the segmented MODE selector and the SHAPE disclosure.
+    void Look::drawButtonBackground (juce::Graphics& g, juce::Button& b,
+                                     const juce::Colour&, bool highlighted, bool down)
+    {
+        auto r = b.getLocalBounds().toFloat().reduced (1.0f);
+        const auto accent = juce::Colour ((juce::uint32) (int) b.getProperties()
+                                              .getWithDefault ("accent", (int) colour::low.getARGB()));
+        const bool on = b.getToggleState();
+
+        if (on)
+        {
+            g.setColour (accent.withAlpha (0.18f));
+            g.fillRoundedRectangle (r, 5.0f);
+            g.setColour (accent.withAlpha (0.75f));
+            g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+            return;
+        }
+
+        juce::ColourGradient face (colour::shellTop, r.getX(), r.getY(),
+                                   juce::Colour (0xff17181a), r.getX(), r.getBottom(), false);
+        g.setGradientFill (face);
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (down || highlighted ? colour::panelHilite : colour::panelEdge);
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+    }
+
+    void Look::drawButtonText (juce::Graphics& g, juce::TextButton& b,
+                               bool highlighted, bool)
+    {
+        const auto accent = juce::Colour ((juce::uint32) (int) b.getProperties()
+                                              .getWithDefault ("accent", (int) colour::low.getARGB()));
+
+        g.setColour (b.getToggleState() ? accent
+                                        : (highlighted ? colour::text : colour::textDim));
+        g.setFont (juce::FontOptions (11.5f).withStyle ("Bold"));
+        g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, false);
+    }
+
     juce::Font Look::getComboBoxFont (juce::ComboBox&)
     {
         return juce::Font (juce::FontOptions (11.0f).withStyle ("Bold"));
@@ -163,12 +282,11 @@ namespace edge::ui
         auto r = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h).reduced (0.5f);
         const bool hot = down || box.isMouseOver();
 
-        g.setColour (colour::shellBottom.withAlpha (0.80f));
+        g.setColour (juce::Colour (0xff0b0c0d).withAlpha (0.85f));
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (accent.withAlpha (hot ? 0.85f : 0.40f));
         g.drawRoundedRectangle (r, 4.0f, 1.0f);
 
-        //  A small chevron rather than JUCE's default triangle button.
         const float cx = r.getRight() - 9.0f;
         const float cy = r.getCentreY();
         juce::Path chevron;
@@ -190,8 +308,8 @@ namespace edge::ui
     void Look::drawPopupMenuBackground (juce::Graphics& g, int w, int h)
     {
         auto r = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h);
-        g.setGradientFill ({ colour::panelTop, 0.0f, 0.0f,
-                             colour::panelBottom, 0.0f, (float) h, false });
+        g.setGradientFill ({ colour::shellTop, 0.0f, 0.0f,
+                             colour::shellBottom, 0.0f, (float) h, false });
         g.fillRoundedRectangle (r, 5.0f);
         g.setColour (colour::panelEdge);
         g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);

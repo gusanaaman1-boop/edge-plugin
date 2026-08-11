@@ -1,7 +1,9 @@
 // EDGE parameter identifiers and control-law constants.
 //
-// These strings are FROZEN once the first build ships: host automation lanes
-// and saved projects reference them. New parameters may only be appended.
+// STATE VERSION 2. The v1 IDs ("lowFreq", "focus", ...) are gone, replaced by
+// namespaced semantic ones, because several of them would otherwise have kept
+// their old name while changing meaning. Projects saved with v1 are migrated on
+// load - see Core/StateMigration.h - rather than silently reset.
 
 #pragma once
 
@@ -9,93 +11,123 @@
 
 namespace edge
 {
+    inline constexpr int kStateVersion = 2;
+
     namespace param
     {
-        inline constexpr const char* lowFreq   = "lowFreq";
-        inline constexpr const char* lowDepth  = "lowDepth";
-        inline constexpr const char* lowCurve  = "lowCurve";
-        inline constexpr const char* lowRes    = "lowRes";
+        // --- LOW target ------------------------------------------------------
+        inline constexpr const char* lowFreq     = "low.freq";
+        inline constexpr const char* lowDepth    = "low.depth";
+        inline constexpr const char* lowCurve    = "low.curve";
+        inline constexpr const char* lowShoulder = "low.shoulder";
+        inline constexpr const char* lowReso     = "low.reso";
 
-        inline constexpr const char* highFreq  = "highFreq";
-        inline constexpr const char* highDepth = "highDepth";
-        inline constexpr const char* highCurve = "highCurve";
-        inline constexpr const char* highRes   = "highRes";
+        // --- HIGH target -----------------------------------------------------
+        inline constexpr const char* highFreq     = "high.freq";
+        inline constexpr const char* highDepth    = "high.depth";
+        inline constexpr const char* highCurve    = "high.curve";
+        inline constexpr const char* highShoulder = "high.shoulder";
+        inline constexpr const char* highReso     = "high.reso";
 
-        inline constexpr const char* link      = "link";
-        inline constexpr const char* focus     = "focus";
-        inline constexpr const char* output    = "output";
-        inline constexpr const char* bypass    = "bypass";
+        // --- performance -----------------------------------------------------
+        inline constexpr const char* mode   = "mode";
+        inline constexpr const char* edge   = "edge";
+        inline constexpr const char* follow = "follow";
+        inline constexpr const char* spread = "spread";
+        inline constexpr const char* bite   = "bite";
+        inline constexpr const char* output = "output";
+        inline constexpr const char* bypass = "bypass";
 
-        //  APPENDED after v0.1. The IDs above were already frozen, so these go
-        //  at the end - existing projects load unchanged and simply get
-        //  Shoulder at its default of 0, which is a bit-exact wire.
-        inline constexpr const char* lowShoulder  = "lowShoulder";
-        inline constexpr const char* highShoulder = "highShoulder";
+        // --- follow setup (inside SHAPE) -------------------------------------
+        inline constexpr const char* followSens    = "follow.sens";
+        inline constexpr const char* followAttack  = "follow.attack";
+        inline constexpr const char* followRelease = "follow.release";
     }
 
-    //  Frequency travel. The two edges deliberately overlap in the mids: the
-    //  useful gesture "cut everything below 1 kHz" and "cut everything above
-    //  1 kHz" both have to be reachable.
+    enum class Mode { lowPass = 0, band, highPass };
+
+    inline const char* modeName (int m) noexcept
+    {
+        switch (m)
+        {
+            case 0: return "LP";
+            case 1: return "BAND";
+            case 2: return "HP";
+        }
+        return "?";
+    }
+
+    //  Frequency travel. These are also the EDGE macro's ORIGINS: at EDGE 0 the
+    //  low corner sits at kLowFreqMin and the high corner at kHighFreqMax, which
+    //  is the open, do-nothing position.
     inline constexpr float kLowFreqMin  = 20.0f;
     inline constexpr float kLowFreqMax  = 8000.0f;
     inline constexpr float kHighFreqMin = 200.0f;
     inline constexpr float kHighFreqMax = 20000.0f;
 
-    //  Depth's floor. Not -inf: see docs/DSP-TOPOLOGY.md section 3 - a literal
-    //  zero makes the composite slope jump by 12 dB/oct the instant Curve gives
-    //  a section a non-zero share of the depth, which is a discontinuity in
-    //  CURVE at the top of DEPTH. -120 dB removes it and is 20 dB below a
-    //  16-bit dither floor.
-    inline constexpr float kDepthFloorDb = -120.0f;
+    //  Depth's floor. Not -inf, for two reasons.
+    //
+    //  A literal zero makes the composite slope jump by 12 dB/oct the instant
+    //  Curve gives a section a non-zero share of the depth - a discontinuity in
+    //  CURVE at the top of DEPTH.
+    //
+    //  And the depth in dB is what the EDGE macro walks, so the floor sets how
+    //  steep the taper has to be at its top. -120 dB needed 9 dB per 1 % of
+    //  travel there and broke EDGE's continuity budget.
+    //
+    //  -110 dB with -24 dB placed at 65 % of travel reaches the floor at
+    //  2.5 dB/%, which is inside the budget, and leaves the floor far enough
+    //  below the -20..-50 dB window that a 36 dB/oct setting actually measures
+    //  36 there. At -90 dB it measured 32.4: each of the three sections was
+    //  only 30 dB from its own floor and had already started to flatten.
+    inline constexpr float kDepthFloorDb = -110.0f;
 
-    //  Damping (k = 1/Q) at the two ends of Curve's soft half. sqrt(2) is
-    //  Butterworth and is the tightest knee a single section is allowed to
-    //  reach: below it the section peaks, which is Resonance's job, and the
-    //  monotonicity proof stops holding.
     inline constexpr float kCurveSoftDamping    = 3.6f;
     inline constexpr float kCurveNeutralDamping = 1.41421356f;
-
-    //  Resonance's floor damping. Q ~ 2.9. Self-oscillation needs k = 0.
     inline constexpr float kResonanceMinDamping = 0.35f;
 
-    //  Focus travel, in octaves at +/-100 %.
-    inline constexpr float kFocusOctaves = 2.0f;
-
     //  Smallest ratio allowed between the two effective corner frequencies.
-    //  Under a fifth of a semitone - invisible in use, but it stops the pair
-    //  from collapsing to a zero-width passband.
     inline constexpr float kMinEdgeRatio = 1.05f;
-
-    //  Colour law. drivePercent = kColorDriveMax * activity, into an engine
-    //  whose full-scale pre-gain is 24 dB, so 10 % is 2.4 dB at the maximum.
-    //
-    //  Chosen by measurement, not taste. At 14 % the saturator's own
-    //  compression made the level vary by 1.0 dB across a -60..-18 dBFS input
-    //  range, which is a lot for something with no control and no display; at
-    //  10 % it is 0.6 dB and the colour is still clearly there. The engine's
-    //  engage window (drive < 5 %) means colour starts appearing at about half
-    //  activity, i.e. around -10 dB of Depth - below that EDGE is linear.
-    inline constexpr float kColorDriveMax = 10.0f;
-
-    //  Static make-up applied for Resonance only, at full resonance and full
-    //  depth. Gated by the section's own shelf gain, so it is exactly 0 dB
-    //  whenever Depth is 0 - see EdgeEngine::resonanceTrimDb.
-    inline constexpr float kResonanceTrimDb = 1.5f;
 
     inline constexpr int kNumSections = 3;
 
-    //  SHOULDER. A second, much gentler shelf sitting deep INTO the passband
-    //  from the cut's corner, so the whole side that passes leans down towards
-    //  the corner instead of staying flat up to it. At 0 dB its section is an
-    //  exact identity, so the control costs nothing when it is not in use.
-    //
-    //  SIX octaves, not three. Three was the first version and it only leaned
-    //  the region immediately next to the corner; the point of the control is
-    //  to pull down the whole passband - "0 to 9 kHz under a 9 kHz cut" - so
-    //  that the lean travels with the cutoff when it is automated. Six octaves
-    //  puts the shoulder's own corner at 12.8 kHz for a 200 Hz low cut, i.e.
-    //  effectively across everything the filter is letting through.
+    //  SHOULDER: a second, much gentler shelf six octaves INTO the passband from
+    //  the cut's corner, so the whole passing side leans down towards it and the
+    //  lean travels with the cutoff.
     inline constexpr float kShoulderOctaves = 6.0f;
     inline constexpr float kShoulderDamping = 2.2f;
     inline constexpr float kShoulderMaxDb   = -12.0f;
+
+    //  Static make-up applied for Resonance only. Self-gating: exactly 0 dB
+    //  whenever the resonant section is a wire.
+    inline constexpr float kResonanceTrimDb = 1.5f;
+
+    // --- BITE ----------------------------------------------------------------
+    //
+    //  drive = maxDrive(bite) * activity ^ gamma(bite)
+    //
+    //  The v1 law was linear (drive = 10 * activity) and engaged far too late:
+    //  the vendored engine fades out below 5 % drive, so colour only appeared
+    //  around -12 dB of Depth. gamma < 1 pulls it forward into the shelf range
+    //  where the plug-in actually spends its time.
+    //
+    //  kBiteMaxDrive is a CEILING, and it is set by the aliasing measurement,
+    //  not by taste. If it ever fails the -70 dBc limit at 1x the cap comes
+    //  down; latency is never traded for it.
+    inline constexpr float kBiteMaxDrive   = 24.0f;   // % at BITE 100
+    inline constexpr float kBiteDriveCurve = 0.70f;   // maxDrive shape vs BITE
+    inline constexpr float kBiteGammaLow   = 0.65f;   // gamma at BITE -> 0
+    inline constexpr float kBiteGammaHigh  = 0.35f;   // gamma at BITE 100
+
+    // --- SPREAD --------------------------------------------------------------
+    //
+    //  Total left-to-right separation in semitones at +/-100 %. Both corners of
+    //  a channel move together, so each channel keeps its bandwidth in octaves.
+    inline constexpr float kSpreadMaxSemitones = 12.0f;
+
+    // --- FOLLOW --------------------------------------------------------------
+    //
+    //  The detector reaches full modulation at the Sensitivity level and zero
+    //  kFollowRangeDb below it.
+    inline constexpr float kFollowRangeDb = 24.0f;
 }

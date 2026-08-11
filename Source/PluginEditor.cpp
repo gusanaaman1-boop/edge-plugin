@@ -3,110 +3,185 @@
 using namespace edge;
 using namespace edge::ui;
 
-void EdgeAudioProcessorEditor::Control::attach (juce::Component& parent,
-                                                juce::AudioProcessorValueTreeState& state,
-                                                const juce::String& id,
-                                                const juce::String& text,
-                                                juce::Colour accent)
+void EdgeAudioProcessorEditor::Knob::attach (juce::Component& parent,
+                                             juce::AudioProcessorValueTreeState& state,
+                                             const juce::String& id, const juce::String& text,
+                                             juce::Colour accent, bool bipolar)
 {
     slider.getProperties().set ("accent", (int) accent.getARGB());
+    slider.getProperties().set ("ticks", true);
+    if (bipolar)
+        slider.getProperties().set ("bipolar", true);
+
     slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                 juce::MathConstants<float>::pi * 2.75f, true);
-    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 74, 14);
+    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 14);
     parent.addAndMakeVisible (slider);
 
     caption.setText (text, juce::dontSendNotification);
     caption.setJustificationType (juce::Justification::centred);
-    caption.setColour (juce::Label::textColourId, colour::textDim);
-    caption.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
+    caption.setColour (juce::Label::textColourId, colour::text);
+    caption.setFont (juce::FontOptions (10.5f).withStyle ("Bold"));
     parent.addAndMakeVisible (caption);
 
     attachment = std::make_unique<SliderAttachment> (state, id, slider);
 
-    //  Double click resets to the parameter's default, which is what the work
-    //  order asks for and what a host's own "reset" does.
     if (auto* p = state.getParameter (id))
         slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
 }
 
-void EdgeAudioProcessorEditor::Control::setBounds (juce::Rectangle<int> r)
+void EdgeAudioProcessorEditor::Knob::setBounds (juce::Rectangle<int> r)
 {
-    caption.setBounds (r.removeFromTop (13));
+    caption.setBounds (r.removeFromBottom (13));
     slider.setBounds (r);
 }
 
 // -----------------------------------------------------------------------------
 
 EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
-    : juce::AudioProcessorEditor (&p), edgeProcessor (p), curve (p)
+    : juce::AudioProcessorEditor (&p), edgeProcessor (p), curve (p),
+      shape (p.getState())
 {
     setLookAndFeel (&look);
 
-    title.setText ("EDGE", juce::dontSendNotification);
-    title.setFont (juce::FontOptions (20.0f).withStyle ("Bold"));
-    title.setColour (juce::Label::textColourId, colour::textBright);
-    addAndMakeVisible (title);
-
-    auto sideLabel = [this] (juce::Label& l, const juce::String& text, juce::Colour c)
-    {
-        l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::FontOptions (11.5f).withStyle ("Bold"));
-        l.setColour (juce::Label::textColourId, c);
-        l.setJustificationType (juce::Justification::centred);
-        addAndMakeVisible (l);
-    };
-
-    sideLabel (lowLabel,  "LOW EDGE",  colour::low);
-    sideLabel (highLabel, "HIGH EDGE", colour::high);
-    lowLabel.setJustificationType (juce::Justification::centredLeft);
-    highLabel.setJustificationType (juce::Justification::centredRight);
-
     addAndMakeVisible (curve);
+    addChildComponent (shape);
 
     auto& state = edgeProcessor.getState();
-    lowCurveCtl    .attach (*this, state, param::lowCurve,     "CURVE",    colour::low);
-    lowShoulderCtl .attach (*this, state, param::lowShoulder,  "SHOULDER", colour::low);
-    lowResCtl      .attach (*this, state, param::lowRes,       "RESO",     colour::low);
-    highShoulderCtl.attach (*this, state, param::highShoulder, "SHOULDER", colour::high);
-    highCurveCtl   .attach (*this, state, param::highCurve,    "CURVE",    colour::high);
-    highResCtl     .attach (*this, state, param::highRes,      "RESO",     colour::high);
-    focusCtl       .attach (*this, state, param::focus,        "FOCUS",    colour::textBright);
-    outputCtl      .attach (*this, state, param::output,       "OUTPUT",   colour::textBright);
 
-    linkButton.getProperties().set ("accent", (int) colour::textBright.getARGB());
-    bypassButton.getProperties().set ("accent", (int) colour::high.getARGB());
-    addAndMakeVisible (linkButton);
+    //  --- EDGE -------------------------------------------------------------
+    //  The only control with two accents: it drives both edges at once, and the
+    //  ring says so.
+    edgeKnob.getProperties().set ("accent",  (int) colour::low.getARGB());
+    edgeKnob.getProperties().set ("accent2", (int) colour::high.getARGB());
+    edgeKnob.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
+                                  juce::MathConstants<float>::pi * 2.75f, true);
+    addAndMakeVisible (edgeKnob);
+    edgeAttachment = std::make_unique<SliderAttachment> (state, param::edge, edgeKnob);
+
+    if (auto* ep = state.getParameter (param::edge))
+        edgeKnob.setDoubleClickReturnValue (true, ep->convertFrom0to1 (ep->getDefaultValue()));
+
+    followKnob.attach (*this, state, param::follow, "FOLLOW", colour::text,       true);
+    spreadKnob.attach (*this, state, param::spread, "SPREAD", colour::text,       true);
+    biteKnob  .attach (*this, state, param::bite,   "BITE",   colour::low,        false);
+    outputKnob.attach (*this, state, param::output, "OUTPUT", colour::textBright, true);
+
+    //  --- MODE --------------------------------------------------------------
+    for (auto* b : { &lpButton, &bandButton, &hpButton })
+    {
+        b->setClickingTogglesState (false);
+        b->getProperties().set ("accent", (int) colour::low.getARGB());
+        addAndMakeVisible (*b);
+    }
+
+    if (auto* modeParam = state.getParameter (param::mode))
+    {
+        auto write = [modeParam] (int index)
+        {
+            modeParam->beginChangeGesture();
+            modeParam->setValueNotifyingHost (modeParam->convertTo0to1 ((float) index));
+            modeParam->endChangeGesture();
+        };
+
+        lpButton.onClick   = [write] { write ((int) Mode::lowPass); };
+        bandButton.onClick = [write] { write ((int) Mode::band); };
+        hpButton.onClick   = [write] { write ((int) Mode::highPass); };
+
+        modeAttachment = std::make_unique<juce::ParameterAttachment> (
+            *modeParam,
+            [this] (float v)
+            {
+                const int m = (int) std::lround (v);
+                lpButton.setToggleState   (m == (int) Mode::lowPass,  juce::dontSendNotification);
+                bandButton.setToggleState (m == (int) Mode::band,     juce::dontSendNotification);
+                hpButton.setToggleState   (m == (int) Mode::highPass, juce::dontSendNotification);
+            },
+            nullptr);
+
+        modeAttachment->sendInitialUpdate();
+    }
+
+    //  --- SHAPE + BYPASS -----------------------------------------------------
+    shapeButton.setClickingTogglesState (false);
+    shapeButton.getProperties().set ("accent", (int) colour::text.getARGB());
+    shapeButton.onClick = [this] { setShapeOpen (! shape.isVisible()); };
+    addAndMakeVisible (shapeButton);
+
+    bypassButton.getProperties().set ("accent", (int) colour::low.getARGB());
+    bypassButton.getProperties().set ("lamp", true);
     addAndMakeVisible (bypassButton);
-    linkAttachment   = std::make_unique<ButtonAttachment> (state, param::link, linkButton);
     bypassAttachment = std::make_unique<ButtonAttachment> (state, param::bypass, bypassButton);
 
+    shape.onLinkChanged = [] {};
     installLinkCoupling();
 
-    constrainer.setFixedAspectRatio ((double) metric::defaultWidth / metric::defaultHeight);
-    constrainer.setSizeLimits (metric::minWidth,
-                               (int) (metric::minWidth * metric::defaultHeight
-                                          / (double) metric::defaultWidth),
-                               metric::maxWidth,
-                               (int) (metric::maxWidth * metric::defaultHeight
-                                          / (double) metric::defaultWidth));
+    //  --- window -------------------------------------------------------------
+    constrainer.setSizeLimits (metric::minWidth, 420, metric::maxWidth, 1400);
     setConstrainer (&constrainer);
 
     resizer = std::make_unique<juce::ResizableCornerComponent> (this, &constrainer);
     addAndMakeVisible (*resizer);
-
     setResizable (true, false);
-    setSize (edgeProcessor.editorWidth.load(), edgeProcessor.editorHeight.load());
+
+    const bool open = edgeProcessor.shapeOpen.load();
+    shape.setVisible (open);
+    shapeButton.setToggleState (open, juce::dontSendNotification);
+
+    setSize (edgeProcessor.editorWidth.load(),
+             edgeProcessor.editorHeight.load() + (open ? metric::shapeHeight : 0));
+
+    startTimerHz (30);
 }
 
 EdgeAudioProcessorEditor::~EdgeAudioProcessorEditor()
 {
+    stopTimer();
     setLookAndFeel (nullptr);
 }
 
-//  LINK. Watching the two frequency parameters and moving the partner by the
-//  same number of OCTAVES preserves the interval between the edges, which is
-//  what "linked" means for a pair of filters; moving by the same number of Hz
-//  would collapse the relationship in the bass.
+void EdgeAudioProcessorEditor::setShapeOpen (bool shouldBeOpen)
+{
+    if (shape.isVisible() == shouldBeOpen)
+        return;
+
+    const int base = getHeight() - (shape.isVisible() ? metric::shapeHeight : 0);
+
+    shape.setVisible (shouldBeOpen);
+    shapeButton.setToggleState (shouldBeOpen, juce::dontSendNotification);
+    edgeProcessor.shapeOpen.store (shouldBeOpen);
+
+    setSize (getWidth(), base + (shouldBeOpen ? metric::shapeHeight : 0));
+}
+
+void EdgeAudioProcessorEditor::timerCallback()
+{
+    auto& engine = edgeProcessor.getEngine();
+
+    //  The knob shows where the parameter is; the marker shows where FOLLOW has
+    //  actually put it.
+    const float live = engine.getLiveEdge01();
+    const float shown = (float) edgeKnob.getProperties().getWithDefault ("live", -1.0f);
+
+    if (std::abs (live - shown) > 0.002f)
+    {
+        edgeKnob.getProperties().set ("live", live);
+        edgeKnob.repaint();
+    }
+
+    const bool warm = engine.isColourEngaged();
+    if (warm != warmLit)
+    {
+        warmLit = warm;
+        repaint (warmLampArea);
+    }
+}
+
+//  LINK. Moving one frequency moves the partner by the same number of OCTAVES,
+//  which is what "linked" means for a pair of filters; moving by the same
+//  number of Hz would collapse the relationship in the bass. It is applied to
+//  editor gestures only - a processor that writes parameters back to the host
+//  turns one automated lane into two lanes fighting each other.
 void EdgeAudioProcessorEditor::installLinkCoupling()
 {
     auto* lowP  = edgeProcessor.getState().getParameter (param::lowFreq);
@@ -135,9 +210,7 @@ void EdgeAudioProcessorEditor::applyLink (bool lowMoved)
     const float nowLow  = lowP->convertFrom0to1 (lowP->getValue());
     const float nowHigh = highP->convertFrom0to1 (highP->getValue());
 
-    const bool linked = edgeProcessor.getState().getParameter (param::link)->getValue() > 0.5f;
-
-    if (applyingLink || ! linked || lastLowFreq <= 0.0f || lastHighFreq <= 0.0f)
+    if (applyingLink || ! shape.isLinkEnabled() || lastLowFreq <= 0.0f || lastHighFreq <= 0.0f)
     {
         lastLowFreq = nowLow;
         lastHighFreq = nowHigh;
@@ -149,133 +222,135 @@ void EdgeAudioProcessorEditor::applyLink (bool lowMoved)
     if (lowMoved)
     {
         const float ratio = nowLow / juce::jmax (1.0f, lastLowFreq);
-        const float target = juce::jlimit (kHighFreqMin, kHighFreqMax, nowHigh * ratio);
-        highP->setValueNotifyingHost (highP->convertTo0to1 (target));
+        highP->setValueNotifyingHost (highP->convertTo0to1 (
+            juce::jlimit (kHighFreqMin, kHighFreqMax, nowHigh * ratio)));
     }
     else
     {
         const float ratio = nowHigh / juce::jmax (1.0f, lastHighFreq);
-        const float target = juce::jlimit (kLowFreqMin, kLowFreqMax, nowLow * ratio);
-        lowP->setValueNotifyingHost (lowP->convertTo0to1 (target));
+        lowP->setValueNotifyingHost (lowP->convertTo0to1 (
+            juce::jlimit (kLowFreqMin, kLowFreqMax, nowLow * ratio)));
     }
 
     lastLowFreq  = lowP->convertFrom0to1 (lowP->getValue());
     lastHighFreq = highP->convertFrom0to1 (highP->getValue());
 }
 
-void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
-{
-    auto b = getLocalBounds().toFloat();
-    paintShell (g, b);
-
-    auto header = b.removeFromTop (40.0f);
-
-    //  Header sits on a slightly lifted band with a hairline under it.
-    g.setGradientFill ({ colour::panelTop.withAlpha (0.75f), 0.0f, header.getY(),
-                         juce::Colours::transparentBlack, 0.0f, header.getBottom(), false });
-    g.fillRect (header);
-    g.setColour (colour::panelEdge);
-    g.drawHorizontalLine ((int) header.getBottom(), 0.0f, (float) getWidth());
-
-    //  A short two-accent rule under the wordmark - the only ornament in the
-    //  window, and it still only uses the two product colours.
-    g.setGradientFill ({ colour::low, 16.0f, 0.0f, colour::high, 96.0f, 0.0f, false });
-    g.fillRoundedRectangle (16.0f, header.getBottom() - 7.0f, 80.0f, 2.0f, 1.0f);
-
-    //  The two accents as a legend, not as decoration.
-    const int legendRight = getWidth() - 20;
-    struct Item { const char* label; juce::Colour c; };
-    const Item items[] = { { "LOW", colour::low }, { "HIGH", colour::high } };
-
-    for (int i = 0; i < 2; ++i)
-    {
-        const int x = legendRight - (2 - i) * 58;
-        g.setColour (items[(size_t) i].c);
-        g.fillRoundedRectangle ((float) x, 17.0f, 20.0f, 3.0f, 1.5f);
-        g.setColour (items[(size_t) i].c.withAlpha (0.25f));
-        g.fillRoundedRectangle ((float) x - 1.0f, 16.0f, 22.0f, 5.0f, 2.5f);
-
-        g.setColour (colour::textDim);
-        g.setFont (juce::FontOptions (9.0f).withStyle ("Bold"));
-        g.drawText (items[(size_t) i].label, x - 4, 23, 28, 10,
-                    juce::Justification::centred, false);
-    }
-
-    //  A quiet groove behind the control strip, so the knobs have a surface.
-    auto strip = getLocalBounds().toFloat().removeFromBottom ((float) controlStripHeight());
-    g.setGradientFill ({ juce::Colours::transparentBlack, 0.0f, strip.getY(),
-                         colour::shellBottom.withAlpha (0.6f), 0.0f, strip.getBottom(), false });
-    g.fillRect (strip);
-    g.setColour (colour::panelEdge.withAlpha (0.6f));
-    g.drawHorizontalLine ((int) strip.getY(), 12.0f, (float) getWidth() - 12.0f);
-}
-
 int EdgeAudioProcessorEditor::controlStripHeight() const noexcept
 {
-    return juce::jlimit (96, 150, getHeight() / 4);
+    const int usable = getHeight() - (shape.isVisible() ? metric::shapeHeight : 0);
+    return juce::jlimit (150, 210, usable / 3);
+}
+
+void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff0b0c0d));
+    paintShell (g, getLocalBounds().toFloat().reduced (3.0f));
+
+    //  WARM lamp, over the BITE knob. It reads the ENGINE's engage factor, not
+    //  "BITE > 0": a colour that is switched on but not yet doing anything
+    //  should not claim otherwise.
+    if (! warmLampArea.isEmpty())
+    {
+        const auto c = warmLampArea.toFloat();
+        drawLamp (g, { c.getX() + 5.0f, c.getCentreY() }, 3.5f, colour::low, warmLit);
+
+        g.setColour (warmLit ? colour::low : colour::textDim);
+        g.setFont (juce::FontOptions (9.5f).withStyle ("Bold"));
+        g.drawText ("WARM", warmLampArea.withTrimmedLeft (14),
+                    juce::Justification::centredLeft, false);
+    }
+
+    //  Bipolar knobs get a centre mark and end signs, as in the mockup.
+    auto marks = [&g] (const juce::Slider& s)
+    {
+        const auto b = s.getBounds();
+        g.setColour (colour::textDim);
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText ("0", b.getX(), b.getY() - 12, b.getWidth(), 11,
+                    juce::Justification::centred, false);
+        g.drawText ("-", b.getX() - 2, b.getBottom() - 15, 12, 11,
+                    juce::Justification::centred, false);
+        g.drawText ("+", b.getRight() - 10, b.getBottom() - 15, 12, 11,
+                    juce::Justification::centred, false);
+    };
+
+    marks (followKnob.slider);
+    marks (spreadKnob.slider);
+
+    //  The wordmark, under the big knob.
+    const auto e = edgeKnob.getBounds();
+    g.setColour (colour::textBright);
+    g.setFont (juce::FontOptions ((float) juce::jlimit (18, 30, e.getWidth() / 5))
+                   .withStyle ("Bold").withHorizontalScale (1.0f));
+    g.drawText (juce::String::fromUTF8 ("E D G E"),
+                e.getX() - 20, e.getBottom() + 2, e.getWidth() + 40, 26,
+                juce::Justification::centred, false);
 }
 
 void EdgeAudioProcessorEditor::resized()
 {
+    const bool open = shape.isVisible();
+
     edgeProcessor.editorWidth.store (getWidth());
-    edgeProcessor.editorHeight.store (getHeight());
+    edgeProcessor.editorHeight.store (getHeight() - (open ? metric::shapeHeight : 0));
 
-    auto r = getLocalBounds();
+    auto r = getLocalBounds().reduced (10);
 
-    auto header = r.removeFromTop (40);
-    title.setBounds (header.removeFromLeft (130).reduced (16, 6));
+    if (open)
+        shape.setBounds (r.removeFromBottom (metric::shapeHeight - 6));
 
-    auto bottom = r.removeFromBottom (controlStripHeight());
-    curve.setBounds (r.reduced (12, 10));
+    auto strip = r.removeFromBottom (controlStripHeight());
+    curve.setBounds (r.reduced (2, 2));
 
-    //  LOW's three knobs on the left, HIGH's on the right, the shared pair in
-    //  the middle, so the strip reads the way the spectrum does.
-    bottom.reduce (14, 8);
+    strip.reduce (6, 4);
 
-    const int knobWidth = juce::jlimit (54, 92, (bottom.getWidth() - 120) / 9);
-    const int gap = 6;
-    const int sideWidth = knobWidth * 3 + gap * 2;
-
-    auto lowArea  = bottom.removeFromLeft (sideWidth);
-    auto highArea = bottom.removeFromRight (sideWidth);
-
-    //  Section titles are justified OUTWARD and given their own row with a
-    //  gap: centred, they landed directly on the middle knob's caption.
-    lowLabel.setBounds (lowArea.removeFromTop (14).withTrimmedLeft (2));
-    highLabel.setBounds (highArea.removeFromTop (14).withTrimmedRight (2));
-    lowArea.removeFromTop (3);
-    highArea.removeFromTop (3);
-
-    auto place = [knobWidth, gap] (juce::Rectangle<int>& area, Control& c)
+    //  --- left column: MODE over SHAPE ---------------------------------------
+    auto left = strip.removeFromLeft (juce::jlimit (150, 220, strip.getWidth() / 5));
     {
-        c.setBounds (area.removeFromLeft (knobWidth));
-        area.removeFromLeft (gap);
+        auto modeRow = left.removeFromTop (30);
+        const int w = modeRow.getWidth() / 3;
+        lpButton.setBounds   (modeRow.removeFromLeft (w).reduced (2));
+        bandButton.setBounds (modeRow.removeFromLeft (w).reduced (2));
+        hpButton.setBounds   (modeRow.reduced (2));
+
+        left.removeFromTop (8);
+        shapeButton.setBounds (left.removeFromTop (30).reduced (2, 0)
+                                   .withTrimmedRight (left.getWidth() / 3));
+    }
+
+    //  --- right column: OUTPUT and BYPASS ------------------------------------
+    auto right = strip.removeFromRight (juce::jlimit (150, 210, strip.getWidth() / 4));
+    {
+        bypassButton.setBounds (right.removeFromRight (78).withSizeKeepingCentre (78, 40));
+        right.removeFromRight (10);
+        outputKnob.setBounds (right.removeFromRight (juce::jmin (66, right.getWidth()))
+                                  .withSizeKeepingCentre (66, juce::jmin (86, right.getHeight())));
+    }
+
+    //  --- centre: EDGE, then the three performance knobs ---------------------
+    const int knobSize = juce::jlimit (58, 84, strip.getWidth() / 7);
+    auto perf = strip.removeFromRight (knobSize * 3 + 16);
+
+    auto place = [knobSize] (juce::Rectangle<int>& area, Knob& k)
+    {
+        k.setBounds (area.removeFromLeft (knobSize)
+                          .withSizeKeepingCentre (knobSize, juce::jmin (100, area.getHeight())));
+        area.removeFromLeft (8);
     };
 
-    place (lowArea, lowCurveCtl);
-    place (lowArea, lowShoulderCtl);
-    place (lowArea, lowResCtl);
+    place (perf, followKnob);
+    place (perf, spreadKnob);
+    place (perf, biteKnob);
 
-    place (highArea, highShoulderCtl);
-    place (highArea, highCurveCtl);
-    place (highArea, highResCtl);
+    //  The lamp sits just above BITE, where the mockup puts it.
+    warmLampArea = juce::Rectangle<int> (biteKnob.slider.getX() + 4,
+                                         biteKnob.slider.getY() - 15, 62, 12);
 
-    bottom.removeFromTop (17);
-
-    const int buttonWidth = juce::jlimit (72, 104, knobWidth + 16);
-    auto centre = bottom.withSizeKeepingCentre (
-        juce::jmin (bottom.getWidth(), knobWidth * 2 + gap * 2 + buttonWidth),
-        bottom.getHeight());
-
-    focusCtl.setBounds (centre.removeFromLeft (knobWidth));
-    centre.removeFromLeft (gap);
-    outputCtl.setBounds (centre.removeFromLeft (knobWidth));
-    centre.removeFromLeft (gap);
-
-    auto buttons = centre.reduced (0, 7);
-    const int half = buttons.getHeight() / 2;
-    linkButton.setBounds (buttons.removeFromTop (half).reduced (1, 2));
-    bypassButton.setBounds (buttons.reduced (1, 2));
+    const int edgeSize = juce::jlimit (86, 150,
+                                       juce::jmin (strip.getWidth() - 20, strip.getHeight() - 24));
+    edgeKnob.setBounds (strip.withSizeKeepingCentre (edgeSize, edgeSize)
+                             .translated (0, -10));
 
     resizer->setBounds (getWidth() - 15, getHeight() - 15, 15, 15);
 }

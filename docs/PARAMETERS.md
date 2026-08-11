@@ -1,135 +1,185 @@
 # EDGE — host parameters
 
-**These IDs are frozen.** Automation lanes and saved projects reference the
-strings, not the names. New parameters may only be appended.
+**State version 2.** Every ID below is namespaced and semantic. The v0.1 IDs
+(`lowFreq`, `focus`, `link`, …) are gone; a v0.1 project is **migrated on load**
+rather than reset — see `Core/StateMigration.h` and §"Migration" below.
 
-14 host parameters. Nothing about the internal colour engine appears here, by
-design — no drive, no model, no bias, no mix, no oversampling.
+20 host parameters. Nothing about the internal colour engine appears here, by
+design — no drive, no model, no bias, no mix, no oversampling. BITE is the only
+public character control.
 
-| # | ID | Name | Range | Default | Reads out as |
-|---|---|---|---|---|---|
-| 1 | `lowFreq` | Low Freq | 20 – 8000 Hz, log (knob centre 120 Hz) | 20 Hz | `48.0 Hz` / `1.20 kHz` |
-| 2 | `lowDepth` | Low Depth | 0 – 100 % | 0 | `-6.0 dB`, `CUT` at 100 |
-| 3 | `lowCurve` | Low Curve | 0 – 100 % | 50 | `SOFT` / `24 dB/oct` / `TIGHT` |
-| 4 | `lowRes` | Low Reso | 0 – 100 % | 0 | `35 %` |
-| 5 | `highFreq` | High Freq | 200 – 20000 Hz, log (knob centre 3 kHz) | 20 kHz | `6.50 kHz` |
-| 6 | `highDepth` | High Depth | 0 – 100 % | 0 | `-12.0 dB`, `CUT` |
-| 7 | `highCurve` | High Curve | 0 – 100 % | 50 | as `lowCurve` |
-| 8 | `highRes` | High Reso | 0 – 100 % | 0 | `20 %` |
-| 9 | `link` | Link | on / off | off | |
-| 10 | `focus` | Focus | −100 … +100 | 0 | `+40  narrow` |
-| 11 | `output` | Output | −24 … +24 dB | 0 | `2.0 dB` |
-| 12 | `bypass` | Bypass | on / off | off | |
-| 13 | `lowShoulder` | Low Shoulder | 0 – 100 % | 0 | `OFF` / `-7.2 dB` |
-| 14 | `highShoulder` | High Shoulder | 0 – 100 % | 0 | `OFF` / `-7.2 dB` |
+## Targets — what EDGE is travelling towards
 
-Parameters 13 and 14 were **appended** after v0.1. The first twelve IDs and their
-order are unchanged, so a project saved with v0.1 loads with its automation
-lanes intact and simply gets Shoulder at 0.
+| ID | Name | Range | Default | Reads out as |
+|---|---|---|---|---|
+| `low.freq` | Low Freq | 20 – 8000 Hz, log (knob centre 120 Hz) | 250 Hz | `250 Hz` |
+| `low.depth` | Low Depth | 0 – 100 % | 100 | `-6.0 dB`, `CUT` |
+| `low.curve` | Low Curve | 0 – 100 % | 75 | `SOFT` / `24 dB/oct` |
+| `low.shoulder` | Low Shoulder | 0 – 100 % | 0 | `OFF` / `-6.6 dB` |
+| `low.reso` | Low Reso | 0 – 100 % | 0 | `35 %` |
+| `high.freq` | High Freq | 200 – 20000 Hz, log (knob centre 3 kHz) | 6000 Hz | `6.00 kHz` |
+| `high.depth` | High Depth | 0 – 100 % | 100 | as `low.depth` |
+| `high.curve` | High Curve | 0 – 100 % | 75 | as `low.curve` |
+| `high.shoulder` | High Shoulder | 0 – 100 % | 0 | as `low.shoulder` |
+| `high.reso` | High Reso | 0 – 100 % | 0 | `20 %` |
+
+Depth defaults to **CUT on both sides** so that selecting BAND and opening EDGE
+immediately produces a real band-pass, as specified.
+
+## Performance — what you play
+
+| ID | Name | Range | Default |
+|---|---|---|---|
+| `mode` | Mode | LP / BAND / HP | BAND |
+| `edge` | Edge | 0 – 100 % | 0 |
+| `follow` | Follow | −100 … +100 % | 0 |
+| `spread` | Spread | −100 … +100 % | 0 |
+| `bite` | Bite | 0 – 100 % | 35 |
+| `output` | Output | −24 … +24 dB | 0 |
+| `bypass` | Bypass | on / off | off |
+
+## Follow setup — inside SHAPE
+
+| ID | Name | Range | Default |
+|---|---|---|---|
+| `follow.sens` | Follow Sens | −60 … 0 dBFS | −12 dB |
+| `follow.attack` | Follow Attack | 0.1 – 200 ms, log | 10 ms |
+| `follow.release` | Follow Release | 5 – 2000 ms, log | 150 ms |
+
+**LINK is not a parameter.** It survives as an editor gesture inside SHAPE:
+moving one frequency moves the other by the same number of octaves. It is
+deliberately not applied to incoming host automation — a processor that writes
+parameters back to the host turns one automated lane into two fighting ones.
+
+**FOCUS is gone.** It had no equivalent in the new control set and nothing
+inherits it.
+
+## EDGE, and what it travels
+
+| | at EDGE 0 | at EDGE 100 |
+|---|---|---|
+| Low corner | 20 Hz (the range floor) | `low.freq` |
+| High corner | 20 kHz (the range ceiling) | `high.freq` |
+| Depth | 0 dB | its target |
+| Shoulder | 0 dB | its target |
+| Resonance | 0 | its target |
+| Curve | its target — a shape, not an amount | its target |
+| Colour | fully disengaged | per BITE and activity |
+
+Frequencies travel **geometrically** (linear in log2). Depth, Shoulder and
+Resonance travel in the **control** domain, so EDGE stays on the same
+perceptual taper the knobs use — interpolating dB linearly would put a −110 dB
+target at −11 dB by EDGE 10 %, which is already a deep cut.
+
+Measured continuity over 2000 positions: **0.105 dB** worst step at 60 Hz,
+0.047 at 300 Hz, 0.004 at 2 kHz, 0.044 at 9 kHz.
+
+At EDGE 0 the plug-in is **bit-exact and zero-latency, at any BITE**.
 
 ## Depth's taper
 
-Piecewise linear **in dB**, through the work order's own perceptual table, so
-the labelled values land exactly on their control positions:
+| % | 0 | 20 | 33 | 48 | 65 | 100 |
+|---|---|----|----|----|----|-----|
+| dB | 0 | −3 | −6 | −12 | −24 | −110 (`CUT`) |
 
-| % | 0 | 25 | 40 | 58 | 78 | 92 | 100 |
-|---|---|----|----|----|----|----|-----|
-| dB | 0 | −3 | −6 | −12 | −24 | −48 | −120 (`CUT`) |
+The positions are chosen so the steepest segment is **2.5 dB per 1 % of
+travel** — EDGE walks this taper, and anything steeper than 3 dB/% breaks its
+continuity budget. The first version put −24 dB at 78 % and −48 dB at 92 %,
+which is 9 dB/% at the top and measured 0.39 dB per EDGE step.
 
-Measured DC gain matches the label to better than 0.05 dB at every breakpoint.
-Six octaves below the corner the real filter is within 0.5 dB of it; closer to
-the corner a second-order shelf is still on its way down, which is the shelf
-being a shelf, not an error.
-
-`CUT` is −120 dB rather than −∞, deliberately — see `DSP-TOPOLOGY.md` §3.
+`CUT` is −110 dB rather than −∞: a literal zero makes the composite slope jump
+by 12 dB/oct the instant Curve gives a section a non-zero share of the depth.
 
 ## Shoulder
 
-A second, much gentler shelf sitting **six octaves into the passband** from the
-cut's corner, so it leans the *whole* side that passes down towards the corner
-rather than only the region next to it. Under a 9 kHz cut it pulls 0 – 9 kHz
-down; and because its corner is defined relative to the cut's, the lean travels
-with the cutoff when that is automated.
+A second, much gentler shelf **six octaves into the passband** from the cut's
+corner, so it leans the *whole* passing side down towards the corner and the
+lean travels with the cutoff. 0 – 100 % maps linearly to 0 … −12 dB.
 
-0 – 100 % maps linearly to 0 … −12 dB. Measured with a 200 Hz low cut at full
-Depth and Shoulder at 100 %:
-
-| 400 Hz | 1.6 kHz | 10 kHz |
-|---|---|---|
-| −12.3 dB | −11.7 dB | −6.1 dB |
-
-(The first version reached three octaves and left 1.6 kHz at −4.4 dB. That was
-a lean next to the corner; this is a lean across the passband.)
-
-It is the same `MorphSection` the cut is built from, with a wide knee
-(damping 2.2), so:
-
-* at 0 dB it is a **bit-exact wire** — the control is free when unused, and the
-  plug-in's neutral state stays bit-exact;
-* the cascade stays **monotonic by the same proof** (`k > √2`, `b = √G`),
-  verified over the whole Depth × Curve × Shoulder grid;
-* it counts as filter activity, so it engages the hidden colour like anything
-  else does.
-
-Curve does not affect it. The shoulder is deliberately one fixed, gentle shape:
-a second slope control there would make the pair of them a graphic EQ.
+Measured with a 200 Hz low cut at full Depth and Shoulder 100 %:
+−12.3 dB at 400 Hz, −11.7 dB at 1.6 kHz, −6.1 dB at 10 kHz.
 
 ## Curve, and the slope selector
 
-Curve is continuous. 0 → 50 widens the knee at constant order; 50 → 100 adds
-order at constant knee. Both halves meet at the same point, so the control is
-continuous end to end (measured worst step over 2000 positions: 0.083 dB at full
-cut, 0.003 dB at −6 dB).
+Curve is continuous: 0 → 50 widens the knee at constant order, 50 → 100 adds
+order at constant knee. The display's combo snaps it to a whole slope and writes
+the same parameter the knob does.
 
-The **combo box on the display** snaps it to a whole slope. It writes the same
-`lowCurve` / `highCurve` parameter the knob does — there is no second parameter
-and no second source of truth, and turning the knob off a snap point clears the
-combo's selection and shows the percentage instead.
+| entry | Curve % | nominal | measured, −20 → −50 dB window |
+|---|---|---|---|
+| SOFT | 0 | wide knee | ~10 dB/oct |
+| 12 dB/oct | 50 | 2 poles | 12.0 |
+| 24 dB/oct | 75 | 4 poles | 23.4 |
+| 36 dB/oct | 100 | 6 poles | 32.9 |
 
-| entry | Curve % | measured slope at full cut |
-|---|---|---|
-| SOFT | 0 | wide knee, ~10.5 dB/oct |
-| 12 dB/oct | 50 | 11.8 |
-| 24 dB/oct | 75 | 23.6 |
-| 36 dB/oct | 100 | 35.1 |
+The names describe **pole count**, which is what the cascade has and what the
+industry labels. The measured figure is shallower than the asymptote because the
+composite knee and the finite depth floor both shallow it: for three cascaded
+Butterworth-2 sections at one corner, `|H|² = (u⁴ + G²)/(1 + u⁴)` per section,
+and solving that for the two crossings predicts **32.97 dB/oct**. Measured 32.9 —
+the filter is exactly right, the asymptote simply is not reached until much
+further down.
 
-**Why there is no 6, 18 or 30 dB/oct.** At full Depth every section that carries
-a share of the dB becomes a full *second-order* cut, so the asymptotic slope is
-12 × (number of active sections) — an integer. Curve = 62.5 % does not give
-18 dB/oct; it gives two active sections carrying unequal shares, and it measures
-**23.5 dB/oct**. Odd slopes need an extra first-order stage in the cascade,
-which is a real feature but also a one-pole section switching in and out with
-the parity of the order — a topology change on an automatable control. Left for
-a follow-up rather than shipped as a label that lies.
+**There is no 6, 18 or 30 dB/oct**, because at full Depth every section carrying
+a share of the dB becomes a full second-order cut, so the slope is
+`12 × (active sections)` — an integer. Odd slopes need an extra first-order
+stage, which is a topology change on an automatable control.
 
-## Link
+## SPREAD
 
-`link` saves and restores, and appears in the host's parameter list, but the
-coupling itself is an **editor gesture**: moving one frequency in the UI moves
-the other by the same number of octaves. It is deliberately *not* applied to
-incoming host automation — a processor that writes parameters back to the host
-turns one automated lane into two lanes fighting each other.
+Bipolar. Both corners of a channel move together by the same number of octaves,
+so each channel keeps its **bandwidth**. At ±100 % the total left-to-right
+separation is **12.000 semitones** (measured). At 0 the two channels' coefficients
+match exactly and identical input nulls bit-exactly. There is no inter-channel
+state, no crosstalk: a silent channel measures exactly 0.
 
-## Focus
+## FOLLOW
 
-A macro over the two frequencies, in **octaves**, ±2 octaves at ±100. Positive
-brings the edges together. Near a range boundary it is soft-limited
-(`h·tanh(x/h)`) so it slows down instead of stopping dead: measured worst jump
-over 400 positions is 12 cents, and the ends stay inside the ranges.
+```
+liveEdge = base + amount · env · (amount > 0 ? 1 − base : base)
+```
 
-The two effective corners are kept at least 1.05 apart (under a fifth of a
-semitone) by a soft maximum, so the pair cannot collapse to a zero-width
-passband.
+Scaling by the headroom in the direction of travel is what makes the two
+directions perceptually balanced: full FOLLOW reaches exactly the boundary from
+any base, either way, and it can never need clamping. `amount == 0` returns the
+base **bit-exactly**, which is what makes "FOLLOW 0 is identical to the follower
+being disabled" true rather than nearly true.
 
-## What Output does and does not compensate
+The detector is one stereo-linked envelope follower on the input: a mono sum of
+magnitudes, one attack/release pole, and a fixed dB window ending at Sensitivity.
+It produces a 0–1 modulation value and nothing else — it never touches gain,
+never compensates, never adapts a drive.
 
-Output is the user's trim, plus exactly two static, parameter-derived
-corrections, both smoothed per sample:
+## BITE
 
-* **the resonance make-up**, `−1.5 dB × res × (1 − G_section0)` — self-gating, so
-  it is exactly 0 dB whenever Depth is 0;
-* **the colour engine's measured small-signal level change**, cancelled so that
-  engaging Depth does not quietly change the level of passband material.
+```
+drive = maxDrive(bite) · activity ^ gamma(bite)
+maxDrive(b) = 24 · b^0.70          gamma(b) = 0.65 → 0.35
+```
 
-It never compensates the attenuation the user asked for with Depth, and there is
-no dynamic AGC anywhere in the plug-in.
+* `bite = 0` gives **exactly** zero drive at any activity, and zero activity
+  gives exactly zero drive at any BITE. Both are asserted as exact equality.
+* At BITE 35, a −4 dB shelf produces **5.97 %** drive — above the vendored
+  engine's 5 % engage window. The v0.1 linear law gave 3.00 % there, which is
+  why it engaged too late.
+* `kBiteMaxDrive = 24` is a **ceiling set by the aliasing measurement**, not by
+  taste: at BITE 100 with a full cut the alias floor is **−73.9 dBc** at 1×,
+  inside the −70 dBc limit. Latency is never traded for it.
+
+The WARM lamp reads the engine's own engage factor, not "BITE > 0".
+
+## Migration from v0.1
+
+| v0.1 | v0.2 |
+|---|---|
+| `lowFreq`, `lowDepth`, `lowCurve`, `lowShoulder`, `lowRes` | carried across unchanged |
+| `highFreq` … `highRes` | carried across unchanged |
+| `output`, `bypass` | carried across unchanged |
+| `focus` | **dropped** — no equivalent; folding its octave offset into the frequencies would move a corner the user set by hand |
+| `link` | **dropped as a parameter**; survives as editor behaviour |
+| — | `mode` = BAND, the only mode in which both edges behave as they did |
+| — | `edge` = **100 %**, because in v0.1 the targets *were* the sound |
+| — | `follow` = 0, `spread` = 0 — v0.1's behaviour exactly |
+| — | `bite` = **28.6 %**, the value at which the new law reproduces v0.1's 10 % drive at a full cut |
+
+Migrating twice is a no-op. All of this is asserted in the test suite.

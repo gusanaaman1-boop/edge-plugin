@@ -1,12 +1,15 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include "Core/StateMigration.h"
+
 EdgeAudioProcessor::EdgeAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "EDGE", edge::createParameterLayout())
 {
+    apvts.state.setProperty ("stateVersion", edge::kStateVersion, nullptr);
 }
 
 bool EdgeAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -48,8 +51,10 @@ juce::AudioProcessorEditor* EdgeAudioProcessor::createEditor()
 void EdgeAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto tree = apvts.copyState();
+    tree.setProperty ("stateVersion", edge::kStateVersion, nullptr);
     tree.setProperty ("editorWidth",  editorWidth.load(),  nullptr);
     tree.setProperty ("editorHeight", editorHeight.load(), nullptr);
+    tree.setProperty ("shapeOpen",    shapeOpen.load(),    nullptr);
 
     if (auto xml = tree.createXml())
         copyXmlToBinary (*xml, destData);
@@ -65,16 +70,23 @@ void EdgeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (! tree.isValid())
         return;
 
-    editorWidth.store  ((int) tree.getProperty ("editorWidth",  760));
-    editorHeight.store ((int) tree.getProperty ("editorHeight", 460));
+    //  A project saved with v0.1 has the old parameter IDs in it. Loading it
+    //  unchanged would reset a mixed session to defaults, so it is rewritten
+    //  into a v2 tree first - see Core/StateMigration.h for what maps to what
+    //  and what is deliberately dropped.
+    const bool migrated = edge::migrateToCurrent (tree);
+
+    editorWidth.store  ((int) tree.getProperty ("editorWidth",  edge::ui::metric::defaultWidth));
+    editorHeight.store ((int) tree.getProperty ("editorHeight", edge::ui::metric::defaultHeight));
+    shapeOpen.store    ((bool) tree.getProperty ("shapeOpen", false));
+    loadedLegacyState.store (migrated);
 
     apvts.replaceState (tree);
 
     //  Deliberately NOT snapped. A recall that lands instantly steps every
     //  shelf gain, and a step in G is a step in the output - a click. The
     //  20 ms smoothers glide instead, which is fast enough to feel like a
-    //  recall and slow enough that test 15 (preset change during playback)
-    //  passes. A project LOAD snaps, because prepareToPlay runs first and
+    //  recall. A project LOAD snaps, because prepareToPlay runs first and
     //  there is no audio to click.
 }
 

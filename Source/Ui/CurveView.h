@@ -1,19 +1,26 @@
-// The frequency-response display, and the two handles that are EDGE's primary
-// gesture: drag sideways for frequency, drag up and down for depth.
+// The display: spectrum, three response curves, and the two target handles.
 //
-// The curve is drawn from edge::magnitudeDb() using the engine's LIVE resolved
-// shape, which is the same function the audio path's coefficients come from.
-// There is no second model of the filter to drift out of step, and Focus and
-// the minimum-separation rule are already folded in because the shape is read
-// after they were applied.
+// Three things are drawn, and they are deliberately three different things:
 //
-// The hidden colour engine is not drawn as an EQ curve. Its one visible effect
-// is a broadband level offset, and that IS included, because the alternative is
-// a curve that says 0 dB while the plug-in is 1 dB louder.
+//   1. TARGET     what EDGE at 100 % would produce - a thin ghost curve, so you
+//                 can see where the movement is going while it is going there.
+//   2. CURRENT    what the filter is doing right now - the bright orange-to-cyan
+//                 line, drawn from the engine's LIVE coefficients.
+//   3. SPECTRUM   the audio, a restrained grey trace, never coloured.
+//
+// When SPREAD is doing something, the two channels' responses are added as
+// faint traces. The stereo information is in the RESPONSE, not in a second and
+// third spectrum: two more bright analyser lines would bury everything else.
+//
+// ANALYSER ARCHITECTURE. The audio thread writes mono output into a fixed
+// lock-free FIFO and does nothing else. This component drains it on a 30 Hz
+// timer, windows, transforms and smooths - all on the message thread - and the
+// engine's FIFO writer is switched off entirely while no editor exists.
 
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
 
 #include "Theme.h"
 
@@ -41,14 +48,19 @@ namespace edge::ui
     private:
         enum class Grab { none, low, high };
 
+        static constexpr int fftOrder = 11;
+        static constexpr int fftSize  = 1 << fftOrder;   // 2048
+        static constexpr int numBands = 220;
+
         void timerCallback() override;
+        void pullAudio();
+        void updateSpectrum();
+        void buildCurves();
 
         float xForHz (float hz) const noexcept;
         float hzForX (float x) const noexcept;
         float yForDb (float db) const noexcept;
 
-        //  Named grabAt, not hitTest: Component::hitTest is virtual and an
-        //  overload with a different signature silently hides it.
         Grab grabAt (juce::Point<float>) const noexcept;
         juce::Point<float> handlePosition (Grab) const noexcept;
 
@@ -58,21 +70,24 @@ namespace edge::ui
         EdgeAudioProcessor& processor;
         juce::Rectangle<float> plot, axisGutter;
 
-        //  Slope selectors, ON the display where the shape they describe is.
-        //  They write the same Curve parameter the knobs do - no new parameter,
-        //  no second source of truth - snapping it to a whole dB/oct.
-        void buildSlopeBox (juce::ComboBox&, const char* paramId, juce::Colour accent);
-        void refreshSlopeBoxes();
-
-        juce::ComboBox lowSlope, highSlope;
-
         Grab dragging = Grab::none;
         Grab hovered = Grab::none;
         float dragStartDepth = 0.0f;
         float dragStartY = 0.0f;
 
-        juce::Path curvePath;
+        //  --- analyser --------------------------------------------------------
+        juce::dsp::FFT fft { fftOrder };
+        std::vector<float> ring;         // rolling window of input samples
+        int ringWrite = 0;
+        std::vector<float> scratch;      // 2*fftSize, the FFT workspace
+        std::vector<float> window;
+        std::vector<float> bandDb;       // smoothed, display resolution
+        bool haveSpectrum = false;
+
+        //  --- cached paths ----------------------------------------------------
+        juce::Path currentPath, targetPath, leftPath, rightPath, spectrumPath;
         float lastShapeHash = 0.0f;
+        bool curvesDirty = true;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CurveView)
     };

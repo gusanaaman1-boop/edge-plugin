@@ -8,22 +8,26 @@ the way to a real cut**, and it is the same filter the whole way — not a shelf
 that gets swapped for a high-pass at some threshold. You are never forced to
 delete your low end to shape it.
 
+**EDGE morphs from shaping to cutting — and the sound itself can move it.**
+
 ```
-LOW EDGE            HIGH EDGE           SHARED
-  Frequency           Frequency           Link
-  Depth               Depth               Focus
-  Curve               Curve               Output
-  Shoulder            Shoulder            Bypass
-  Resonance           Resonance
+PERFORMANCE                 TARGETS (inside SHAPE)
+  Mode   LP / BAND / HP       Low / High  Frequency
+  EDGE   the whole morph                  Depth
+  FOLLOW the sound moves it               Curve
+  SPREAD stereo movement                  Shoulder
+  BITE   hidden WARM macro                Resonance
+  Output, Bypass                          Follow Sens / Attack / Release
 ```
 
-Each edge also carries a **slope selector on the display** (SOFT / 12 / 24 /
-36 dB/oct) that snaps the Curve control to a whole slope, and a **Shoulder** that
-leans the entire passband down towards the corner and travels with it.
+One large control drives both spectral edges from open, through shelf, to a real
+cut. FOLLOW lets the signal drive it. SPREAD moves the two channels apart in
+semitones without changing either one's bandwidth.
 
-No LFO. No sequencer. No envelope follower. No saturation panel. The colour is
-inside the filter's character and has no controls, because it is not a
-distortion unit.
+No LFO. No sequencer. No drawable modulation. No randomisation. One envelope
+follower, and one hidden colour engine whose only public control is BITE.
+
+At EDGE 0 the plug-in is **bit-exact and zero-latency**, whatever else is set.
 
 ## Building
 
@@ -52,7 +56,7 @@ workspace. Add `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster local build.
 cmake --build build --target EdgeTests -j8 && ./build/EdgeTests_artefacts/Release/EdgeTests
 ```
 
-79 checks. Every one prints the number it measured. Exit code 0 means all
+69 checks. Every one prints the number it measured. Exit code 0 means all
 passed; the last run is kept in `docs/TEST-RESULTS.txt`.
 
 ### Sanitisers
@@ -74,13 +78,14 @@ screen capture, deterministic.
 
 ```
 Source/
-  Core/          parameter IDs, control laws, the APVTS layout
+  Core/          parameter IDs, control laws, the APVTS layout, v1->v2 migration
   Dsp/
     MorphSvf.h   the section: one TPT SVF recombined into shelf-or-cut
     EdgeUnit.h   three sections = one edge, and Curve's distribution law
+    FollowDetector  the one envelope follower, and FOLLOW's mapping
     ColorStage   the hidden colour, wrapping the vendored engine
     EdgeEngine   the whole path, smoothing, Focus, response evaluation
-  Ui/            Theme (the only place colours live), CurveView
+  Ui/            Theme (the only place colours live), CurveView, ShapePanel
   Tools/         test_dsp.cpp, screenshot_tool.cpp
   Vendor/        FOUR COLOR's saturation engine, byte-identical - DO NOT EDIT
 docs/
@@ -92,5 +97,7 @@ docs/
 
 ## Status
 
-MVP complete and measured on macOS. Not yet verified in Cubase, and not yet
-built on Windows — see the "remaining" section of the session report.
+v0.2 complete and measured on macOS: 69 checks green, `auval` PASS, ASan+UBSan
+clean, 0 heap allocations in 10,000 audio blocks, ~458x realtime with the
+analyser feeding. v0.1 ran in Cubase; v0.2 has not been re-checked there yet,
+and there is still no Windows build, no presets and no installer.
