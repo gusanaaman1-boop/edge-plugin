@@ -3,3 +3,4 @@ build-*/
 outputs/
 ui-shots/
 .DS_Store
+dist/
