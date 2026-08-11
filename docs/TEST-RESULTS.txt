@@ -1,0 +1,116 @@
+EDGE test suite
+
+== 1. Neutral state ==
+  [PASS] defaults are a BIT-EXACT pass-through                    max |out-in| = 0.000000000000
+  [PASS] colour drive is exactly 0 when neutral                   0.000 %
+  [PASS] reported latency                                         0.0 samples, 1x colour
+
+== 2. Drawn curve == measured response ==
+  [PASS] low -6 dB @200 Hz, neutral curve                         worst |drawn-measured| = 0.114 dB @ 30 Hz
+  [PASS] low CUT @100 Hz, tight                                   worst |drawn-measured| = 0.007 dB @ 30 Hz
+  [PASS] high -12 dB @4 kHz, soft                                 worst |drawn-measured| = 0.103 dB @ 1000 Hz
+  [PASS] low CUT @300 Hz, resonance 80                            worst |drawn-measured| = 0.007 dB @ 30 Hz
+
+== 3. Depth ==
+  [PASS] Depth 25 % -> -3 dB                                      DC -3.000 dB, measured 6 oct down -3.28 dB
+  [PASS] Depth 40 % -> -6 dB                                      DC -6.000 dB, measured 6 oct down -6.38 dB
+  [PASS] Depth 58 % -> -12 dB                                     DC -12.000 dB, measured 6 oct down -12.32 dB
+  [PASS] Depth 78 % -> -24 dB                                     DC -24.000 dB, measured 6 oct down -24.43 dB
+  [PASS] Depth 92 % -> -48 dB                                     DC -48.000 dB, measured 6 oct down -48.41 dB
+  [PASS] Depth 100 % is a real cut (3 oct below Fc, tight)        -104.1 dB
+  [PASS] Depth 0->100 % in 2000 steps: largest step @700 Hz       0.0012 dB at 0.05 %
+
+== 4. Monotonicity without resonance ==
+  [PASS] LOW: response never dips going up in frequency           0.000000 dB   
+  [PASS] no unplanned peak above 0 dB anywhere                    worst = 0.000000 dB
+
+== 5. Curve ==
+  [PASS] Curve 0 % slope at full cut                              10.5 dB/oct
+  [PASS] Curve 50 % slope at full cut                             12.0 dB/oct
+  [PASS] Curve 100 % slope at full cut                            31.9 dB/oct
+  [PASS] Curve 0->100 % in 2000 steps at depth 40 %: largest step 0.0028 dB
+  [PASS] Curve 0->100 % in 2000 steps at depth 100 %: largest step 0.0833 dB
+
+== 6. Resonance ==
+  [PASS] Resonance 100 % at Depth 0 changes nothing               worst |dB| = 0.000000000
+  [PASS] full resonance peak height at full cut                   7.75 dB @ 516.317 Hz
+  [PASS] resonance stays audible across the whole Curve range     0%:7.8dB  25%:7.8dB  50%:7.8dB  75%:5.1dB  100%:2.8dB
+  [PASS] no self-oscillation: impulse tail after 0.5 s            -100.0 dBFS
+  [PASS] resonance peak is cutoff-independent                     spread = 0.111 dB over 60 Hz..3 kHz
+
+== 7. Automation ==
+  [PASS] cutoff sweep 20 Hz..8 kHz stays finite                   ok
+  [PASS] cutoff sweep never exceeds the source level              peak 0.4830
+  [PASS] cutoff sweep: largest sample step vs source              0.031785 vs source 0.028782
+  [PASS] Depth 0->100->0 sweep: largest sample step               0.033824 vs source 0.028782
+  [PASS] Curve swept end to end at full cut: largest sample step  0.028145
+
+== 8. Focus ==
+  [PASS] Focus -100..+100 in 400 steps: largest jump              low 12.0 cents, high 12.0 cents
+  [PASS] Focus +100 with the edges already touching stays legal   low 8000.0 Hz, high 8400.0 Hz
+  [PASS] Focus -100 at both range ends stays inside the ranges    low 20.00 Hz, high 20000.0 Hz
+  [PASS] edges cannot collapse onto each other                    ratio 1.0580
+
+== 9. Signal hygiene ==
+  [PASS] silence in -> silence out (worst-case settings)          0.000000000000
+  [PASS] DC input is removed by the low cut                       -100.0 dBFS
+  [PASS] +6 dBFS noise stays finite and bounded                   peak 0.587
+  [PASS] no denormal state left in the tail                       |tail| = 1.661e-37
+
+== 10. Stereo, block sizes, sample rates ==
+  [PASS] stereo-linked: L and R are sample-identical              max |L-R| = 0.000000000000
+  [PASS] block size 1 vs 512: worst deviation                     0.000000000
+  [PASS] block size 3 vs 512: worst deviation                     0.000000000
+  [PASS] block size 32 vs 512: worst deviation                    0.000000000
+  [PASS] block size 64 vs 512: worst deviation                    0.000000000
+  [PASS] block size 127 vs 512: worst deviation                   0.000000000
+  [PASS] block size 256 vs 512: worst deviation                   0.000000000
+  [PASS] block larger than the announced size is handled          128 announced, 1024 delivered, peak 0.237
+  [PASS] mono layout processes correctly                          ok
+  [PASS] -3 dB corner is rate-independent (prewarping)            44.1k:1001.2Hz  48.0k:1001.2Hz  88.2k:1001.2Hz  96.0k:1001.2Hz  192.0k:1001.2Hz  
+
+== 11. Hidden colour engine ==
+  [PASS] colour law is exactly 0 at neutral                       0 %
+  [PASS] colour law saturates at its ceiling                      10.0 % = 2.40 dB of pre-gain
+  [PASS] colour does not shift passband level with Depth          worst 0.95 dB   [0%@-60dB:-0.00  0%@-18.0618dB:-0.00  40%@-60dB:0.58  40%@-18.0618dB:-0.01  78%@-60dB:0.93  78%@-18.0618dB:-0.00  100%@-60dB:0.95  100%@-18.0618dB:-0.01]
+  [PASS] aliasing at 1x with the colour at maximum                -76.7 dBc;  2x gives -85.2 dBc for 3.14 samples of latency
+
+== 12. Bypass and Output ==
+  [PASS] six bypass toggles during playback: largest sample step  0.014398 vs source 0.014397
+  [PASS] bypass is a bit-exact dry path                           max |out-in| = 0.000000000000
+  [PASS] Output -24 dB delivers it                                -24.000 dB
+  [PASS] Output -6 dB delivers it                                 -6.000 dB
+  [PASS] Output 6 dB delivers it                                  6.000 dB
+  [PASS] Output 24 dB delivers it                                 24.000 dB
+
+== 16. Colour placement: pre vs post ==
+  [PASS] LOW: post-filter colour puts IMD back under the cut      100 Hz product: pre -87.6 dBc, post -41.0 dBc  (advantage 46.6 dB)
+  [PASS] HIGH: post-filter colour puts harmonics back over the cut 4.5 kHz harmonic: pre -43.5 dBc, post -20.2 dBc  (advantage 23.3 dB)
+  [PASS] shipping default is pre-filter                           100 Hz product -87.6 dBc
+
+== 14. Impulse, noise, preset recall ==
+  [PASS] impulse response is finite and decays                    early -8.8 dB, late -300.0 dB
+  [PASS] 0 dBFS white noise stays finite and bounded              peak 0.542
+  [PASS] six full preset changes during playback: largest sample step 0.026431 vs source 0.017273
+
+== 15. Parameters and state ==
+  [PASS] parameter count is the specified control set             14 host parameters
+  [PASS] save / restore round-trips every parameter               worst relative error = 0.000000000 on ""
+  [PASS] every documented parameter ID exists                     14 / 14
+  [PASS] every slope in the combo delivers its stated dB/oct      worst error 2.5 %   [12 dB/oct=11.8  24 dB/oct=23.6  36 dB/oct=35.1]
+  [PASS] Depth displays dB of attenuation                         78 % reads "-24.0 dB"
+  [PASS] Curve knob reads the same string the slope combo shows   75 % reads "24 dB/oct"
+
+== 17. Shoulder ==
+  [PASS] Shoulder at 0 leaves the neutral path bit-exact          max |out-in| = 0.000000000000
+  [PASS] LOW shoulder leans the WHOLE passband, recovering only at the top 400 Hz -12.25 dB, 1.6 kHz -11.69 dB, 10 kHz -6.12 dB
+  [PASS] HIGH shoulder leans the WHOLE passband, recovering only at the bottom 2 kHz -12.22 dB, 500 Hz -11.48 dB, 100 Hz -6.65 dB
+  [PASS] monotonic and never above 0 dB with Shoulder in play     worst dip 0.000000 dB, worst peak 0.000433 dB   
+  [PASS] Shoulder 0->100 % in 2000 steps: largest step            0.00599 dB
+  [PASS] Shoulder swept 0->100->0 during playback: largest sample step 0.034091 vs source 0.032702
+
+== 13. Real-time safety ==
+  [PASS] no heap allocation in 400 audio blocks                   0 allocations
+  [PASS] CPU: stereo real-time factor                             444.3x realtime (0.23 % of one core)
+
+79 checks, 0 failed
