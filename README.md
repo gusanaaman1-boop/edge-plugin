@@ -12,17 +12,19 @@ delete your low end to shape it.
 
 ```
 PERFORMANCE                 TARGETS (inside SHAPE)
-  Mode   LP / BAND / HP       Low / High  Frequency
+  Mode   LP/BAND/HP/FREE      Low / High  Frequency
   EDGE   the whole morph                  Depth
   FOLLOW the sound moves it               Curve
   SPREAD stereo movement                  Shoulder
-  BITE   hidden WARM macro                Resonance
+  BITE   hidden colour macro               Resonance
+  CHARACTER  WARM / IRON
   Output, Bypass                          Follow Sens / Attack / Release
 ```
 
 One large control drives both spectral edges from open, through shelf, to a real
 cut. FOLLOW lets the signal drive it. SPREAD moves the two channels apart in
-semitones without changing either one's bandwidth.
+semitones without changing either one's bandwidth. FREE turns the pair into a
+band you can drag across the spectrum, and points FOLLOW at its centre instead.
 
 No LFO. No sequencer. No drawable modulation. No randomisation. One envelope
 follower, and one hidden colour engine whose only public control is BITE.
@@ -56,7 +58,7 @@ workspace. Add `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster local build.
 cmake --build build --target EdgeTests -j8 && ./build/EdgeTests_artefacts/Release/EdgeTests
 ```
 
-74 checks. Every one prints the number it measured. Exit code 0 means all
+84 checks. Every one prints the number it measured. Exit code 0 means all
 passed; the last run is kept in `docs/TEST-RESULTS.txt`.
 
 ### Sanitisers
@@ -95,9 +97,21 @@ docs/
   PARAMETERS.md        the frozen IDs and every control law
 ```
 
+## Packaging
+
+```bash
+./packaging/make-packages.sh v0.4
+```
+
+Produces `dist/EDGE-<ver>-macOS.zip` (universal VST3 + AU + Standalone, with
+install notes) and `dist/EDGE-<ver>-windows-src.zip` (130 KB of source and a
+`.bat` that clones JUCE at a pinned commit and builds the VST3 itself). There is
+no cross-compiler here, so Windows ships as source that builds itself; the
+script verifies every macOS binary is genuinely universal before zipping.
+
 ## Status
 
-v0.2 complete and measured on macOS: 74 checks green, `auval` PASS, ASan+UBSan
+v0.4 complete and measured on macOS: 84 checks green, `auval` PASS, ASan+UBSan
 clean, 0 heap allocations in 10,000 audio blocks, ~458x realtime with the
 analyser feeding. v0.1 ran in Cubase; v0.2 has not been re-checked there yet,
 and there is still no Windows build, no presets and no installer.

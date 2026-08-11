@@ -4,9 +4,9 @@
 (`lowFreq`, `focus`, `link`, …) are gone; a v0.1 project is **migrated on load**
 rather than reset — see `Core/StateMigration.h` and §"Migration" below.
 
-20 host parameters. Nothing about the internal colour engine appears here, by
-design — no drive, no model, no bias, no mix, no oversampling. BITE is the only
-public character control.
+21 host parameters: the 20 specified, plus CHARACTER. Nothing else about the
+internal colour engines appears — no drive, no bias, no mix, no oversampling.
+BITE is how much; CHARACTER is which of two voicings.
 
 ## Targets — what EDGE is travelling towards
 
@@ -30,13 +30,14 @@ immediately produces a real band-pass, as specified.
 
 | ID | Name | Range | Default |
 |---|---|---|---|
-| `mode` | Mode | LP / BAND / HP | BAND |
+| `mode` | Mode | LP / BAND / HP / FREE | BAND |
 | `edge` | Edge | 0 – 100 % | 0 |
 | `follow` | Follow | −100 … +100 % | 0 |
 | `spread` | Spread | −100 … +100 % | 0 |
 | `bite` | Bite | 0 – 100 % | 35 |
 | `output` | Output | −24 … +24 dB | 0 |
 | `bypass` | Bypass | on / off | off |
+| `character` | Character | WARM / IRON | WARM |
 
 ## Follow setup — inside SHAPE
 
@@ -53,6 +54,59 @@ parameters back to the host turns one automated lane into two fighting ones.
 
 **FOCUS is gone.** It had no equivalent in the new control set and nothing
 inherits it.
+
+## FREE — the band that travels
+
+A fourth mode. Both edges are active as in BAND, and three things change:
+
+* **the corners do not travel with EDGE.** They sit where you put them, and
+  EDGE becomes purely "how deep". Measured: at EDGE 40 % and EDGE 100 % the
+  corners are within 0.01 octaves of each other while the depth moves from
+  −8.8 dB to −110 dB.
+* **the band is draggable as a unit** on the display. Grab anywhere between the
+  two handles and it slides, moving both corners by the same number of
+  *octaves*, so the width is preserved. Moving them by the same number of Hz
+  would squash the band in the bass and stretch it at the top. The shift is
+  clamped as one number, not per corner, so hitting a range end stops the band
+  rather than deforming it.
+* **FOLLOW moves the band's CENTRE**, up to ±2 octaves, instead of driving
+  EDGE's amount. Measured: 2.00 octaves of travel with the width unchanged at
+  2.000 octaves.
+
+EDGE 0 is still bit-exact in FREE, and switching in and out of it measures
+−100 dBFS of discontinuity — it crossfades both the corner travel and FOLLOW's
+destination rather than switching them.
+
+## CHARACTER — the second voicing
+
+| | |
+|---|---|
+| **WARM** | a memoryless rational soft saturator with a slow sag envelope and a drive-dependent bias. Round, fat, gently compressing, even-harmonic. |
+| **IRON** | the same saturator inside a feedback loop whose return passes a one-pole "core-loss" filter, so the transfer depends on what just happened. Denser, transformer-ish, odd-harmonic. |
+
+Both are vendored from FOUR COLOR unmodified. They are voicings, not models: no
+drive, bias, mix or oversampling is exposed for either, and BITE remains the
+only amount control.
+
+**They have different drive ceilings, and the difference is measured rather than
+chosen.** IRON's feedback low-pass throws far less energy at Nyquist — at the
+same drive it measures **−107 dBc** of aliasing against WARM's **−74**. Handing
+that headroom back is what makes IRON a distinct voicing: at a shared 24 %
+ceiling the two were only 1.4 dB apart in second-harmonic content. IRON's
+ceiling is 46 %, and at that ceiling it still measures **−89.8 dBc**.
+
+Measured harmonic profiles at BITE 100 with a full cut, relative to the
+fundamental:
+
+| | h2 | h3 | h4 | h5 |
+|---|---|---|---|---|
+| WARM | −37.5 | −19.9 | −45.1 | −31.4 |
+| IRON | −68.3 | −15.1 | −40.7 | −27.5 |
+
+Each character carries its own measured level trim, so swapping does not change
+the level of passband material: WARM −0.03 dB, IRON +0.31 dB. Switching during
+playback is a 20 ms equal-gain crossfade between two engines that are both
+already running — measured at −100 dBFS of discontinuity.
 
 ## EDGE, and what it travels
 
