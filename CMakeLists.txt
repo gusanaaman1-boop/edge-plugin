@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Edge VERSION 0.1.0 LANGUAGES C CXX)
+project(Edge VERSION 0.8.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,35 @@ else()
     set(EDGE_JUCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 endif()
 add_subdirectory(${EDGE_JUCE_DIR} ${CMAKE_BINARY_DIR}/JUCE)
+
+# --- build identity ------------------------------------------------------------
+# The version alone does not identify a build - three of them can call themselves
+# 0.7.0. The git description does, so it is compiled in and shown in the UI.
+set(EDGE_VERSION "${PROJECT_VERSION}")
+
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" describe --tags --always --dirty
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE EDGE_GIT_DESCRIBE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+endif()
+
+if(NOT EDGE_GIT_DESCRIBE)
+    # A source zip has no .git. Say so rather than inventing a hash.
+    set(EDGE_GIT_DESCRIBE "no-git")
+endif()
+
+string(TIMESTAMP EDGE_BUILD_DATE "%Y-%m-%d" UTC)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/Core/EdgeVersion.h.in"
+    "${CMAKE_BINARY_DIR}/generated/EdgeVersion.h"
+    @ONLY)
+
+message(STATUS "EDGE ${EDGE_VERSION} (${EDGE_GIT_DESCRIBE}, ${EDGE_BUILD_DATE})")
 
 if(APPLE)
     set(EDGE_FORMATS VST3 AU Standalone)
@@ -107,9 +136,11 @@ juce_add_plugin(Edge
     # Cubase files it under Other rather than Filter.
     VST3_CATEGORIES "Fx" "Filter" "EQ"
     AU_MAIN_TYPE kAudioUnitType_Effect
+    VERSION "${EDGE_VERSION}"
     PRODUCT_NAME "EDGE")
 
 target_sources(Edge PRIVATE ${EDGE_PLUGIN_SOURCES} ${EDGE_VENDOR_SOURCES})
+target_include_directories(Edge PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(Edge PUBLIC ${EDGE_COMMON_DEFS})
 target_link_libraries(Edge
     PRIVATE
@@ -133,6 +164,7 @@ target_sources(EdgeTests PRIVATE
     Source/Core/Parameters.cpp
     ${EDGE_DSP_SOURCES}
     ${EDGE_VENDOR_SOURCES})
+target_include_directories(EdgeTests PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(EdgeTests PUBLIC
     ${EDGE_COMMON_DEFS}
     JUCE_STANDALONE_APPLICATION=1)
@@ -150,7 +182,8 @@ if(EDGE_SANITIZERS)
         Source/Core/Parameters.cpp
         ${EDGE_DSP_SOURCES}
         ${EDGE_VENDOR_SOURCES})
-    target_compile_definitions(EdgeTestsSan PUBLIC
+    target_include_directories(EdgeTestsSan PUBLIC "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(EdgeTestsSan PUBLIC
         ${EDGE_COMMON_DEFS}
         JUCE_STANDALONE_APPLICATION=1)
     target_link_libraries(EdgeTestsSan
@@ -174,7 +207,8 @@ if(EDGE_SANITIZERS)
         Source/Tools/test_host.cpp
         ${EDGE_PLUGIN_SOURCES}
         ${EDGE_VENDOR_SOURCES})
-    target_compile_definitions(EdgeHostTestsSan PUBLIC
+    target_include_directories(EdgeHostTestsSan PUBLIC "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(EdgeHostTestsSan PUBLIC
         ${EDGE_COMMON_DEFS}
         JUCE_STANDALONE_APPLICATION=1
         JUCE_MODAL_LOOPS_PERMITTED=1)
@@ -203,6 +237,7 @@ target_sources(EdgeHostTests PRIVATE
     Source/Tools/test_host.cpp
     ${EDGE_PLUGIN_SOURCES}
     ${EDGE_VENDOR_SOURCES})
+target_include_directories(EdgeHostTests PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(EdgeHostTests PUBLIC
     ${EDGE_COMMON_DEFS}
     JUCE_STANDALONE_APPLICATION=1
@@ -221,6 +256,7 @@ target_sources(EdgeShot PRIVATE
     Source/Tools/screenshot_tool.cpp
     ${EDGE_PLUGIN_SOURCES}
     ${EDGE_VENDOR_SOURCES})
+target_include_directories(EdgeShot PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(EdgeShot PUBLIC
     ${EDGE_COMMON_DEFS}
     JUCE_STANDALONE_APPLICATION=1

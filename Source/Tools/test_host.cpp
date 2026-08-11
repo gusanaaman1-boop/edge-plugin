@@ -24,7 +24,10 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <EdgeVersion.h>
+
 #include "../Core/ParameterIds.h"
+#include "../Core/Presets.h"
 #include "../Core/StateMigration.h"
 #include "../PluginEditor.h"
 #include "../PluginProcessor.h"
@@ -772,11 +775,244 @@ namespace
     }
 
     // =========================================================================
-    //  6. The editor
+    //  6. Factory presets
+    // =========================================================================
+    void testPresets()
+    {
+        section ("6. factory presets");
+
+        EdgeAudioProcessor p;
+
+        check (p.getNumPrograms() == edge::kNumPresets, "every preset is exposed as a program",
+               juce::String (p.getNumPrograms()) + " programs");
+
+        juce::StringArray names;
+        for (int i = 0; i < p.getNumPrograms(); ++i)
+            names.add (p.getProgramName (i));
+
+        auto unique = names; unique.removeDuplicates (false);
+        check (unique.size() == names.size() && ! names.contains (""),
+               "preset names are present and unique",
+               juce::String (names.size() - unique.size()) + " duplicates");
+
+        //  Program 0 must be the plug-in's own defaults. Several hosts select
+        //  program 0 on load, and landing on someone's taste instead of neutral
+        //  is a surprise nobody asked for.
+        {
+            EdgeAudioProcessor fresh, zero;
+            zero.setCurrentProgram (0);
+
+            double worst = 0.0;
+            for (auto* id : kAllIds)
+                worst = juce::jmax (worst, std::abs ((double) getParam (fresh, id)
+                                                       - (double) getParam (zero, id)));
+
+            check (worst < 1.0e-6, "program 0 is exactly the parameter defaults",
+                   juce::String (worst, 9));
+        }
+
+        //  Every preset: load it, play full-scale noise through it, and check
+        //  the two things that would embarrass it in front of a customer -
+        //  a non-finite sample, and clipping the output.
+        juce::MidiBuffer midi;
+        int nonFinite = 0, tooLoud = 0;
+        double loudest = 0.0;
+        juce::String loudestName;
+
+        for (int i = 0; i < p.getNumPrograms(); ++i)
+        {
+            EdgeAudioProcessor one;
+            one.setCurrentProgram (i);
+            one.prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> b (2, 512);
+            double peak = 0.0;
+
+            //  60 blocks: long enough for the 20 ms smoothers to arrive and for
+            //  the follower presets to have actually followed something.
+            for (int k = 0; k < 60; ++k)
+            {
+                for (int c = 0; c < 2; ++c)
+                {
+                    auto* d = b.getWritePointer (c);
+                    for (int j = 0; j < 512; ++j)
+                        d[j] = sampleAt (c, k * 512 + j);      // full scale
+                }
+
+                one.processBlock (b, midi);
+
+                if (! allFinite (b)) { ++nonFinite; break; }
+                if (k >= 10) peak = juce::jmax (peak, (double) b.getMagnitude (0, 512));
+            }
+
+            if (peak > loudest) { loudest = peak; loudestName = p.getProgramName (i); }
+            if (peak > 1.0) ++tooLoud;
+        }
+
+        check (nonFinite == 0, "no preset produces a non-finite sample",
+               juce::String (nonFinite) + " of " + juce::String (p.getNumPrograms()));
+
+        check (tooLoud == 0, "no preset exceeds 0 dBFS on full-scale noise",
+               db (loudest) + " worst, at \"" + loudestName + "\"");
+
+        //  A preset must never touch Bypass. Auditioning presets on a bypassed
+        //  insert should not silently un-bypass the plug-in mid-mix.
+        {
+            EdgeAudioProcessor one;
+            setParam (one, edge::param::bypass, 1.0f);
+
+            for (int i = 0; i < one.getNumPrograms(); ++i)
+                one.setCurrentProgram (i);
+
+            check (getParam (one, edge::param::bypass) > 0.5f,
+                   "no preset changes Bypass",
+                   getParam (one, edge::param::bypass) > 0.5f ? "still bypassed" : "un-bypassed");
+        }
+
+        //  The selected program survives a save/load, or a reopened project
+        //  shows the wrong preset name beside the right sound.
+        {
+            EdgeAudioProcessor a;
+            a.setCurrentProgram (13);
+
+            juce::MemoryBlock saved;
+            a.getStateInformation (saved);
+
+            EdgeAudioProcessor b2;
+            b2.setStateInformation (saved.getData(), (int) saved.getSize());
+
+            check (b2.getCurrentProgram() == 13, "the selected preset survives a save/load",
+                   juce::String (b2.getCurrentProgram()) + " of 13");
+        }
+    }
+
+    // =========================================================================
+    //  7. Build identity
+    // =========================================================================
+    void testIdentity()
+    {
+        section ("7. build identity");
+
+        const juce::String version (edge::kVersion);
+        const juce::String describe (edge::kGitDescribe);
+
+        check (version.isNotEmpty() && version.containsChar ('.'),
+               "a version is compiled in", version);
+
+        check (describe.isNotEmpty(), "a git description is compiled in", describe);
+
+        //  A source zip has no .git and says so. A build FROM the repository
+        //  must not: "no-git" there means the version wiring silently fell back.
+        const bool fromRepo = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                                  .getParentDirectory().getFullPathName().contains ("Edge");
+        check (! fromRepo || describe != "no-git",
+               "a repository build carries a real git description", describe);
+
+        //  And the same string has to reach the log, which is the only place a
+        //  support e-mail can get it from.
+        EdgeAudioProcessor p;
+        p.prepareToPlay (48000.0, 256);
+
+        const auto file = juce::FileLogger::getSystemLogFileFolder()
+                              .getChildFile ("EDGE").getChildFile ("EDGE.log");
+        const auto text = file.loadFileAsString();
+
+        check (text.contains (version) && text.contains (describe),
+               "the log records the exact build",
+               file.existsAsFile() ? "written to " + file.getFileName() : "NO LOG FILE");
+    }
+
+    // =========================================================================
+    //  Layout audit: the two things a resize actually breaks
+    // =========================================================================
+    bool isControlLike (const juce::Component& c) noexcept
+    {
+        return dynamic_cast<const juce::Slider*> (&c)   != nullptr
+            || dynamic_cast<const juce::Button*> (&c)   != nullptr
+            || dynamic_cast<const juce::Label*> (&c)    != nullptr
+            || dynamic_cast<const juce::ComboBox*> (&c) != nullptr;
+    }
+
+    //  A ResizableCornerComponent sits ON the corner of everything by design.
+    bool isFurniture (const juce::Component& c) noexcept
+    {
+        return dynamic_cast<const juce::ResizableCornerComponent*> (&c) != nullptr;
+    }
+
+    struct LayoutFaults
+    {
+        int clipped = 0, overlapping = 0, empty = 0;
+        juce::String firstClipped, firstOverlap;
+    };
+
+    void auditLayout (juce::Component& parent, LayoutFaults& f)
+    {
+        const auto inside = parent.getLocalBounds();
+
+        for (int i = 0; i < parent.getNumChildComponents(); ++i)
+        {
+            auto* a = parent.getChildComponent (i);
+            if (a == nullptr || ! a->isVisible() || isFurniture (*a))
+                continue;
+
+            //  Clipped: any part of a control outside the box that owns it is
+            //  a part the user cannot see or click.
+            if (! inside.contains (a->getBounds()))
+            {
+                ++f.clipped;
+                if (f.firstClipped.isEmpty())
+                    f.firstClipped = a->getName().isEmpty() ? juce::String (typeid (*a).name())
+                                                            : a->getName();
+            }
+
+            if (isControlLike (*a) && a->getBounds().isEmpty())
+                ++f.empty;
+
+            //  Overlapping: two controls sharing pixels means one of them is
+            //  unreachable, and it is the failure a font or a size change
+            //  causes most often.
+            if (isControlLike (*a))
+            {
+                for (int j = i + 1; j < parent.getNumChildComponents(); ++j)
+                {
+                    auto* b = parent.getChildComponent (j);
+                    if (b == nullptr || ! b->isVisible() || isFurniture (*b) || ! isControlLike (*b))
+                        continue;
+
+                    if (a->getBounds().intersects (b->getBounds()))
+                    {
+                        ++f.overlapping;
+                        if (f.firstOverlap.isEmpty())
+                        {
+                            auto describe = [] (const juce::Component& c)
+                            {
+                                auto text = c.getName();
+                                if (auto* l = dynamic_cast<const juce::Label*> (&c))
+                                    text = "Label(" + l->getText() + ")";
+                                else if (auto* bt = dynamic_cast<const juce::Button*> (&c))
+                                    text = "Button(" + bt->getButtonText() + ")";
+                                else if (dynamic_cast<const juce::Slider*> (&c) != nullptr)
+                                    text = "Slider(" + c.getName() + ")";
+
+                                return text + " " + c.getBounds().toString();
+                            };
+
+                            f.firstOverlap = describe (*a) + "  vs  " + describe (*b);
+                        }
+                    }
+                }
+            }
+
+            auditLayout (*a, f);
+        }
+    }
+
+    // =========================================================================
+    //  8. The editor
     // =========================================================================
     void testEditor()
     {
-        section ("6. editor");
+        section ("8. editor");
 
         EdgeAudioProcessor p;
         applyBusySettings (p);
@@ -807,9 +1043,12 @@ namespace
         }
         check (true, "20 editor open/close cycles with audio running", "no crash, no leak");
 
-        //  Every size the resizer allows must lay out and paint.
+        //  Every size the resizer allows, at every display scale a Windows
+        //  machine is likely to be set to. The scale matters because JUCE
+        //  rounds component bounds to whole pixels at the scaled resolution,
+        //  which is where a layout that only ever ran at 1x and 2x on a Mac
+        //  falls apart.
         {
-            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
             //  The four corners of what the constrainer in PluginEditor.cpp
             //  allows, plus the default with SHAPE open - the tall layout is a
             //  different code path, not a taller version of the same one.
@@ -820,17 +1059,66 @@ namespace
                                                     + edge::ui::metric::shapeHeight },
                 { edge::ui::metric::maxWidth,     1400 } };
 
-            int painted = 0;
-            for (auto& s : sizes)
+            const float scales[] = { 1.0f, 1.5f, 2.0f };
+
+            LayoutFaults worst;
+            int painted = 0, combinations = 0;
+            juce::String worstAt;
+
+            for (float scale : scales)
             {
-                ed->setSize (s[0], s[1]);
-                juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
-                juce::Graphics g (img);
-                ed->paintEntireComponent (g, true);
-                ++painted;
+                juce::Desktop::getInstance().setGlobalScaleFactor (scale);
+
+                for (auto& size : sizes)
+                {
+                    //  A fresh editor per combination: a layout that only works
+                    //  because of the size it happened to be built at is not a
+                    //  layout that works.
+                    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+                    ed->setSize (size[0], size[1]);
+
+                    LayoutFaults f;
+                    auditLayout (*ed, f);
+
+                    if (f.clipped + f.overlapping + f.empty
+                          > worst.clipped + worst.overlapping + worst.empty)
+                    {
+                        worst = f;
+                        worstAt = juce::String (size[0]) + "x" + juce::String (size[1])
+                                    + " @ " + juce::String (scale, 1) + "x";
+                    }
+
+                    juce::Image img (juce::Image::ARGB,
+                                     juce::roundToInt ((float) ed->getWidth() * scale),
+                                     juce::roundToInt ((float) ed->getHeight() * scale), true);
+                    {
+                        juce::Graphics g (img);
+                        g.addTransform (juce::AffineTransform::scale (scale));
+                        ed->paintEntireComponent (g, true);
+                    }
+
+                    if (img.getWidth() > 0 && img.getHeight() > 0)
+                        ++painted;
+
+                    ++combinations;
+                }
             }
-            check (painted == 4, "min, default, SHAPE-open and max sizes paint",
-                   juce::String (painted) + " of 4");
+
+            juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
+
+            check (painted == combinations, "every size x scale lays out and paints",
+                   juce::String (painted) + " of " + juce::String (combinations));
+
+            check (worst.clipped == 0, "no control is clipped by its parent",
+                   juce::String (worst.clipped)
+                     + (worst.clipped ? "  first: " + worst.firstClipped + " at " + worstAt : ""));
+
+            check (worst.overlapping == 0, "no two controls share pixels",
+                   juce::String (worst.overlapping)
+                     + (worst.overlapping ? "  first: " + worst.firstOverlap + " at " + worstAt : ""));
+
+            check (worst.empty == 0, "no control is laid out with zero size",
+                   juce::String (worst.empty) + (worst.empty ? " at " + worstAt : ""));
         }
     }
 }
@@ -846,6 +1134,8 @@ int main()
     testHostileInput();
     testAutomation();
     testState();
+    testPresets();
+    testIdentity();
     testEditor();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

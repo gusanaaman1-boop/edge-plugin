@@ -76,6 +76,10 @@ private:
     std::unique_ptr<juce::ParameterAttachment> freqWatcherLow, freqWatcherHigh;
 
     juce::ComponentBoundsConstrainer constrainer;
+
+    //  Built once in the constructor: the version the user reads and the exact
+    //  build a support e-mail needs are the same string.
+    juce::String versionText;
     std::unique_ptr<juce::ResizableCornerComponent> resizer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EdgeAudioProcessorEditor)

@@ -1,6 +1,8 @@
 #include <cmath>
 #include <memory>
 
+#include <EdgeVersion.h>
+
 #include "PluginEditor.h"
 
 using namespace edge;
@@ -177,6 +179,13 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     shape.onLinkChanged = [] {};
     installLinkCoupling();
 
+    //  Show the git description when it differs from the plain version - that
+    //  is a build between releases, and the difference is exactly what matters
+    //  when someone reports a problem.
+    versionText = juce::String (edge::kGitDescribe) == juce::String ("v") + edge::kVersion
+                    ? juce::String ("v") + edge::kVersion
+                    : juce::String ("v") + edge::kVersion + "  " + edge::kGitDescribe;
+
     //  --- window -------------------------------------------------------------
     constrainer.setSizeLimits (metric::minWidth, 420, metric::maxWidth, 1400);
     setConstrainer (&constrainer);
@@ -344,6 +353,15 @@ void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawText (juce::String::fromUTF8 ("E D G E"),
                 e.getX() - 24, e.getBottom() + 4, e.getWidth() + 48, 24,
                 juce::Justification::centred, false);
+
+    //  The build, bottom right, dim. Small enough to ignore and present enough
+    //  that "which version is this?" is never a guess.
+    g.setColour (colour::textDim.withAlpha (0.55f));
+    g.setFont (juce::FontOptions (font::tiny));
+    g.drawText (versionText,
+                getLocalBounds().removeFromBottom (16).withTrimmedRight (22)
+                                .withTrimmedLeft (12),
+                juce::Justification::centredRight, false);
 }
 
 void EdgeAudioProcessorEditor::resized()
@@ -424,7 +442,14 @@ void EdgeAudioProcessorEditor::resized()
     {
         auto row = biteKnob.markArea.withHeight (metric::markRow);
         warmLampArea = row.removeFromLeft (10);
-        characterButton.setBounds (row.withTrimmedLeft (1).expanded (0, 3));
+
+        //  The mark row is reserved so that nothing can collide with a knob.
+        //  expanded(0, 3) grew the button in BOTH directions, which put its
+        //  bottom 3 px inside BITE's slider - measured at 720 x 420, where the
+        //  knob row is tightest. It grows UPWARD only, into the strip's own
+        //  padding, which is the space that is actually free.
+        characterButton.setBounds (row.withTrimmedLeft (1)
+                                      .withTop (row.getY() - 3));
     }
 
     //  --- EDGE, filling what is left ------------------------------------------

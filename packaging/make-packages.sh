@@ -43,37 +43,58 @@ for f in "VST3/EDGE.vst3/Contents/MacOS/EDGE" \
     esac
 done
 
+# The parameter table is generated FROM the binary being packaged. A table
+# copied from the repository could describe a different build.
+"$ROOT/build-universal/EdgeShot_artefacts/Release/EdgeShot" --parameter-table docs/PARAMETER-TABLE.md
+
 STAGE="$DIST/stage-mac/EDGE-$VERSION"
 mkdir -p "$STAGE"
 cp -R "$ART/VST3/EDGE.vst3" "$STAGE/"
 cp -R "$ART/AU/EDGE.component" "$STAGE/"
 cp -R "$ART/Standalone/EDGE.app" "$STAGE/"
 cp "$ROOT/README.md" "$STAGE/"
-cp "$ROOT/docs/PARAMETERS.md" "$STAGE/"
+cp "$ROOT/docs/MANUAL.md" "$STAGE/"
+cp "$ROOT/docs/PARAMETER-TABLE.md" "$STAGE/"
+cp "$ROOT/docs/SIGNING.md" "$STAGE/"
+cp "$ROOT/packaging/uninstall-macos.sh" "$STAGE/"
 
 cat > "$STAGE/INSTALL-macOS.txt" <<'TXT'
 EDGE — macOS
 ============
 
-Copy:
+There is an installer: EDGE-<version>.pkg, alongside this zip. It puts each
+format where it belongs and lets you deselect the ones you do not want.
+
+If you would rather copy by hand, copy:
 
   EDGE.vst3       ->  ~/Library/Audio/Plug-Ins/VST3/
   EDGE.component  ->  ~/Library/Audio/Plug-Ins/Components/
 
 EDGE.app is the standalone; it needs no installation, just double-click it.
 
+To remove everything again: ./uninstall-macos.sh --remove
+
 These are universal binaries (Apple Silicon and Intel), so they load in hosts
 running natively and under Rosetta.
 
 They are NOT signed or notarised. The first time you open the standalone,
 macOS will refuse it: right-click the app, choose Open, then Open again in the
-dialog. Plug-ins loaded by a DAW are not affected by this.
+dialog. Plug-ins loaded by a DAW are not affected by this. SIGNING.md says what
+that costs and what fixes it.
+
+MANUAL.md is the manual. PARAMETER-TABLE.md lists every control and preset,
+generated from the plug-in itself.
 
 In Cubase: Studio > VST Plug-in Manager > rescan. EDGE is filed under Filter.
 TXT
 
 ( cd "$DIST/stage-mac" && zip -qr "$DIST/EDGE-$VERSION-macOS.zip" "EDGE-$VERSION" )
 rm -rf "$DIST/stage-mac"
+
+# --- macOS installer ---------------------------------------------------------
+echo
+echo "== macOS: installer =="
+"$ROOT/packaging/make-installer-macos.sh" "$VERSION"
 
 # --- Windows source ---------------------------------------------------------
 echo

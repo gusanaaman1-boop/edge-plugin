@@ -14,6 +14,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "../Core/ParameterIds.h"
+#include "../Core/Presets.h"
 #include "../PluginEditor.h"
 #include "../PluginProcessor.h"
 
@@ -162,9 +163,84 @@ namespace
     }
 }
 
+namespace
+{
+    //  The manual's parameter table, written FROM the plug-in rather than typed
+    //  next to it. A table maintained by hand is a table that disagrees with the
+    //  build within one release.
+    int writeParameterTable (const juce::File& out)
+    {
+        EdgeAudioProcessor processor;
+
+        juce::StringArray rows;
+        rows.add ("| Control | ID | Range | Default |");
+        rows.add ("|---|---|---|---|");
+
+        for (auto* raw : processor.getParameters())
+        {
+            auto* rp = dynamic_cast<juce::RangedAudioParameter*> (raw);
+            if (rp == nullptr)
+                continue;
+
+            const auto& range = rp->getNormalisableRange();
+
+            //  Shown the way the plug-in itself shows them, so the manual and
+            //  the read-out cannot describe the same number differently.
+            const auto low  = rp->getText (0.0f, 0);
+            const auto high = rp->getText (1.0f, 0);
+            const auto def  = rp->getText (rp->getDefaultValue(), 0);
+
+            const bool discrete = rp->getNumSteps() > 0
+                                    && rp->getNumSteps() < (int) juce::AudioProcessor::getDefaultNumParameterSteps();
+
+            juce::String span = low + " … " + high;
+            if (discrete && range.interval > 0.0f)
+            {
+                juce::StringArray items;
+                for (int i = 0; i < rp->getNumSteps(); ++i)
+                    items.add (rp->getText ((float) i / (float) juce::jmax (1, rp->getNumSteps() - 1), 0));
+
+                items.removeDuplicates (false);
+                span = items.joinIntoString (" / ");
+            }
+
+            rows.add ("| " + rp->getName (128) + " | `" + rp->paramID + "` | "
+                        + span + " | " + def + " |");
+        }
+
+        rows.add ("");
+        rows.add ("| # | Preset |");
+        rows.add ("|---|---|");
+        for (int i = 0; i < edge::kNumPresets; ++i)
+            rows.add ("| " + juce::String (i) + " | " + edge::kPresets[i].name + " |");
+
+        out.getParentDirectory().createDirectory();
+        if (! out.replaceWithText (rows.joinIntoString ("\n") + "\n"))
+        {
+            std::fprintf (stderr, "could not write %s\n", out.getFullPathName().toRawUTF8());
+            return 1;
+        }
+
+        std::printf ("wrote %s  (%d parameters, %d presets)\n",
+                     out.getFullPathName().toRawUTF8(),
+                     processor.getParameters().size(), edge::kNumPresets);
+        return 0;
+    }
+}
+
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI init;
+
+    const juce::StringArray args (argv + 1, juce::jmax (0, argc - 1));
+
+    if (args.contains ("--parameter-table"))
+    {
+        const int i = args.indexOf ("--parameter-table");
+        const juce::String path = i + 1 < args.size() ? args[i + 1]
+                                                      : juce::String ("docs/PARAMETER-TABLE.md");
+        return writeParameterTable (juce::File::getCurrentWorkingDirectory().getChildFile (path));
+    }
 
     const juce::File dir = argc > 1
         ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1])

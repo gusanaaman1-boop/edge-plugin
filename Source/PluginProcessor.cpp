@@ -1,8 +1,11 @@
 #include <cmath>
 
+#include <EdgeVersion.h>
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include "Core/Presets.h"
 #include "Core/StateMigration.h"
 
 EdgeAudioProcessor::EdgeAudioProcessor()
@@ -24,6 +27,37 @@ bool EdgeAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) con
     return layouts.getMainInputChannelSet() == out;
 }
 
+//  What a support e-mail needs and never contains: which build, in which host,
+//  at which rate and block size. Written once per prepareToPlay - the message
+//  thread, never the audio thread - and only when it CHANGES, so a host that
+//  re-prepares every few seconds cannot fill a disk.
+void EdgeAudioProcessor::logEnvironment (double sampleRate, int samplesPerBlock)
+{
+    const auto line = juce::String ("EDGE ") + edge::kVersion
+                        + " (" + edge::kGitDescribe + ", built " + edge::kBuildDate + ")"
+                        + "  host: " + juce::PluginHostType().getHostDescription()
+                        + "  " + juce::String (sampleRate, 0) + " Hz"
+                        + "  block " + juce::String (samplesPerBlock)
+                        + "  " + juce::String (getTotalNumInputChannels()) + " in / "
+                        + juce::String (getTotalNumOutputChannels()) + " out";
+
+    if (line == lastLoggedEnvironment)
+        return;
+
+    lastLoggedEnvironment = line;
+
+    //  One file, appended, next to the other plug-in logs. Nothing is sent
+    //  anywhere: it exists so the user can paste it, not so anyone can collect
+    //  it.
+    const auto file = juce::FileLogger::getSystemLogFileFolder()
+                          .getChildFile ("EDGE").getChildFile ("EDGE.log");
+
+    if (logger == nullptr)
+        logger = std::make_unique<juce::FileLogger> (file, "EDGE session log", 256 * 1024);
+
+    logger->logMessage (juce::Time::getCurrentTime().toISO8601 (true) + "  " + line);
+}
+
 void EdgeAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const int chans = juce::jmax (1, getTotalNumOutputChannels());
@@ -32,6 +66,8 @@ void EdgeAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     setLatencySamples ((int) std::lround (engine.getLatencySamples()));
 
     engine.snapToSettings (edge::readSettings (apvts));
+
+    logEnvironment (sampleRate, samplesPerBlock);
 }
 
 void EdgeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -43,6 +79,32 @@ void EdgeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     engine.setSettings (edge::readSettings (apvts));
     engine.process (buffer);
+}
+
+int EdgeAudioProcessor::getNumPrograms()
+{
+    return edge::kNumPresets;
+}
+
+const juce::String EdgeAudioProcessor::getProgramName (int index)
+{
+    if (juce::isPositiveAndBelow (index, edge::kNumPresets))
+        return edge::kPresets[index].name;
+
+    return {};
+}
+
+void EdgeAudioProcessor::setCurrentProgram (int index)
+{
+    if (! juce::isPositiveAndBelow (index, edge::kNumPresets))
+        return;
+
+    currentProgram = index;
+
+    //  Written through the parameters, so the host's automation lanes, the
+    //  editor and the saved state all see the same change. NOT snapped: the
+    //  smoothers glide, which is what stops auditioning presets from clicking.
+    edge::applyPreset (apvts, index);
 }
 
 juce::AudioProcessorEditor* EdgeAudioProcessor::createEditor()
@@ -57,6 +119,7 @@ void EdgeAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("editorWidth",  editorWidth.load(),  nullptr);
     tree.setProperty ("editorHeight", editorHeight.load(), nullptr);
     tree.setProperty ("shapeOpen",    shapeOpen.load(),    nullptr);
+    tree.setProperty ("program",      currentProgram,      nullptr);
 
     if (auto xml = tree.createXml())
         copyXmlToBinary (*xml, destData);
@@ -103,6 +166,8 @@ void EdgeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     editorWidth.store  ((int) tree.getProperty ("editorWidth",  edge::ui::metric::defaultWidth));
     editorHeight.store ((int) tree.getProperty ("editorHeight", edge::ui::metric::defaultHeight));
     shapeOpen.store    ((bool) tree.getProperty ("shapeOpen", false));
+    currentProgram = juce::jlimit (0, edge::kNumPresets - 1,
+                                   (int) tree.getProperty ("program", 0));
     loadedLegacyState.store (migrated);
 
     apvts.replaceState (tree);

@@ -1,6 +1,6 @@
-# Release phases 1–4
+# Release phases 1–10
 
-The work order from the review has ten phases. This records what phases 1–4
+The work order from the review has ten phases. This records what each one
 actually did, what was measured, and — just as important — what is still
 **unverified** because this machine cannot verify it.
 
@@ -190,3 +190,160 @@ Mid-session the same check read **96×**, which was a browser using 190 % of the
 CPU and a video decoding alongside it; the *pre-change* binary measured **97.6×**
 under that same load. Throughput numbers from this suite mean nothing unless the
 machine is quiet.
+
+
+---
+
+## Phase 5 — signing and notarisation
+
+**Status: BLOCKED, and it stays blocked until someone decides to spend money.**
+It needs an Apple Developer account (US $99/year) and, for Windows, a
+code-signing certificate ($200–600/year). Nothing was bought.
+
+Measured today: `codesign -dv` reports `Signature=adhoc`, `TeamIdentifier=not
+set`; `spctl -a -vvv` on the standalone reports **rejected, source=no usable
+signature**. That is the honest starting point, not a guess.
+
+[SIGNING.md](SIGNING.md) records what the gap costs a customer (the .pkg is
+refused outright, the standalone needs right-click → Open, Windows shows
+SmartScreen), every command that will fix it, and the `spctl` acceptance test —
+which must run on a machine that has never seen the build, not on the one that
+signed it.
+
+The manual tells the user plainly what they will see and what to click. A
+warning someone was warned about is an annoyance; a warning nobody mentioned is
+a support ticket.
+
+---
+
+## Phase 6 — installers
+
+**Status: macOS done and verified here. Windows written, not compiled.**
+
+`packaging/make-installer-macos.sh` builds `dist/EDGE-<ver>.pkg` from the
+universal artefacts with `pkgbuild`/`productbuild` — both ship with macOS, so
+nothing was downloaded and nothing was paid for. Three components, each
+deselectable, because someone who only uses Cubase does not want an Audio Unit
+in their Logic folder.
+
+It refuses to build if the artefacts are missing or not universal, and it
+verifies the payload afterwards rather than trusting that a package which built
+contains anything.
+
+| | |
+|---|---|
+| `vst3.pkg` | **29 files** → `/Library/Audio/Plug-Ins/VST3` |
+| `au.pkg` | **25 files** → `/Library/Audio/Plug-Ins/Components` |
+| `app.pkg` | **19 files** → `/Applications` |
+| `EDGE-v0.8.pkg` | 12 MB, three choices, welcome page, **unsigned** |
+
+`packaging/uninstall-macos.sh` removes exactly what was installed (and the log
+folder, but **not** preferences — a reinstall should not forget the window size
+someone chose). It lists by default, removes with `--remove`, and **verifies
+afterwards**, failing if anything is left behind. Dry-run today found the three
+items this machine actually has.
+
+`packaging/EDGE.iss` is the Windows installer, for Inno Setup 6. It installs the
+VST3 **bundle** with `recursesubdirs` (copying only the inner `.vst3` file
+produces a plug-in that scans and then fails to load), asks for elevation up
+front rather than discovering it mid-copy, refuses to start if the build is
+missing, and checks after installing that the target folder actually exists.
+**Not compiled — there is no Windows machine here.**
+
+---
+
+## Phase 7 — factory presets
+
+**Status: done. 23 presets, exposed as host programs.**
+
+`Source/Core/Presets.h`. Programs rather than a browser of our own, so Cubase's
+preset menu lists them. Each preset is a **full** parameter set: a partial
+preset silently inherits whatever the last one left behind, and then the same
+preset sounds different depending on what you loaded before it.
+
+Two deliberate rules, both tested:
+
+* **Program 0 is DEFAULT** and is exactly the parameter defaults. Several hosts
+  select program 0 on load, and landing on someone's taste instead of neutral is
+  a surprise nobody asked for.
+* **No preset touches Bypass.** Auditioning presets on a bypassed insert must
+  not silently un-bypass the plug-in mid-mix.
+
+| | |
+|---|---|
+| presets exposed as programs | **23** |
+| names present and unique | 0 duplicates |
+| program 0 against the defaults | **0.000000000** |
+| non-finite output, all 23 on full-scale noise | **0** |
+| exceeding 0 dBFS, all 23 | **0** |
+| Bypass after loading all 23 | still bypassed |
+| selected preset through save/load | survives |
+
+---
+
+## Phase 8 — resizing and DPI
+
+**Status: done, and it found a real layout bug.**
+
+Every size the constrainer allows × every display scale a Windows machine is
+likely to be set to: **12 combinations**, each with a freshly created editor, so
+a layout that only works because of the size it happened to be built at is not
+mistaken for one that works.
+
+The audit walks the component tree and asserts three things: nothing clipped by
+its parent, no two controls sharing pixels, nothing laid out with zero size.
+
+**What it found:** the CHARACTER button used `expanded(0, 3)`, which grew it in
+*both* directions and put its bottom 3 px inside BITE's slider — at 720 × 420,
+where the knob row is tightest. The mark row exists precisely so nothing can
+collide with a knob; the button now grows upward only, into the strip's own
+padding.
+
+| | |
+|---|---|
+| size × scale combinations laid out and painted | **12 of 12** |
+| controls clipped by their parent | **0** |
+| pairs of controls sharing pixels | **0** (was 1) |
+| controls with zero size | **0** |
+
+---
+
+## Phase 9 — build identity and diagnostics
+
+**Status: done.**
+
+`EdgeVersion.h` is generated at configure time from the project version and
+`git describe --tags --always --dirty`. A source zip has no `.git` and reports
+`no-git` rather than inventing a hash.
+
+The build is shown bottom-right in the window, and appended once per session to
+a log file — version, git description, build date, host, sample rate, block
+size, channel counts. Written from `prepareToPlay`, never the audio thread, and
+only when the line **changes**, so a host that re-prepares constantly cannot
+fill a disk. Nothing is sent anywhere; the file exists so the user can paste it.
+
+* macOS: `~/Library/Logs/EDGE/EDGE.log`
+* Windows: `%APPDATA%\EDGE\EDGE.log`
+
+Tested: the version compiled in is non-empty, a repository build carries a real
+git description, and the log contains **both** the version and the git
+description after `prepareToPlay`.
+
+---
+
+## Phase 10 — documentation
+
+**Status: done.**
+
+[MANUAL.md](MANUAL.md) — the user manual. What EDGE is in one paragraph, ten
+minutes with it, then every control. It states the measured slope numbers rather
+than the nominal ones, and says why the steep entries fall short.
+
+[PARAMETER-TABLE.md](PARAMETER-TABLE.md) — **generated from the plug-in**, by
+`EdgeShot --parameter-table`, and regenerated by the packaging script from the
+binary being packaged. Ranges and defaults are printed by the plug-in's own
+read-out functions, so the manual and the knob cannot describe the same number
+differently. A table maintained by hand disagrees with the build within one
+release.
+
+24 parameters and 23 presets, both counts asserted against the source.

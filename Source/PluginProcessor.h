@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -34,10 +35,12 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return "Default"; }
+    //  Factory presets, exposed as host programs so Cubase's own preset menu
+    //  lists them without a browser of our own. See Core/Presets.h.
+    int getNumPrograms() override;
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock&) override;
@@ -45,6 +48,10 @@ public:
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return apvts; }
     edge::EdgeEngine& getEngine() noexcept { return engine; }
+
+    //  Version, build and host, appended to a log file the user can paste into
+    //  a support e-mail. Called from prepareToPlay, never from the audio thread.
+    void logEnvironment (double sampleRate, int samplesPerBlock);
 
     //  Editor-side state, kept in the plug-in state so a resized window and an
     //  open SHAPE panel come back the way they were left.
@@ -60,6 +67,11 @@ public:
 private:
     juce::AudioProcessorValueTreeState apvts;
     edge::EdgeEngine engine;
+
+    int currentProgram = 0;
+
+    std::unique_ptr<juce::FileLogger> logger;
+    juce::String lastLoggedEnvironment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EdgeAudioProcessor)
 };
