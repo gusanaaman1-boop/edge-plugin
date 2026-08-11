@@ -43,8 +43,26 @@ EDGE host-contract suite
   [PASS] empty, corrupt and future states are survivable            still processing
   [PASS] a rejected state leaves the parameters alone               317.0 Hz
 
-== 6. editor ==
-  [PASS] 20 editor open/close cycles with audio running             no crash, no leak
-  [PASS] min, default, SHAPE-open and max sizes paint               4 of 4
+== 6. factory presets ==
+  [PASS] every preset is exposed as a program                       23 programs
+  [PASS] preset names are present and unique                        0 duplicates
+  [PASS] program 0 is exactly the parameter defaults                0.000000000
+  [PASS] no preset produces a non-finite sample                     0 of 23
+  [PASS] no preset exceeds 0 dBFS on full-scale noise               -0.0 dBFS worst, at "DEFAULT"
+  [PASS] no preset changes Bypass                                   still bypassed
+  [PASS] the selected preset survives a save/load                   13 of 13
 
-35 checks, 0 failed
+== 7. build identity ==
+  [PASS] a version is compiled in                                   0.8.0
+  [PASS] a git description is compiled in                           v0.8
+  [PASS] a repository build carries a real git description          v0.8
+  [PASS] the log records the exact build                            written to EDGE.log
+
+== 8. editor ==
+  [PASS] 20 editor open/close cycles with audio running             no crash, no leak
+  [PASS] every size x scale lays out and paints                     12 of 12
+  [PASS] no control is clipped by its parent                        0
+  [PASS] no two controls share pixels                               0
+  [PASS] no control is laid out with zero size                      0
+
+49 checks, 0 failed
