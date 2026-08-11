@@ -56,7 +56,7 @@ workspace. Add `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster local build.
 cmake --build build --target EdgeTests -j8 && ./build/EdgeTests_artefacts/Release/EdgeTests
 ```
 
-69 checks. Every one prints the number it measured. Exit code 0 means all
+74 checks. Every one prints the number it measured. Exit code 0 means all
 passed; the last run is kept in `docs/TEST-RESULTS.txt`.
 
 ### Sanitisers
@@ -97,7 +97,7 @@ docs/
 
 ## Status
 
-v0.2 complete and measured on macOS: 69 checks green, `auval` PASS, ASan+UBSan
+v0.2 complete and measured on macOS: 74 checks green, `auval` PASS, ASan+UBSan
 clean, 0 heap allocations in 10,000 audio blocks, ~458x realtime with the
 analyser feeding. v0.1 ran in Cubase; v0.2 has not been re-checked there yet,
 and there is still no Windows build, no presets and no installer.

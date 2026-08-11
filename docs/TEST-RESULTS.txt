@@ -90,9 +90,18 @@ EDGE test suite
   [PASS] every slope in the combo delivers its stated dB/oct        worst error 8.7 %   [12 dB/oct=12.0  24 dB/oct=23.4  36 dB/oct=32.9]  (6-pole predicts 33.0)
   [PASS] Resonance 100 % at Depth 0 changes nothing                 worst |dB| = 0.000000000
 
+== 14. Colour placement: pre vs post ==
+  [PASS] post-filter colour puts IMD back under the cut             100 Hz product: pre -86.5 dBc, post -34.6 dBc  (advantage 51.9 dB)
+  [PASS] shipping default is pre-filter                             100 Hz product -86.5 dBc
+
+== 15. Impulse, noise, preset recall ==
+  [PASS] impulse response is finite and decays                      early -8.9 dB, late -300.0 dB
+  [PASS] 0 dBFS white noise stays finite and bounded                peak 0.558
+  [PASS] six full preset changes during playback: largest sample step 0.019298 vs source 0.017273
+
 == 13. Real-time safety and CPU ==
   [PASS] no heap allocation in 10,000 blocks, analyser off and on   0 off, 0 on
-  [PASS] CPU with the analyser feeding: real-time factor            491.018x realtime (0.20 % of one core, bar 200x)
-  [PASS] analyser costs no more than 10 % of throughput             closed 475.06x, open 491.018x, delta -3.4 %
+  [PASS] CPU with the analyser feeding: real-time factor            323.185x realtime (0.31 % of one core, bar 200x)
+  [PASS] analyser costs no more than 10 % of throughput             closed 322.575x, open 323.185x, delta -0.2 %
 
-69 checks, 0 failed
+74 checks, 0 failed
