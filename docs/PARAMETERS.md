@@ -84,7 +84,30 @@ destination rather than switching them.
 | **WARM** | a memoryless rational soft saturator with a slow sag envelope and a drive-dependent bias. Round, fat, gently compressing, even-harmonic. |
 | **IRON** | the same saturator inside a feedback loop whose return passes a one-pole "core-loss" filter, so the transfer depends on what just happened. Denser, transformer-ish, odd-harmonic. |
 
-Both are vendored from FOUR COLOR unmodified. They are voicings, not models: no
+### A third voicing was built and then removed
+
+FOUR COLOR's diode-pair engine ("GRIT") was implemented, measured, and taken
+back out. It pre-emphasises the top of the band *into* a hard-knee exponential
+clipper, so it makes harmonics out of content that is already high and they fold
+straight away. Measured at 1×, BITE 100, full cut:
+
+| drive | alias floor |
+|---|---|
+| 16.00 % | −58.7 dBc |
+| 11.19 % | −61.7 dBc |
+| 7.67 % | −63.9 dBc |
+| 4.82 % | −65.6 dBc |
+
+The curve **flattens**. Capping the drive — which is what the work order says to
+do when a character cannot meet the limit at 1× — buys 7 dB across the whole
+useful range and never reaches −70 dBc, and by 4.8 % the engine is barely
+engaged anyway. The alternatives were 2× oversampling for the whole plug-in,
+which costs 3.14 samples of latency and the bit-exact bypass, or moving the bar.
+
+It becomes available the moment zero latency stops being a requirement;
+`ColorStage::setOversamplingFactor(2)` is the only line that would change.
+
+Both shipped characters are vendored from FOUR COLOR unmodified. They are voicings, not models: no
 drive, bias, mix or oversampling is exposed for either, and BITE remains the
 only amount control.
 

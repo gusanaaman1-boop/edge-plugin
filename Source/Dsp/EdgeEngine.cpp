@@ -108,8 +108,7 @@ namespace edge
     float biteMaxDrive (float bitePercent, int character) noexcept
     {
         const float b = juce::jlimit (0.0f, 1.0f, bitePercent * 0.01f);
-        const float ceiling = character == (int) Character::iron ? kBiteMaxDriveIron
-                                                                 : kBiteMaxDriveWarm;
+        const float ceiling = biteCeilingFor (character);
 
         //  b == 0 must give EXACTLY zero, which pow() does, and which is what
         //  makes "BITE 0 fully disengages" a bit-exact statement rather than a

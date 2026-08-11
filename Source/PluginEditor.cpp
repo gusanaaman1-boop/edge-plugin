@@ -151,8 +151,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
         characterButton.onClick = [cp]
         {
             const int now = (int) std::lround (cp->convertFrom0to1 (cp->getValue()));
-            const int next = now == (int) Character::warm ? (int) Character::iron
-                                                          : (int) Character::warm;
+            const int next = (now + 1) % kNumCharacters;
             cp->beginChangeGesture();
             cp->setValueNotifyingHost (cp->convertTo0to1 ((float) next));
             cp->endChangeGesture();

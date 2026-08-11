@@ -1698,7 +1698,7 @@ namespace
 
         //  Both characters must fully disengage at BITE 0, and both must leave
         //  EDGE 0 bit-exact.
-        for (int ch : { (int) edge::Character::warm, (int) edge::Character::iron })
+        for (int ch = 0; ch < edge::kNumCharacters; ++ch)
         {
             edge::EdgeEngine n;
             n.prepare (kSr, 512, 2);
@@ -1761,81 +1761,107 @@ namespace
                 return profile;
             };
 
-            const auto warm = harmonics ((int) edge::Character::warm);
-            const auto iron = harmonics ((int) edge::Character::iron);
+            std::vector<std::vector<double>> profiles;
+            for (int ch = 0; ch < edge::kNumCharacters; ++ch)
+                profiles.push_back (harmonics (ch));
 
-            //  The whole profile, not one partial: two saturators can agree on
-            //  the second harmonic and disagree everywhere else.
-            double total = 0.0;
+            //  EVERY pair must differ, not just one: a third voicing that is a
+            //  near-copy of one of the other two is a menu entry, not a colour.
+            //  The whole profile is compared, because two saturators can agree
+            //  on the second harmonic and disagree everywhere else.
+            double worstPair = 1.0e9;
             juce::String detail;
-            for (size_t i = 0; i < warm.size(); ++i)
+
+            for (int a = 0; a < edge::kNumCharacters; ++a)
             {
-                total += std::abs (warm[i] - iron[i]);
-                detail += "h" + juce::String ((int) i + 2) + " "
-                        + juce::String (warm[i], 1) + "/" + juce::String (iron[i], 1) + "  ";
+                detail += juce::String (edge::characterName (a)) + " ";
+                for (size_t i = 0; i < profiles[(size_t) a].size(); ++i)
+                    detail += juce::String (profiles[(size_t) a][i], 0) + " ";
+                detail += "  ";
+
+                for (int b = a + 1; b < edge::kNumCharacters; ++b)
+                {
+                    double total = 0.0;
+                    for (size_t i = 0; i < profiles[(size_t) a].size(); ++i)
+                        total += std::abs (profiles[(size_t) a][i] - profiles[(size_t) b][i]);
+
+                    worstPair = juce::jmin (worstPair, total);
+                }
             }
 
-            check (total > 12.0,
-                   "WARM and IRON produce measurably different harmonics",
-                   "sum|delta| = " + f (total, 1) + " dB over h2..h5  [WARM/IRON  "
+            check (worstPair > 12.0,
+                   "all three characters are measurably different from each other",
+                   "closest pair differs by " + f (worstPair, 1) + " dB over h2..h5  ["
                        + detail.trim() + "]");
         }
 
-        //  IRON has to meet the same aliasing bar as WARM, at the same worst
-        //  case. If it did not, kBiteMaxDrive would have to come down - the
-        //  cap is set by this measurement, never by taste.
+        //  Every character has to meet the SAME aliasing bar at its OWN
+        //  ceiling. That is what makes the ceilings measurements rather than
+        //  preferences: if one of them failed here its cap would come down,
+        //  and latency is never traded for it.
         {
-            edge::EdgeEngine en;
-            en.prepare (kSr, 1024, 1);
+            juce::String detail;
+            double worst = -1000.0;
 
-            Settings s = openBand();
-            s.mode = (int) edge::Mode::highPass;
-            s.lowFreqHz = 20.0f; s.lowCurvePercent = 0.0f;
-            s.bitePercent = 100.0f;
-            s.character = (int) edge::Character::iron;
-            en.snapToSettings (s);
-
-            constexpr int fftOrder = 15;
-            constexpr int fftSize = 1 << fftOrder;
-            const int bin = 683;
-            const double f0 = bin * kSr / fftSize;
-
-            juce::AudioBuffer<float> b (1, fftSize * 2);
-            const double w = juce::MathConstants<double>::twoPi * f0 / kSr;
-            for (int i = 0; i < b.getNumSamples(); ++i)
-                b.setSample (0, i, 0.5f * (float) std::sin (w * (double) i));
-
-            run (en, b, 256);
-
-            std::vector<float> fftData ((size_t) fftSize * 2, 0.0f);
-            for (int i = 0; i < fftSize; ++i)
+            for (int ch = 0; ch < edge::kNumCharacters; ++ch)
             {
-                const double t = (double) i / (fftSize - 1);
-                const double win = 0.35875 - 0.48829 * std::cos (juce::MathConstants<double>::twoPi * t)
-                                 + 0.14128 * std::cos (2.0 * juce::MathConstants<double>::twoPi * t)
-                                 - 0.01168 * std::cos (3.0 * juce::MathConstants<double>::twoPi * t);
-                fftData[(size_t) i] = b.getSample (0, fftSize + i) * (float) win;
+                edge::EdgeEngine en;
+                en.prepare (kSr, 1024, 1);
+
+                Settings s = openBand();
+                s.mode = (int) edge::Mode::highPass;
+                s.lowFreqHz = 20.0f; s.lowCurvePercent = 0.0f;
+                s.bitePercent = 100.0f;
+                s.character = ch;
+                en.snapToSettings (s);
+
+                constexpr int fftOrder = 15;
+                constexpr int fftSize = 1 << fftOrder;
+                const int bin = 683;
+                const double f0 = bin * kSr / fftSize;
+
+                juce::AudioBuffer<float> b (1, fftSize * 2);
+                const double w = juce::MathConstants<double>::twoPi * f0 / kSr;
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    b.setSample (0, i, 0.5f * (float) std::sin (w * (double) i));
+
+                run (en, b, 256);
+
+                std::vector<float> fftData ((size_t) fftSize * 2, 0.0f);
+                for (int i = 0; i < fftSize; ++i)
+                {
+                    const double t = (double) i / (fftSize - 1);
+                    const double win = 0.35875
+                        - 0.48829 * std::cos (juce::MathConstants<double>::twoPi * t)
+                        + 0.14128 * std::cos (2.0 * juce::MathConstants<double>::twoPi * t)
+                        - 0.01168 * std::cos (3.0 * juce::MathConstants<double>::twoPi * t);
+                    fftData[(size_t) i] = b.getSample (0, fftSize + i) * (float) win;
+                }
+
+                juce::dsp::FFT fft (fftOrder);
+                fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+                double fundamental = 0.0, alias = 0.0;
+                for (int k = 1; k < fftSize / 2; ++k)
+                {
+                    const double mag = fftData[(size_t) k];
+                    const bool isHarmonic = (k % bin) <= 3 || (bin - (k % bin)) <= 3;
+
+                    if (k == bin)          fundamental = juce::jmax (fundamental, mag);
+                    else if (! isHarmonic) alias = juce::jmax (alias, mag);
+                }
+
+                const double aliasDb = 20.0 * std::log10 (
+                    juce::jmax (1.0e-12, alias / juce::jmax (1.0e-12, fundamental)));
+
+                worst = juce::jmax (worst, aliasDb);
+                detail += juce::String (edge::characterName (ch)) + " "
+                        + juce::String (aliasDb, 1) + " dBc @ "
+                        + juce::String (edge::biteMaxDrive (100.0f, ch), 0) + " %   ";
             }
 
-            juce::dsp::FFT fft (fftOrder);
-            fft.performFrequencyOnlyForwardTransform (fftData.data());
-
-            double fundamental = 0.0, alias = 0.0;
-            for (int k = 1; k < fftSize / 2; ++k)
-            {
-                const double mag = fftData[(size_t) k];
-                const bool isHarmonic = (k % bin) <= 3 || (bin - (k % bin)) <= 3;
-
-                if (k == bin)          fundamental = juce::jmax (fundamental, mag);
-                else if (! isHarmonic) alias = juce::jmax (alias, mag);
-            }
-
-            const double aliasDb = 20.0 * std::log10 (
-                juce::jmax (1.0e-12, alias / juce::jmax (1.0e-12, fundamental)));
-
-            check (aliasDb <= -70.0, "IRON aliasing at BITE 100, 1x, full cut",
-                   f (aliasDb, 1) + " dBc  (ceiling "
-                       + f (edge::biteMaxDrive (100.0f, (int) edge::Character::iron), 1) + " %)");
+            check (worst <= -70.0, "every character meets -70 dBc at its own ceiling",
+                   "worst " + f (worst, 1) + " dBc   [" + detail.trim() + "]");
         }
 
         //  Switching character during playback is a crossfade, not a step.
@@ -1850,16 +1876,14 @@ namespace
             auto buf = sweep (e, s, 440.0, 0.5f, 4.0, 64,
                               [] (Settings& t, double u)
                               {
-                                  t.character = ((int) (u * 8.0)) % 2 == 0
-                                                  ? (int) edge::Character::warm
-                                                  : (int) edge::Character::iron;
+                                  t.character = ((int) (u * 9.0)) % edge::kNumCharacters;
                               });
 
             const float excess = juce::jmax (0.0f, maxStep (buf) - sourceStep);
             const float excessDb = juce::Decibels::gainToDecibels (juce::jmax (1.0e-9f, excess));
 
             check (allFinite (buf) && excessDb < -60.0f,
-                   "eight character switches during playback: excess step",
+                   "nine character switches during playback: excess step",
                    f (excessDb, 1) + " dBFS");
         }
 
@@ -1869,7 +1893,7 @@ namespace
             juce::String detail;
             double worst = 0.0;
 
-            for (int ch : { (int) edge::Character::warm, (int) edge::Character::iron })
+            for (int ch = 0; ch < edge::kNumCharacters; ++ch)
             {
                 Settings s = openBand();
                 s.mode = (int) edge::Mode::highPass;
@@ -1883,7 +1907,7 @@ namespace
                         + juce::String (got, 2) + " dB   ";
             }
 
-            check (worst < 1.0, "both characters are level-matched in the passband",
+            check (worst < 1.0, "every character is level-matched in the passband",
                    detail.trim());
         }
     }

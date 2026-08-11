@@ -68,12 +68,27 @@ namespace edge
     //          and a drive-dependent bias. Round, fat, gently compressing.
     //    IRON  the same saturator inside a feedback loop whose return passes a
     //          one-pole "core loss" filter, so the transfer depends on what just
-    //          happened. Denser, more transformer-ish, more even harmonics.
+    //          happened. Denser, transformer-ish, odd-harmonic.
+    //  A THIRD voicing was built and then removed. FOUR COLOR's diode-pair
+    //  engine ("GRIT") pre-emphasises the top of the band INTO a hard-knee
+    //  exponential clipper, so it generates harmonics from content that is
+    //  already high and they fold immediately. Measured at 1x, BITE 100, full
+    //  cut:
     //
-    //  Neither is a "model" in the sense the earlier rule forbade: there is no
-    //  drive, bias, mix or oversampling exposed, and BITE is still the only
-    //  amount control. This is one two-way voicing switch.
+    //      drive 16.00 %  ->  -58.7 dBc      drive 7.67 %  ->  -63.9 dBc
+    //      drive 11.19 %  ->  -61.7 dBc      drive 4.82 %  ->  -65.6 dBc
+    //
+    //  The curve FLATTENS: capping the drive - which is what the work order
+    //  says to do - buys 7 dB across the whole useful range and never reaches
+    //  the -70 dBc bar, and by 4.8 % the engine is barely engaged anyway. The
+    //  alternatives were 2x oversampling for the whole plug-in (which costs
+    //  3.14 samples of latency and the bit-exact bypass, both of which are
+    //  specified guarantees) or moving the bar. So it is not shipped.
+    //
+    //  It becomes available the moment zero latency stops being a requirement;
+    //  ColorStage::setOversamplingFactor(2) is the only line that would change.
     enum class Character { warm = 0, iron };
+    inline constexpr int kNumCharacters = 2;
 
     inline const char* characterName (int c) noexcept
     {
@@ -150,6 +165,10 @@ namespace edge
     //  1.4 dB apart in second-harmonic content.
     inline constexpr float kBiteMaxDriveWarm = 24.0f;   // % at BITE 100
     inline constexpr float kBiteMaxDriveIron = 46.0f;
+    inline float biteCeilingFor (int character) noexcept
+    {
+        return character == (int) Character::iron ? kBiteMaxDriveIron : kBiteMaxDriveWarm;
+    }
 
     //  What the v0.1 migration is written against.
     inline constexpr float kBiteMaxDrive   = kBiteMaxDriveWarm;

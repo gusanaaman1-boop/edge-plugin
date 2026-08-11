@@ -35,7 +35,7 @@ namespace edge
     public:
         ColorStage() = default;
 
-        static constexpr int numCharacters = 2;
+        static constexpr int numCharacters = kNumCharacters;
         static constexpr int maxChannels = 2;
 
         void prepare (double sampleRate, int maxBlockSize, int numChannels);

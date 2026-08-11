@@ -108,14 +108,14 @@ EDGE test suite
 == 17. CHARACTER ==
   [PASS] WARM at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
   [PASS] IRON at EDGE 0 is bit-exact                                max |out-in| = 0.000000000000
-  [PASS] WARM and IRON produce measurably different harmonics       sum|delta| = 43.8 dB over h2..h5  [WARM/IRON  h2 -37.5/-68.3  h3 -19.9/-15.1  h4 -45.1/-40.7  h5 -31.4/-27.5]
-  [PASS] IRON aliasing at BITE 100, 1x, full cut                    -89.8 dBc  (ceiling 46.0 %)
-  [PASS] eight character switches during playback: excess step      -100.0 dBFS
-  [PASS] both characters are level-matched in the passband          WARM -0.03 dB   IRON 0.31 dB
+  [PASS] all three characters are measurably different from each other closest pair differs by 43.8 dB over h2..h5  [WARM -37.4724 -19.9348 -45.0599 -31.365   IRON -68.3172 -15.1342 -40.7059 -27.5203]
+  [PASS] every character meets -70 dBc at its own ceiling           worst -73.9 dBc   [WARM -73.9 dBc @ 24 %   IRON -89.8 dBc @ 46 %]
+  [PASS] nine character switches during playback: excess step       -100.0 dBFS
+  [PASS] every character is level-matched in the passband           WARM -0.03 dB   IRON 0.31 dB
 
 == 13. Real-time safety and CPU ==
   [PASS] no heap allocation in 10,000 blocks, analyser off and on   0 off, 0 on
-  [PASS] CPU with the analyser feeding: real-time factor            327.518x realtime (0.31 % of one core, bar 200x)
-  [PASS] analyser costs no more than 10 % of throughput             closed 326.264x, open 327.518x, delta -0.4 %
+  [PASS] CPU with the analyser feeding: real-time factor            342.38x realtime (0.29 % of one core, bar 200x)
+  [PASS] analyser costs no more than 10 % of throughput             closed 315.66x, open 342.38x, delta -8.5 %
 
 84 checks, 0 failed
