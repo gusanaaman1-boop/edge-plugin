@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+
 #include "CurveView.h"
 
 #include "../PluginProcessor.h"

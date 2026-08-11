@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <map>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "ParameterIds.h"

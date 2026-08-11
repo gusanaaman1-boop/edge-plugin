@@ -1,3 +1,5 @@
+#include <memory>
+
 #include "ShapePanel.h"
 
 #include "../Core/ParameterIds.h"
@@ -5,7 +7,7 @@
 namespace edge::ui
 {
     void ShapePanel::Control::attach (juce::Component& parent,
-                                      juce::AudioProcessorValueTreeState& state,
+                                      juce::AudioProcessorValueTreeState& apvts,
                                       const juce::String& id, const juce::String& text,
                                       juce::Colour accent)
     {
@@ -23,9 +25,9 @@ namespace edge::ui
         parent.addAndMakeVisible (caption);
 
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            state, id, slider);
+            apvts, id, slider);
 
-        if (auto* p = state.getParameter (id))
+        if (auto* p = apvts.getParameter (id))
             slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
     }
 
@@ -109,12 +111,12 @@ namespace edge::ui
         highTitle.setBounds (titles);
 
         const int knob = juce::jlimit (52, 82, r.getWidth() / 9);
-        const int gap = 5;
+        constexpr int gap = 5;
 
         auto lowArea  = r.removeFromLeft (knob * 4 + gap * 3);
         auto highArea = r.removeFromRight (knob * 4 + gap * 3);
 
-        auto place = [knob, gap] (juce::Rectangle<int>& area, Control& c)
+        auto place = [knob] (juce::Rectangle<int>& area, Control& c)
         {
             c.setBounds (area.removeFromLeft (knob));
             area.removeFromLeft (gap);

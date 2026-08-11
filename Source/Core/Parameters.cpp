@@ -1,3 +1,8 @@
+#include <cmath>
+#include <functional>
+#include <memory>
+#include <utility>
+
 #include "Parameters.h"
 
 namespace edge
@@ -30,8 +35,22 @@ namespace edge
             return juce::String (db, 1) + " dB";
         }
 
+        //  Three controls below read out in a unit that is NOT their own
+        //  parameter range, so each one needs its inverse spelled out. Without
+        //  it JUCE's default parser reads the printed number as a percentage:
+        //  "-12.0 dB" of Depth became 0 %, and "24 dB/oct" of Curve became
+        //  24 % - a gentler filter than the one the read-out named.
+        float depthValue (const juce::String& t)
+        {
+            if (t.trim().equalsIgnoreCase ("CUT"))
+                return 100.0f;
+
+            return depthDbToPercent (t.getFloatValue());
+        }
+
         //  Exactly what the display's slope combo shows, from the same table.
         juce::String curveText (float percent, int) { return slopeTextFor (percent); }
+        float curveValue (const juce::String& t) { return curvePercentForText (t); }
 
         juce::String shoulderText (float percent, int)
         {
@@ -39,6 +58,14 @@ namespace edge
                 return "OFF";
 
             return juce::String (shoulderPercentToDb (percent), 1) + " dB";
+        }
+
+        float shoulderValue (const juce::String& t)
+        {
+            if (t.trim().equalsIgnoreCase ("OFF"))
+                return 0.0f;
+
+            return shoulderDbToPercent (t.getFloatValue());
         }
 
         juce::String percentText (float v, int) { return juce::String (v, 0) + " %"; }
@@ -93,17 +120,17 @@ namespace edge
                   frequencyRange (kLowFreqMin, kLowFreqMax, 120.0f), 250.0f, hzText, hzValue);
         //  Depth defaults to CUT on both sides so that selecting BAND and
         //  opening EDGE immediately produces a real band-pass.
-        addFloat (param::lowDepth,    "Low Depth",    { 0.0f, 100.0f }, 100.0f, depthText);
-        addFloat (param::lowCurve,    "Low Curve",    { 0.0f, 100.0f },  75.0f, curveText);
-        addFloat (param::lowShoulder, "Low Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText);
+        addFloat (param::lowDepth,    "Low Depth",    { 0.0f, 100.0f }, 100.0f, depthText, depthValue);
+        addFloat (param::lowCurve,    "Low Curve",    { 0.0f, 100.0f },  75.0f, curveText, curveValue);
+        addFloat (param::lowShoulder, "Low Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText, shoulderValue);
         addFloat (param::lowReso,     "Low Reso",     { 0.0f, 100.0f },   0.0f, percentText);
 
         //  --- HIGH target -----------------------------------------------------
         addFloat (param::highFreq, "High Freq",
                   frequencyRange (kHighFreqMin, kHighFreqMax, 3000.0f), 6000.0f, hzText, hzValue);
-        addFloat (param::highDepth,    "High Depth",    { 0.0f, 100.0f }, 100.0f, depthText);
-        addFloat (param::highCurve,    "High Curve",    { 0.0f, 100.0f },  75.0f, curveText);
-        addFloat (param::highShoulder, "High Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText);
+        addFloat (param::highDepth,    "High Depth",    { 0.0f, 100.0f }, 100.0f, depthText, depthValue);
+        addFloat (param::highCurve,    "High Curve",    { 0.0f, 100.0f },  75.0f, curveText, curveValue);
+        addFloat (param::highShoulder, "High Shoulder", { 0.0f, 100.0f },   0.0f, shoulderText, shoulderValue);
         addFloat (param::highReso,     "High Reso",     { 0.0f, 100.0f },   0.0f, percentText);
 
         //  --- MID band --------------------------------------------------------
@@ -124,8 +151,18 @@ namespace edge
         addFloat (param::bite,   "Bite",   { 0.0f, 100.0f }, 35.0f, percentText);
         addFloat (param::output, "Output", { -24.0f, 24.0f, 0.0f }, 0.0f, dbText);
 
+        //  JUCE prints a bool as "On"/"Off" but parses text with getIntValue,
+        //  so a host's generic editor - and the plug-in's own text box - read
+        //  the word "On" back as 0. Spell out the inverse.
         layout.add (std::make_unique<juce::AudioParameterBool> (
-            juce::ParameterID { param::bypass, kStateVersion }, "Bypass", false));
+            juce::ParameterID { param::bypass, kStateVersion }, "Bypass", false,
+            juce::AudioParameterBoolAttributes().withValueFromStringFunction (
+                [] (const juce::String& t)
+                {
+                    const auto s = t.trim();
+                    return s.equalsIgnoreCase ("on")   || s.equalsIgnoreCase ("yes")
+                        || s.equalsIgnoreCase ("true") || s.getIntValue() != 0;
+                })));
 
         //  CHARACTER: which of the two hidden engines BITE drives. Two entries,
         //  and it stays two - it is a voicing, not a model browser, and nothing

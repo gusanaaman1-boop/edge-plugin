@@ -1,0 +1,50 @@
+EDGE host-contract suite
+
+== 1. parameter contract ==
+  [PASS] parameter count                                            24 exposed, 24 expected
+  [PASS] every named ID is registered                               0 missing
+  [PASS] parameter IDs are unique                                   0 duplicates
+  [PASS] parameter names are unique                                 0 duplicates
+  [PASS] every parameter is automatable                             0 not automatable
+  [PASS] every parameter has a name                                 0 unnamed
+  [PASS] no name is truncated by the VST3 name field                0 longer than 31 chars
+  [PASS] every default is inside its range                          0 out of range
+  [PASS] value -> text -> value round-trips                         0.333 % of range, worst at low.depth @ -0.8 dB
+
+== 2. host lifecycle ==
+  [PASS] every rate x block size produces finite output             200 cases, 0 non-finite
+  [PASS] re-prepare without release is safe                         finite
+  [PASS] mono layout accepted and processed                         finite
+  [PASS] silence in produces exact silence out                      -inf dBFS
+
+== 3. hostile input ==
+  [PASS] recovers from a NaN sample upstream                        recovered
+  [PASS] recovers from an Inf sample upstream                       recovered
+  [PASS] recovers from a 1e30 sample upstream                       recovered
+  [PASS] denormal input produces finite output                      -inf dBFS
+
+== 4. automation determinism ==
+  [PASS] two offline renders of the same automation null            -inf dBFS  (153600 samples)
+  [PASS] block size does not change the result                      -inf dBFS  (51200 samples)
+  [PASS] parameter writes are visible immediately                   50.000 -> 51.000
+
+== 5. state ==
+  [PASS] parameter contract is unchanged                            0x7826a61a1db9aa41
+  [PASS] all 24 parameters survive a save/load                      0.000000000
+  [PASS] editor size and SHAPE state survive a save/load            1180 x 760, shape open
+  [PASS] a v2 state is not flagged as migrated                      not flagged
+  [PASS] a recalled project renders identically                     -inf dBFS
+  [PASS] a v1 state is detected and flagged                         flagged
+  [PASS] v1 corner frequencies carry across unchanged               400.0 Hz / 4000.0 Hz
+  [PASS] v1 loads with EDGE fully open                              100.00 %
+  [PASS] v1 loads in BAND mode                                      BAND
+  [PASS] v1 BITE matches the documented migration value             28.63 %, expected 28.63 %
+  [PASS] v1 loads with the MID band a wire                          0.0000 dB
+  [PASS] empty, corrupt and future states are survivable            still processing
+  [PASS] a rejected state leaves the parameters alone               317.0 Hz
+
+== 6. editor ==
+  [PASS] 20 editor open/close cycles with audio running             no crash, no leak
+  [PASS] min, default, SHAPE-open and max sizes paint               4 of 4
+
+35 checks, 0 failed

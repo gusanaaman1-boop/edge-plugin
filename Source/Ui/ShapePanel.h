@@ -7,6 +7,9 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "Theme.h"

@@ -22,6 +22,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 
 #include <juce_dsp/juce_dsp.h>
 

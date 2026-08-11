@@ -19,6 +19,7 @@
 #pragma once
 
 #include <atomic>
+#include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
@@ -58,9 +59,11 @@ namespace edge
     //  through the perceptual table, so the labelled values land exactly where
     //  they are supposed to.
     float depthPercentToDb (float percent) noexcept;
+    float depthDbToPercent (float db) noexcept;
 
     //  Shoulder control (0..100 %) -> dB, linear.
     float shoulderPercentToDb (float percent) noexcept;
+    float shoulderDbToPercent (float db) noexcept;
 
     //  MID Resonance (0..100 %) -> damping. Wide tilt to formant.
     float midResoToDamping (float percent) noexcept;
@@ -76,6 +79,11 @@ namespace edge
     extern const SlopeChoice kSlopeChoices[kNumSlopeChoices];
     int slopeIndexFor (float curvePercent) noexcept;
     juce::String slopeTextFor (float curvePercent);
+
+    //  Every control whose read-out is not a plain number needs an inverse, or
+    //  typing into its text box - which a host's generic editor also does -
+    //  parses the WORDS as a percentage.
+    float curvePercentForText (const juce::String& text) noexcept;
 
     //  BITE -> the two halves of the colour law. Exposed so the tests can
     //  assert the law rather than the audio it happens to produce.

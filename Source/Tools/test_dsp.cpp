@@ -6,9 +6,14 @@
 // so a failure is diagnosable without attaching a debugger. Nothing here
 // asserts a number that was not actually measured by the code above it.
 
-#include <cstdio>
+#include <atomic>
 #include <cmath>
 #include <complex>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <new>
 #include <vector>
 
 #include <juce_dsp/juce_dsp.h>

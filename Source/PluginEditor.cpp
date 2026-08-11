@@ -1,3 +1,6 @@
+#include <cmath>
+#include <memory>
+
 #include "PluginEditor.h"
 
 using namespace edge;

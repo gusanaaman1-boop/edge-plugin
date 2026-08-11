@@ -27,6 +27,8 @@
 #pragma once
 
 #include <array>
+#include <cmath>
+#include <complex>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 

@@ -1,3 +1,6 @@
+#include <cmath>
+#include <complex>
+
 #include "EdgeEngine.h"
 
 namespace edge
@@ -34,17 +37,21 @@ namespace edge
         highHz = (float) std::exp2 (juce::jlimit (logHighMin, logHighMax, lHigh));
     }
 
-    float depthPercentToDb (float percent) noexcept
+    namespace
     {
-        //  The perceptual anchors from the work order, at control positions
-        //  chosen so that the STEEPEST segment is 2.5 dB per 1 % of travel.
+        //  Depth's taper. The perceptual anchors from the work order, at control
+        //  positions chosen so that the STEEPEST segment is 2.5 dB per 1 % of
+        //  travel.
         //
         //  That number is the EDGE macro's continuity budget. EDGE walks this
         //  same taper, and the acceptance test asks for under 0.15 dB of change
         //  per 0.05 % of EDGE - so any segment steeper than 3 dB/% fails it. The
         //  first version put -24 dB at 78 % and -48 dB at 92 %, which is 9 dB/%
         //  at the top and measured 0.39 dB per step.
-        static constexpr float pts[][2] =
+        //
+        //  Both directions read this one table, so the control law and the text
+        //  box cannot drift apart.
+        constexpr float kDepthPoints[][2] =
         {
             {   0.0f,    0.0f },
             {  20.0f,   -3.0f },
@@ -54,24 +61,56 @@ namespace edge
             { 100.0f, kDepthFloorDb }
         };
 
-        const float p = juce::jlimit (0.0f, 100.0f, percent);
-        constexpr int n = (int) (sizeof (pts) / sizeof (pts[0]));
+        constexpr int kNumDepthPoints = (int) (sizeof (kDepthPoints) / sizeof (kDepthPoints[0]));
+    }
 
-        for (int i = 1; i < n; ++i)
+    float depthPercentToDb (float percent) noexcept
+    {
+        const float p = juce::jlimit (0.0f, 100.0f, percent);
+
+        for (int i = 1; i < kNumDepthPoints; ++i)
         {
-            if (p <= pts[i][0])
+            if (p <= kDepthPoints[i][0])
             {
-                const float t = (p - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);
-                return pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]);
+                const float t = (p - kDepthPoints[i - 1][0])
+                              / (kDepthPoints[i][0] - kDepthPoints[i - 1][0]);
+                return kDepthPoints[i - 1][1]
+                     + t * (kDepthPoints[i][1] - kDepthPoints[i - 1][1]);
             }
         }
 
         return kDepthFloorDb;
     }
 
+    //  The exact inverse, so that a value typed into the read-out lands where
+    //  the read-out said it would. Without it the default text parser reads the
+    //  dB number as a PERCENTAGE: typing "-12 dB" into Depth set it to 0 %.
+    float depthDbToPercent (float db) noexcept
+    {
+        const float d = juce::jlimit (kDepthFloorDb, 0.0f, db);
+
+        for (int i = 1; i < kNumDepthPoints; ++i)
+        {
+            if (d >= kDepthPoints[i][1])
+            {
+                const float t = (d - kDepthPoints[i - 1][1])
+                              / (kDepthPoints[i][1] - kDepthPoints[i - 1][1]);
+                return kDepthPoints[i - 1][0]
+                     + t * (kDepthPoints[i][0] - kDepthPoints[i - 1][0]);
+            }
+        }
+
+        return 100.0f;
+    }
+
     float shoulderPercentToDb (float percent) noexcept
     {
         return kShoulderMaxDb * juce::jlimit (0.0f, 100.0f, percent) * 0.01f;
+    }
+
+    float shoulderDbToPercent (float db) noexcept
+    {
+        return juce::jlimit (0.0f, 100.0f, 100.0f * db / kShoulderMaxDb);
     }
 
     float midResoToDamping (float percent) noexcept
@@ -109,6 +148,34 @@ namespace edge
         //  12 x poles here would claim "18 dB/oct" for a setting that measures
         //  23.5, so the percentage is shown instead.
         return juce::String (curvePercent, 0) + " %";
+    }
+
+    //  The inverse. Curve reads out as a slope NAME, so the default parser took
+    //  "24 dB/oct" for 24 % - a completely different filter from the one the
+    //  read-out named.
+    float curvePercentForText (const juce::String& text) noexcept
+    {
+        const auto t = text.trim().toUpperCase();
+
+        for (int i = 0; i < kNumSlopeChoices; ++i)
+            if (t == juce::String (kSlopeChoices[i].name).toUpperCase())
+                return kSlopeChoices[i].curvePercent;
+
+        //  "24", "24dB", "24 db/oct" - anything naming a slope rather than a
+        //  position on the control.
+        if (t.containsIgnoreCase ("DB"))
+        {
+            const float wanted = t.getFloatValue();
+            for (int i = 0; i < kNumSlopeChoices; ++i)
+            {
+                const juce::String name (kSlopeChoices[i].name);
+                if (name.containsIgnoreCase ("DB")
+                     && std::abs (name.getFloatValue() - wanted) < 0.5f)
+                    return kSlopeChoices[i].curvePercent;
+            }
+        }
+
+        return juce::jlimit (0.0f, 100.0f, t.getFloatValue());
     }
 
     // --- BITE ----------------------------------------------------------------
@@ -597,6 +664,24 @@ namespace edge
             return;
         }
 
+        //  A single non-finite sample from whatever is upstream used to be
+        //  permanent. Every filter here is recursive, so one NaN reaches the
+        //  state and stays there: the plug-in outputs NaN for ever after, and
+        //  the only cure is reloading it. Measured before this guard existed -
+        //  one NaN sample, then ten blocks of ordinary audio, still NaN.
+        //
+        //  Replacing the sample is identity on any finite input, so the
+        //  bit-exact neutral path is unaffected, and it is cheaper than trying
+        //  to detect the damage afterwards - by then it is already in the state.
+        for (int c = 0; c < chans; ++c)
+        {
+            auto* d = buffer.getWritePointer (c);
+
+            for (int i = 0; i < n; ++i)
+                if (! std::isfinite (d[i]))
+                    d[i] = 0.0f;
+        }
+
         //  The dry copy is the bypass path AND the follower's detector input.
         //  Latency is zero, so it is the input itself.
         for (int c = 0; c < chans; ++c)
@@ -664,31 +749,37 @@ namespace edge
             if (placement == ColourPlacement::post)
                 colour.process (view, chunk);
 
+            //  Output trim and the bypass fade, per sample - and INSIDE the
+            //  chunk loop, because outputGain's target moves with the colour's
+            //  measured level trim and the resonance make-up, both of which are
+            //  recomputed per chunk. Running this after the loop instead applied
+            //  the LAST chunk's target across the whole block, so the same
+            //  project rendered at 256 and at 512 samples differed by -48 dBFS.
+            for (int i = 0; i < chunk; ++i)
+            {
+                const float g = outputGain.getNextValue();
+                const float b = bypassFade.getNextValue();
+
+                for (int c = 0; c < chans; ++c)
+                {
+                    auto* d = chunkPtrs[c];
+                    const float dry = dryBuffer.getReadPointer (c)[pos + i];
+                    const float wet = d[i] * g;
+
+                    //  The two endpoints are assigned, not interpolated to.
+                    //  Writing wet + 1.0f*(dry-wet) leaves a rounding residue of
+                    //  about 6e-8, which is enough to stop a bypassed instance
+                    //  nulling.
+                    d[i] = b >= 1.0f ? dry
+                         : b <= 0.0f ? wet
+                                     : wet + b * (dry - wet);
+                }
+            }
+
             pos += chunk;
         }
 
         lastColourDrive.store (colourDrive.getCurrentValue(), std::memory_order_relaxed);
-
-        //  Output trim and the bypass fade, per sample.
-        for (int i = 0; i < n; ++i)
-        {
-            const float g = outputGain.getNextValue();
-            const float b = bypassFade.getNextValue();
-
-            for (int c = 0; c < chans; ++c)
-            {
-                auto* d = buffer.getWritePointer (c);
-                const float dry = dryBuffer.getReadPointer (c)[i];
-                const float wet = d[i] * g;
-
-                //  The two endpoints are assigned, not interpolated to. Writing
-                //  wet + 1.0f*(dry-wet) leaves a rounding residue of about 6e-8,
-                //  which is enough to stop a bypassed instance nulling.
-                d[i] = b >= 1.0f ? dry
-                     : b <= 0.0f ? wet
-                                 : wet + b * (dry - wet);
-            }
-        }
 
         pushAnalyzer (buffer, n);
     }

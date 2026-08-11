@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <cmath>
+
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include "../Core/ParameterIds.h"

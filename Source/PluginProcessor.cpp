@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -69,6 +71,28 @@ void EdgeAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     auto tree = juce::ValueTree::fromXml (*xml);
     if (! tree.isValid())
         return;
+
+    //  A state written by a build that does not exist yet. replaceState would
+    //  hand APVTS a tree with parameters it does not recognise and none of the
+    //  ones it does, which resets a mixed session to defaults - the loudest
+    //  possible way to lose someone's work. Take across whatever is recognised
+    //  and leave everything else exactly as it is.
+    if ((int) tree.getProperty ("stateVersion", 1) > edge::kStateVersion)
+    {
+        for (int i = 0; i < tree.getNumChildren(); ++i)
+        {
+            const auto child = tree.getChild (i);
+            if (! child.hasProperty ("id") || ! child.hasProperty ("value"))
+                continue;
+
+            if (auto* p = apvts.getParameter (child.getProperty ("id").toString()))
+                p->setValueNotifyingHost (
+                    p->convertTo0to1 ((float) child.getProperty ("value")));
+        }
+
+        loadedLegacyState.store (false);
+        return;
+    }
 
     //  A project saved with v0.1 has the old parameter IDs in it. Loading it
     //  unchanged would reset a mixed session to defaults, so it is rewritten

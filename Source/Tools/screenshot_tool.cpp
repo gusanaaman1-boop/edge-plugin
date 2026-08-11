@@ -6,6 +6,11 @@
 // APVTS exactly as a host would, and renders the component to a PNG. No screen
 // capture, no window server, no timing luck.
 
+#include <cstdio>
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "../Core/ParameterIds.h"

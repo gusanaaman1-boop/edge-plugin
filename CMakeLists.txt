@@ -35,7 +35,10 @@ option(EDGE_SANITIZERS "Add an EdgeTestsSan target built with ASan/UBSan" OFF)
 # Warning flags are attached to EDGE's own translation units only: JUCE's module
 # sources compile into our targets and we do not own their warnings.
 if(MSVC)
-    set(EDGE_WARNING_FLAGS /W4 /permissive-)
+    # /utf-8 is not optional insurance: without it MSVC reads the source in the
+    # machine's ANSI codepage, so the first non-ASCII character anyone types into
+    # a comment or a juce::String becomes a Windows-only compile error.
+    set(EDGE_WARNING_FLAGS /W4 /permissive- /utf-8)
     if(EDGE_WERROR)
         list(APPEND EDGE_WARNING_FLAGS /WX)
     endif()
@@ -43,6 +46,16 @@ else()
     set(EDGE_WARNING_FLAGS
         -Wall -Wextra -Wpedantic -Wshadow -Wcast-align -Wunused
         -Woverloaded-virtual -Wnon-virtual-dtor -Wimplicit-fallthrough)
+
+    # MSVC lives on the other machine, so these stand in for the two /W4
+    # warnings that actually fire on DSP code: C4244 (double -> float) and
+    # C4267 (size_t -> int). Catching them here is the only way this build can
+    # say anything true about the Windows one.
+    list(APPEND EDGE_WARNING_FLAGS -Wfloat-conversion)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND EDGE_WARNING_FLAGS -Wshorten-64-to-32)
+    endif()
+
     if(EDGE_WERROR)
         list(APPEND EDGE_WARNING_FLAGS -Werror)
     endif()
@@ -68,7 +81,7 @@ set(EDGE_PLUGIN_SOURCES
     Source/Ui/Theme.cpp)
 
 set(EDGE_OWN_SOURCES ${EDGE_PLUGIN_SOURCES} Source/Tools/test_dsp.cpp
-    Source/Tools/screenshot_tool.cpp)
+    Source/Tools/test_host.cpp Source/Tools/screenshot_tool.cpp)
 set_source_files_properties(${EDGE_OWN_SOURCES}
     PROPERTIES COMPILE_OPTIONS "${EDGE_WARNING_FLAGS}")
 
@@ -151,7 +164,54 @@ if(EDGE_SANITIZERS)
             -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
         target_link_options(EdgeTestsSan PRIVATE -fsanitize=address,undefined)
     endif()
+
+    # The host suite under the same sanitisers. It is the only target that
+    # builds and destroys the EDITOR, so it is the only one that can catch a
+    # dangling listener or a timer that outlives its component.
+    juce_add_console_app(EdgeHostTestsSan PRODUCT_NAME "EdgeHostTestsSan")
+    juce_generate_juce_header(EdgeHostTestsSan)
+    target_sources(EdgeHostTestsSan PRIVATE
+        Source/Tools/test_host.cpp
+        ${EDGE_PLUGIN_SOURCES}
+        ${EDGE_VENDOR_SOURCES})
+    target_compile_definitions(EdgeHostTestsSan PUBLIC
+        ${EDGE_COMMON_DEFS}
+        JUCE_STANDALONE_APPLICATION=1
+        JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(EdgeHostTestsSan
+        PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra
+        PUBLIC juce::juce_recommended_config_flags)
+
+    if(MSVC)
+        target_compile_options(EdgeHostTestsSan PRIVATE /fsanitize=address)
+    else()
+        target_compile_options(EdgeHostTestsSan PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+        target_link_options(EdgeHostTestsSan PRIVATE -fsanitize=address,undefined)
+    endif()
 endif()
+
+# --- host-contract suite -------------------------------------------------------
+#     build/EdgeHostTests_artefacts/<config>/EdgeHostTests
+#
+# EdgeTests measures the DSP. This one drives the whole AudioProcessor the way a
+# host does - parameters, prepare/process lifecycle, state, editor - so it needs
+# the editor linked in, unlike EdgeTests.
+juce_add_console_app(EdgeHostTests PRODUCT_NAME "EdgeHostTests")
+juce_generate_juce_header(EdgeHostTests)
+target_sources(EdgeHostTests PRIVATE
+    Source/Tools/test_host.cpp
+    ${EDGE_PLUGIN_SOURCES}
+    ${EDGE_VENDOR_SOURCES})
+target_compile_definitions(EdgeHostTests PUBLIC
+    ${EDGE_COMMON_DEFS}
+    JUCE_STANDALONE_APPLICATION=1
+    # The editor checks pump the message loop so the analyser's timer actually
+    # runs while audio is being processed.
+    JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(EdgeHostTests
+    PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra
+    PUBLIC juce::juce_recommended_config_flags)
 
 # --- deterministic UI renderer -------------------------------------------------
 #     build/EdgeShot_artefacts/<config>/EdgeShot ui-shots

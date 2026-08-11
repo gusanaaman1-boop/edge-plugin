@@ -25,7 +25,7 @@ EDGE test suite
   [PASS] EDGE 0->100 in 2000 steps @ 2000 Hz                        largest step 0.0061 dB at EDGE 100.0 %
   [PASS] EDGE 0->100 in 2000 steps @ 9000 Hz                        largest step 0.0724 dB at EDGE 60.0 %
   [PASS] EDGE 0 leaves the response flat                            30 Hz -0.0000, 10 kHz -0.0000 dB
-  [PASS] six full EDGE sweeps in 3 s: no clicks, nothing non-finite largest step 0.031642 vs source 0.028782, peak 0.5000
+  [PASS] six full EDGE sweeps in 3 s: no clicks, nothing non-finite largest step 0.031634 vs source 0.028782, peak 0.5000
 
 == 5. FOLLOW ==
   [PASS] FOLLOW 0 returns the base position bit-exactly             applyFollow(0.5, 0, 1) = 0.500000000
@@ -122,11 +122,11 @@ EDGE test suite
   [PASS] MID Resonance narrows the bell                             reso 0: 4.12 oct, reso 100: 0.71 oct
   [PASS] EDGE scales the MID gain and leaves its frequency put      25%:8000Hz/3.0dB  50%:8000Hz/6.0dB  75%:8000Hz/9.0dB  100%:8000Hz/12.0dB
   [PASS] SPREAD moves the MID bell with the rest of the shape       12.000 semitones
-  [PASS] six MID sweeps in 3 s: no clicks                           largest step 0.030050 vs source 0.026161
+  [PASS] six MID sweeps in 3 s: no clicks                           largest step 0.030049 vs source 0.026161
 
 == 13. Real-time safety and CPU ==
   [PASS] no heap allocation in 10,000 blocks, analyser off and on   0 off, 0 on
-  [PASS] CPU with the analyser feeding: real-time factor            262.628x realtime (0.38 % of one core, bar 200x)
-  [PASS] analyser costs no more than 10 % of throughput             closed 262.754x, open 262.628x, delta 0.0 %
+  [PASS] CPU with the analyser feeding: real-time factor            259.344x realtime (0.39 % of one core, bar 200x)
+  [PASS] analyser costs no more than 10 % of throughput             closed 259.215x, open 259.344x, delta -0.0 %
 
 93 checks, 0 failed

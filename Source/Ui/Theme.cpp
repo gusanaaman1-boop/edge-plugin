@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "Theme.h"
 
 namespace edge::ui

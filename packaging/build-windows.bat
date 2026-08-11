@@ -77,7 +77,7 @@ if errorlevel 1 (
 rem --- build ------------------------------------------------------------------
 echo.
 echo   Building ... 5-15 minutes the first time.
-cmake --build build --config Release --target Edge_VST3
+cmake --build build --config Release --target Edge_VST3 Edge_Standalone EdgeTests EdgeHostTests
 if errorlevel 1 (
   echo.
   echo   ERROR: the build failed - see the message above.
@@ -93,6 +93,50 @@ if not exist "%VST3%" (
 
 echo.
 echo   BUILT:  %VST3%
+echo.
+
+rem --- measure ----------------------------------------------------------------
+rem  The DSP was measured on macOS. Nothing about that transfers to a different
+rem  compiler and a different floating-point back end, so the same suite runs
+rem  here and prints the same numbers - or this script stops.
+set "TESTS=%ROOT%build\EdgeTests_artefacts\Release\EdgeTests.exe"
+if not exist "%TESTS%" (
+  echo   ERROR: the test suite was not built: %TESTS% is missing.
+  goto :fail
+)
+
+echo   Running the measurement suite ...
+echo   ------------------------------------------------------------------
+"%TESTS%"
+if errorlevel 1 (
+  echo   ------------------------------------------------------------------
+  echo.
+  echo   ERROR: the measurement suite FAILED on this machine.
+  echo          Every check prints the value it measured - the failing lines
+  echo          above say which number is wrong. Do not install this build.
+  goto :fail
+)
+echo   ------------------------------------------------------------------
+echo.
+
+set "HOSTTESTS=%ROOT%build\EdgeHostTests_artefacts\Release\EdgeHostTests.exe"
+if not exist "%HOSTTESTS%" (
+  echo   ERROR: the host-contract suite was not built: %HOSTTESTS% is missing.
+  goto :fail
+)
+
+echo   Running the host-contract suite ...
+echo   ------------------------------------------------------------------
+"%HOSTTESTS%"
+if errorlevel 1 (
+  echo   ------------------------------------------------------------------
+  echo.
+  echo   ERROR: the host-contract suite FAILED on this machine.
+  echo          Do not install this build.
+  goto :fail
+)
+echo   ------------------------------------------------------------------
+echo   Every check passed on this machine.
 echo.
 
 rem --- optional install -------------------------------------------------------
