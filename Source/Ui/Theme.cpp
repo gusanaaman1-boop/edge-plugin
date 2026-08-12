@@ -44,7 +44,7 @@ namespace edge::ui
         //  spine by 2 px (the segmented look), and the FINAL E carries the
         //  approved 14 x 10 EDGE CUT on its top arm - the one place the motif
         //  lives in the mark, inside the bounds.
-        const float capH = 25.0f, gw = 28.0f, gap = 10.0f, stroke = 2.25f;
+        const float capH = 21.0f, gw = 22.0f, gap = 10.0f, stroke = 1.75f;
         const float totalW = 4.0f * gw + 3.0f * gap;
         const float x0 = area.getCentreX() - totalW * 0.5f;
         const float y0 = area.getCentreY() - capH * 0.5f;
@@ -105,12 +105,15 @@ namespace edge::ui
         letterG (x0 + 2.0f * (gw + gap));
         letterE (x0 + 3.0f * (gw + gap), true);
 
-        //  Three strokes: outer light 8 px at 4 %, middle 4 px at 14 %, core.
-        g.setColour (ink.withAlpha (0.04f));
-        g.strokePath (m, { 8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
-        g.setColour (ink.withAlpha (0.14f));
-        g.strokePath (m, { 4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
-        g.setColour (ink);
+        //  Quiet premium mark, not a neon sign: 6 px at 2 %, 3.5 px at 8 %,
+        //  and a #DDE4EE core - dimmer than the response and the EDGE value.
+        juce::ignoreUnused (ink);
+        const juce::Colour mark (0xffDDE4EE);
+        g.setColour (mark.withAlpha (0.02f));
+        g.strokePath (m, { 6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+        g.setColour (mark.withAlpha (0.08f));
+        g.strokePath (m, { 3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+        g.setColour (mark);
         g.strokePath (m, { stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
     }
 
@@ -268,16 +271,39 @@ namespace edge::ui
                                    juce::PathStrokeType::rounded });
         }
 
-        //  Centre: flat black glass with a faint titanium ring and a contact
-        //  shadow below it.
+        //  Centre: black glass with a titanium ring and a contact shadow.
+        //  The hero (ledOrbit) gets the deeper material: a radial gradient
+        //  centre, a brighter 1.5 px titanium ring and a 42-degree inner
+        //  reflection arc.
         const float bodyR = arcR - 8.0f;
+        const bool hero = (bool) props.getWithDefault ("ledOrbit", false);
         {
             g.setColour (juce::Colours::black.withAlpha (0.30f));
             g.fillEllipse (centre.x - bodyR, centre.y - bodyR + 2.0f, bodyR * 2.0f, bodyR * 2.0f);
-            g.setColour (hover ? colour::controlHover : colour::controlCentre);
-            g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-            g.setColour (colour::titanBright.withAlpha (0.28f));
-            g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+
+            if (hero)
+            {
+                juce::ColourGradient glass (juce::Colour (0xff101522), centre.x, centre.y,
+                                            juce::Colour (0xff05070C),
+                                            centre.x, centre.y - bodyR, true);
+                g.setGradientFill (glass);
+                g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+                g.setColour (juce::Colour (0xff667080).withAlpha (0.55f));
+                g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.5f);
+
+                juce::Path gleam;
+                gleam.addCentredArc (centre.x, centre.y, bodyR - 3.0f, bodyR - 3.0f, 0.0f,
+                                     -0.55f, 0.18f, true);
+                g.setColour (juce::Colours::white.withAlpha (0.18f));
+                g.strokePath (gleam, juce::PathStrokeType (1.0f));
+            }
+            else
+            {
+                g.setColour (hover ? colour::controlHover : colour::controlCentre);
+                g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+                g.setColour (colour::titanBright.withAlpha (0.28f));
+                g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+            }
         }
 
         //  Value arc + endpoint dot. Bipolar grows out of 12 o'clock.
@@ -348,6 +374,11 @@ namespace edge::ui
             }
             else
             {
+                if (hero)
+                {
+                    stroke (lo, hi, accent.withAlpha (0.04f), 12.0f);
+                    stroke (lo, hi, accent.withAlpha (0.12f), 7.0f);
+                }
                 stroke (lo, hi, accent, 4.0f);
             }
 

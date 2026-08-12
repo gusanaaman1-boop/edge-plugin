@@ -444,7 +444,7 @@ void EdgeAudioProcessorEditor::positionInspector()
     const auto graph = curve.plotBounds().translated (curve.getX(), curve.getY());
 
     inspector.setBounds (graph.getCentreX() - size.x / 2,
-                         graph.getBottom() - 18 - size.y,
+                         graph.getBottom() + 22 - 12 - size.y,
                          size.x, size.y);
 
     //  The readout keeps the bottom-left and must never run under the strip.
@@ -491,6 +491,19 @@ void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
     //  paint their own glass. This fill only shows for the first frame.
     g.fillAll (colour::graph);
 
+}
+
+void EdgeAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
+{
+    //  The 10 px window margins are chassis - nothing may ever draw there.
+    //  Painting them OVER the children is the hard guarantee: a stray glyph
+    //  or path from any component is masked, deterministically. The
+    //  bottom-right resizer corner is left open.
+    g.setColour (colour::window);
+    g.fillRect (0, 0, getWidth(), 10);
+    g.fillRect (0, 0, 10, getHeight());
+    g.fillRect (getWidth() - 10, 0, 10, getHeight() - 20);
+    g.fillRect (0, getHeight() - 10, getWidth() - 20, 10);
 }
 
 void EdgeAudioProcessorEditor::resized()
@@ -552,27 +565,33 @@ void EdgeAudioProcessorEditor::resized()
         {
             const auto c = centreAt (refX, refY);
             k.slider.setBounds (c.x - d / 2, c.y - d / 2, d, d);
-            k.caption.setBounds (c.x - 48, c.y - d / 2 - 17, 96, 14);
+            k.caption.setBounds (c.x - 48, c.y - d / 2 - 8 - 14, 96, 14);
         };
 
-        placeKnob (spreadKnob, 78.0f, 478.0f, 48);
-        placeKnob (lowKnob,   216.0f, 474.0f, 82);
-        placeKnob (highKnob,  660.0f, 474.0f, 82);
-        placeKnob (followKnob, 820.0f, 478.0f, 74);
+        placeKnob (spreadKnob, 78.0f, 478.0f, 54);
+        placeKnob (lowKnob,   216.0f, 474.0f, 88);
+        placeKnob (highKnob,  660.0f, 474.0f, 88);
+        placeKnob (followKnob, 820.0f, 478.0f, 78);
 
         const auto ec = centreAt (450.0f, 474.0f);
-        edgeKnob.setBounds (ec.x - 70, ec.y - 70, 140, 140);
+        edgeKnob.setBounds (ec.x - 75, ec.y - 73, 150, 150);
 
         const auto dockPos = dockPanel.getPosition();
         dockPanel.edgeLabel = juce::Rectangle<int> (ec.x - 40, dock.getY() + 2, 80, 12) - dockPos;
-        dockPanel.cleanRect = juce::Rectangle<int> (ec.x - 70 - 44, ec.y + 46, 42, 12) - dockPos;
-        dockPanel.cutRect   = juce::Rectangle<int> (ec.x + 70 + 2,  ec.y + 46, 42, 12) - dockPos;
+        //  CLEAN / CUT align to the ARC ENDPOINTS (1.25 pi / 2.75 pi), not
+        //  to the component edges.
+        const float endR = 75.0f * 0.75f;
+        const int exL = ec.x + (int) (endR * std::sin (juce::MathConstants<float>::pi * 1.25f));
+        const int exR = ec.x + (int) (endR * std::sin (juce::MathConstants<float>::pi * 2.75f));
+        const int ey  = ec.y - (int) (endR * std::cos (juce::MathConstants<float>::pi * 1.25f)) + 10;
+        dockPanel.cleanRect = juce::Rectangle<int> (exL - 44, ey, 42, 12) - dockPos;
+        dockPanel.cutRect   = juce::Rectangle<int> (exR + 2,  ey, 42, 12) - dockPos;
     }
 
     //  --- MODE (326, 80, 248, 28), centred to the window --------------------------
     {
         const int segW = 248, segH = 28;
-        auto seg = juce::Rectangle<int> (getWidth() / 2 - segW / 2, 80, segW, segH);
+        auto seg = juce::Rectangle<int> (getWidth() / 2 - segW / 2, 66 + 18, segW, segH);
         const int w = segW / 4;
         lpButton.setBounds   (seg.removeFromLeft (w));
         bandButton.setBounds (seg.removeFromLeft (w));

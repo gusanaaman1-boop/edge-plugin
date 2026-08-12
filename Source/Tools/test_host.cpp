@@ -1837,8 +1837,10 @@ namespace
                 //  Centre and inset, from the spec's own formula.
                 worstCentre = juce::jmax (worstCentre,
                     std::abs ((float) bounds.getCentreX() - (float) graph.getCentreX()));
+                //  v0.17.2: bottom edge 12 px above the GRAPH CARD bottom,
+                //  which sits 22 px below the content region's bottom.
                 worstInset = juce::jmax (worstInset,
-                    std::abs ((float) (graph.getBottom() - bounds.getBottom()) - 18.0f));
+                    std::abs ((float) ((graph.getBottom() + 22) - bounds.getBottom()) - 12.0f));
 
                 if (! ed->getLocalBounds().contains (bounds)) ++clipped;
                 if (! ed->isInspectorVisible()) ++misses;
@@ -1855,7 +1857,7 @@ namespace
 
         check (worstCentre <= 0.5f, "centre error at most 0.5 px across 20 positions",
                juce::String (worstCentre, 3) + " px");
-        check (worstInset <= 0.5f, "18 px bottom inset error at most 0.5 px",
+        check (worstInset <= 0.5f, "12 px bottom inset error at most 0.5 px",
                juce::String (worstInset, 3) + " px");
         check (worstDrift == 0.0f, "position drift across handle moves: 0.000 px",
                juce::String (worstDrift, 3) + " px");

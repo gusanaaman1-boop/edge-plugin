@@ -96,8 +96,12 @@ namespace edge::ui
         inline constexpr int captionRow = 13;
         inline constexpr int rowGap     = 3;
 
-        inline constexpr float displayTopDb    = 15.0f;
-        inline constexpr float displayBottomDb = -45.0f;
+        //  Item 7: display-only remap. 0 dB sits at 34 % of plot height and
+        //  -45 dB at 92 % - solved linearly that puts the top of the plot at
+        //  +26.4 dB (headroom the mode selector floats over) and the bottom
+        //  at -51.2. Frequency mapping untouched.
+        inline constexpr float displayTopDb    = 26.4f;
+        inline constexpr float displayBottomDb = -51.2f;
         inline constexpr float displayMinHz    = 18.0f;
         inline constexpr float displayMaxHz    = 22000.0f;
     }

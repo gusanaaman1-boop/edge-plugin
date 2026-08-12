@@ -25,6 +25,7 @@ public:
     ~EdgeAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress&) override;
 

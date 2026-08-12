@@ -62,7 +62,7 @@ namespace edge::ui
         //  inside fixed insets - 24 px sides, 68 px under the floating header,
         //  136 px above the floating dock - and the surface runs edge to edge.
         auto r = getLocalBounds().toFloat();
-        r.removeFromTop (110.0f);       // header 58 + graph top inset 44 + seam
+        r.removeFromTop (76.0f);        // right under the floating header
         r.removeFromBottom (200.0f);    // dock 170 + graph bottom inset 22 + gap
         r.removeFromLeft (30.0f);
         r.removeFromRight (30.0f);
@@ -302,8 +302,8 @@ namespace edge::ui
         //  height instead of hugging the floor. Band VALUES are untouched -
         //  this is the display mapping only.
         struct P { float db, y; };
-        static constexpr P map[] = { { 0.0f, 0.08f }, { -18.0f, 0.30f },
-                                     { -36.0f, 0.55f }, { -66.0f, 0.94f } };
+        static constexpr P map[] = { { 0.0f, 0.26f }, { -18.0f, 0.42f },
+                                     { -36.0f, 0.62f }, { -66.0f, 0.88f } };
 
         if (db >= map[0].db) return map[0].y;
 
@@ -317,12 +317,10 @@ namespace edge::ui
 
     float CurveView::spectrumLineAlphaForDb (float db) noexcept
     {
-        //  38 % idle rising to 46 % at full scale, times the -66/-84 gate.
+        //  52 % nominal, times the -66/-84 gate.
         const float gate = juce::jlimit (0.0f, 1.0f,
                                          (db - (-84.0f)) / ((-66.0f) - (-84.0f)));
-        const float level = juce::jmap (juce::jlimit (-66.0f, 0.0f, db),
-                                        -66.0f, 0.0f, 0.38f, 0.46f);
-        return level * gate;
+        return 0.52f * gate;
     }
 
     void CurveView::updateSpectrumPath()
@@ -482,7 +480,7 @@ namespace edge::ui
         if (readoutRightLimit > 0)
             w = juce::jmin (w, readoutRightLimit - ((int) plot.getX() + 8));
 
-        return { (int) plot.getX() + 8, (int) plot.getBottom() - 30, juce::jmax (60, w), 22 };
+        return { (int) plot.getX() + 8, (int) plot.getBottom() - 26, juce::jmax (60, w), 22 };
     }
 
     void CurveView::updateTrail (int side, juce::Point<float> puck)
@@ -879,15 +877,15 @@ namespace edge::ui
             //  The serious steel-blue studio palette: #405A70 at the line
             //  through #263D51 to #101B27 at the floor. No purple, no glow
             //  cloud, no particles.
-            juce::ColourGradient grad (juce::Colour (0xff405A70).withAlpha (0.22f),
-                                       plot.getCentreX(), plot.getY() + 0.12f * plot.getHeight(),
-                                       juce::Colour (0xff101B27).withAlpha (0.03f),
+            juce::ColourGradient grad (juce::Colour (0xff405A70).withAlpha (0.30f),
+                                       plot.getCentreX(), plot.getY() + 0.26f * plot.getHeight(),
+                                       juce::Colour (0xff101B27).withAlpha (0.05f),
                                        plot.getCentreX(), plot.getBottom(), false);
-            grad.addColour (0.55, juce::Colour (0xff263D51).withAlpha (0.12f));
+            grad.addColour (0.55, juce::Colour (0xff263D51).withAlpha (0.18f));
             g.setGradientFill (grad);
             g.fillPath (fillPath);
 
-            const juce::Colour line (0xff63809A);
+            const juce::Colour line (0xff6F879C);
             for (size_t i = 1; i < spectrumPoints.size(); ++i)
             {
                 const auto& a = spectrumPoints[i - 1];
@@ -902,7 +900,7 @@ namespace edge::ui
                     continue;
 
                 g.setColour (line.withAlpha (alpha));
-                g.drawLine (a.x, a.y, b.x, b.y, 1.25f);
+                g.drawLine (a.x, a.y, b.x, b.y, 1.5f);
             }
         }
 
@@ -937,7 +935,7 @@ namespace edge::ui
                     (int) juce::jmax (0.0f, xForHz (snap.currentCentre.highHz)
                                               - xForHz (snap.currentCentre.lowHz)), getHeight()));
 
-            g.setColour (colour::target.withAlpha (0.32f));
+            g.setColour (colour::target.withAlpha (0.22f + 0.10f * juce::jlimit (0.0f, 1.0f, snap.liveEdge01 / 0.12f)));
             g.fillPath (dashed);
         }
 
@@ -960,13 +958,21 @@ namespace edge::ui
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.expanded (0.0f, 6.0f).toNearestInt());
 
-            //  Three concentric strokes: core 2 px, middle 4 at 16 %, outer 8
-            //  at 5 % - localized light, not a glow cloud.
-            g.setColour (colour::response.withAlpha (0.05f));
-            g.strokePath (currentPath, { 8.0f, juce::PathStrokeType::curved });
-            g.setColour (colour::response.withAlpha (0.16f));
-            g.strokePath (currentPath, { 4.0f, juce::PathStrokeType::curved });
-            g.setColour (colour::response);
+            //  Item 10: at EDGE 0 the flat truthful line dims to 48 % with no
+            //  glow, ramping to full presence by EDGE 12 % - a parked filter
+            //  should not read as a broken horizontal line.
+            const float wake = juce::jlimit (0.0f, 1.0f, snap.liveEdge01 / 0.12f);
+            const float coreA = 0.48f + 0.52f * wake;
+
+            if (wake > 0.01f)
+            {
+                g.setColour (colour::response.withAlpha (0.05f * wake));
+                g.strokePath (currentPath, { 8.0f, juce::PathStrokeType::curved });
+                g.setColour (colour::response.withAlpha (0.16f * wake));
+                g.strokePath (currentPath, { 4.0f, juce::PathStrokeType::curved });
+            }
+
+            g.setColour (colour::response.withAlpha (coreA));
             g.strokePath (currentPath, { 2.0f, juce::PathStrokeType::curved });
 
             auto tintNear = [&] (Grab which, juce::Colour accent)
@@ -978,13 +984,19 @@ namespace edge::ui
                 juce::Graphics::ScopedSaveState tintClip (g);
                 g.reduceClipRegion (juce::Rectangle<int> ((int) (x - 24.0f), (int) plot.getY(),
                                                           48, (int) plot.getHeight() + 8));
-                g.setColour (accent);
+                g.setColour (accent.withAlpha (0.30f + 0.70f * wake));
                 g.strokePath (currentPath, { 2.0f, juce::PathStrokeType::curved });
             };
 
             tintNear (Grab::low,  colour::low);
             tintNear (Grab::high, colour::high);
         }
+
+        //  Hard clip for everything from here on: the journey, handles and
+        //  readout may never paint outside the content region - a stray
+        //  cyan artifact at y=0 proved that trusting geometry is not enough.
+        juce::Graphics::ScopedSaveState contentClip (g);
+        g.reduceClipRegion (plot.toNearestInt().expanded (10, 10));
 
         // --- EDGE PATH: dots riding the TARGET response curve ------------------
         //  The horizontal rail was a rendering defect: the journey the sound
@@ -1051,45 +1063,64 @@ namespace edge::ui
                                                                    + snap.colourTrimDb)));
                 const juce::Point<float> puck (liveX, puckY);
 
-                //  Dots every 9 px of accumulated distance along the route.
-                float acc = 9.0f;
+                //  Item 5: a CONTINUOUS journey. A 1 px base stroke at 15 %
+                //  under dots every 7 px - travelled treatment (3 px, 86 %)
+                //  within the hot zone behind the puck, 2.25 px at 36 % on the
+                //  remaining road. The route starts 8 px outside the puck core
+                //  and its last dot lands on the diamond.
+                {
+                    juce::Path base;
+                    bool started = false;
+                    for (const auto& pt : route)
+                    {
+                        if (pt.getDistanceFrom (puck) < 14.0f)
+                            continue;
+                        if (! started) { base.startNewSubPath (pt); started = true; }
+                        else             base.lineTo (pt);
+                    }
+                    g.setColour (accent.withAlpha (0.15f));
+                    g.strokePath (base, juce::PathStrokeType (1.0f));
+                }
+
+                float acc = 7.0f;
                 for (size_t i = 1; i < route.size(); ++i)
                 {
                     acc += route[i].getDistanceFrom (route[i - 1]);
-                    if (acc < 9.0f)
+                    if (acc < 7.0f)
                         continue;
                     acc = 0.0f;
 
-                    if (route[i].getDistanceFrom (puck) < 9.0f)
+                    const float fromPuck = route[i].getDistanceFrom (puck);
+                    if (fromPuck < 14.0f)
                         continue;
 
-                    //  Brighter where the journey begins, quiet toward the
-                    //  destination - the remaining road at 28 %, rising near
-                    //  the puck.
-                    const float t = (float) i / (float) route.size();
-                    float alpha = 0.40f + 0.35f * (1.0f - t);
+                    const bool hot = fromPuck < 42.0f;
+                    float alpha = hot ? 0.86f : 0.36f;
+                    float d = hot ? 3.0f : 2.25f;
 
-                    //  Knee de-clutter: inside the puck's 24 px exclusion
-                    //  circle the route is capped at 16 % so the puck and the
-                    //  live response own the knee.
-                    if (route[i].getDistanceFrom (puck) < 24.0f)
-                        alpha = juce::jmin (alpha, 0.16f);
+                    if (fromPuck < 24.0f)
+                        alpha = juce::jmin (alpha, 0.16f);      // knee exclusion cap
 
-                    g.setColour (accent.withAlpha (juce::jmin (0.75f, alpha)));
-                    g.fillEllipse (route[i].x - 1.4f, route[i].y - 1.4f, 2.8f, 2.8f);
+                    g.setColour (accent.withAlpha (alpha));
+                    g.fillEllipse (route[i].x - d * 0.5f, route[i].y - d * 0.5f, d, d);
                 }
 
-                //  Destination diamond: ON the target curve at the display
-                //  threshold - the visible end of the cut, not the frequency
-                //  handle.
+                //  Item 6: the destination diamond, 10 px, with a 3 px core at
+                //  42 % - and the final dot ON its nearest corner so the route
+                //  visibly terminates there.
                 {
                     const auto endPt = route.back();
-                    const float r = 5.5f;
+                    const float r = 5.0f;
                     juce::Path diamond;
                     diamond.addQuadrilateral (endPt.x, endPt.y - r, endPt.x + r, endPt.y,
                                               endPt.x, endPt.y + r, endPt.x - r, endPt.y);
                     g.setColour (accent);
                     g.strokePath (diamond, juce::PathStrokeType (1.5f));
+                    g.setColour (accent.withAlpha (0.42f));
+                    g.fillEllipse (endPt.x - 1.5f, endPt.y - 1.5f, 3.0f, 3.0f);
+
+                    g.setColour (accent.withAlpha (0.86f));
+                    g.fillEllipse (endPt.x - 1.5f, endPt.y - r - 1.5f, 3.0f, 3.0f);
                 }
 
                 //  Trail: the puck's real recent history.
@@ -1113,20 +1144,24 @@ namespace edge::ui
 
                 //  FOLLOW energy: three violet strokes, hard-gated on real
                 //  displacement, capped at 28 %.
+                //  Item 4: restrained. Inner radius 10, outer at most 17
+                //  (13.5 at env 0.5), three thin strokes, combined opacity
+                //  never past 22 %, nothing filled.
                 if (push01 > 0.01f)
                 {
                     const float env = juce::jlimit (0.0f, 1.0f, snap.followEnv01);
-                    const float r = 12.0f + 10.0f * env;
-                    const float aRing = juce::jmin (0.28f, 0.10f + 0.18f * env);
+                    const float r = 10.0f + 7.0f * env;
 
-                    g.setColour (colour::movement.withAlpha (aRing));
-                    g.drawEllipse (puck.x - r, puck.y - r, r * 2.0f, r * 2.0f, 1.5f);
-                    g.setColour (colour::movement.withAlpha (aRing * 0.5f));
-                    g.drawEllipse (puck.x - r - 2.5f, puck.y - r - 2.5f,
-                                   r * 2.0f + 5.0f, r * 2.0f + 5.0f, 4.0f);
-                    g.setColour (colour::movement.withAlpha (aRing * 0.25f));
-                    g.drawEllipse (puck.x - r - 6.0f, puck.y - r - 6.0f,
-                                   r * 2.0f + 12.0f, r * 2.0f + 12.0f, 9.0f);
+                    g.setColour (colour::movement.withAlpha (0.11f));
+                    g.drawEllipse (puck.x - r, puck.y - r, r * 2.0f, r * 2.0f, 1.2f);
+                    g.setColour (colour::movement.withAlpha (0.07f));
+                    g.drawEllipse (puck.x - r - 1.5f, puck.y - r - 1.5f,
+                                   r * 2.0f + 3.0f, r * 2.0f + 3.0f, 1.2f);
+                    g.setColour (colour::movement.withAlpha (0.04f));
+                    g.drawEllipse (puck.x - juce::jmin (17.0f, r + 3.0f),
+                                   puck.y - juce::jmin (17.0f, r + 3.0f),
+                                   juce::jmin (17.0f, r + 3.0f) * 2.0f,
+                                   juce::jmin (17.0f, r + 3.0f) * 2.0f, 1.2f);
                 }
 
                 //  The layered live puck.
@@ -1367,7 +1402,7 @@ namespace edge::ui
             if (readoutRightLimit > 0)
                 w = juce::jmin (w, readoutRightLimit - ((int) plot.getX() + 8));
             const auto box = juce::Rectangle<int> ((int) plot.getX() + 8,
-                                                   (int) plot.getBottom() - 30, w, 22);
+                                                   (int) plot.getBottom() - 26, w, 22);
 
             g.setColour (colour::raised.withAlpha (0.92f));
             g.fillRoundedRectangle (box.toFloat(), 7.0f);

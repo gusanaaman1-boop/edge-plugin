@@ -14,11 +14,11 @@ namespace edge::ui
         //  Inspector geometry, v0.14: one FIXED strip, centred in the graph.
         constexpr int kPadding = 12;
         constexpr int kGap = 8;
-        constexpr int kMiniKnob = 34;
-        constexpr int kStripH = 104;
-        constexpr int kStripW = 420;
-        constexpr int kStripWMid = 330;
-        constexpr int kSlopeW = 156, kSlopeH = 28;
+        constexpr int kMiniKnob = 28;
+        constexpr int kStripH = 88;
+        constexpr int kStripW = 360;
+        constexpr int kStripWMid = 286;
+        constexpr int kSlopeW = 138, kSlopeH = 24;
     }
 
     // -------------------------------------------------------------------------
@@ -160,8 +160,8 @@ namespace edge::ui
     void ShapePanel::Knob::setBounds (juce::Rectangle<int> r)
     {
         caption.setBounds (r.removeFromTop (10));
-        value.setBounds (r.removeFromBottom (20).withSizeKeepingCentre (
-                             juce::jmax (52, r.getWidth() - 8), 20));
+        value.setBounds (r.removeFromBottom (18).withSizeKeepingCentre (
+                             juce::jmax (48, r.getWidth() - 12), 18));
         r.removeFromBottom (2);
         slider.setBounds (r.withSizeKeepingCentre (kMiniKnob, juce::jmin (r.getHeight(), kMiniKnob)));
     }
@@ -321,7 +321,7 @@ namespace edge::ui
         //  One fixed card: shadow y 6 at 28 %, surface at 94 %, NEUTRAL border
         //  in every context - only the label carries the context colour. The
         //  top-right corner is the EDGE CUT: motif place three of three.
-        auto card = edgeCutPanel (body, 14.0f, 20.0f, 14.0f);
+        auto card = edgeCutPanel (body, 12.0f, 16.0f, 11.0f);
 
         {
             juce::Path sh (card);
@@ -331,8 +331,8 @@ namespace edge::ui
         }
 
         {
-            juce::ColourGradient grad (colour::inspTop.withAlpha (0.94f), 0.0f, body.getY(),
-                                       colour::inspBottom.withAlpha (0.94f), 0.0f, body.getBottom(),
+            juce::ColourGradient grad (colour::inspTop.withAlpha (0.92f), 0.0f, body.getY(),
+                                       colour::inspBottom.withAlpha (0.92f), 0.0f, body.getBottom(),
                                        false);
             g.setGradientFill (grad);
             g.fillPath (card);
@@ -344,13 +344,13 @@ namespace edge::ui
         //  Title strip: the context name centred in a 24 px band with a
         //  1 px separator under it.
         g.setColour (headerColour);
-        g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
-        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 4,
-                    (int) body.getWidth() - kPadding * 2, 18,
+        g.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
+        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 3,
+                    (int) body.getWidth() - kPadding * 2, 15,
                     juce::Justification::centred, false);
         g.setColour (colour::text.withAlpha (0.10f));
-        g.drawLine (body.getX() + kPadding, body.getY() + 24.0f,
-                    body.getRight() - kPadding, body.getY() + 24.0f, 1.0f);
+        g.drawLine (body.getX() + kPadding, body.getY() + 20.0f,
+                    body.getRight() - kPadding, body.getY() + 20.0f, 1.0f);
 
         //  The slope selector's own caption and unit, drawn by the container
         //  so every context keeps the same label/knob/value rhythm.
@@ -370,8 +370,8 @@ namespace edge::ui
     void ShapePanel::resized()
     {
         auto r = getLocalBounds().reduced (kPadding, 0)
-                                 .withTrimmedTop (30)
-                                 .withTrimmedBottom (6);
+                                 .withTrimmedTop (24)
+                                 .withTrimmedBottom (4);
 
         for (auto& panel : panels)
             panel.setBounds (r);
