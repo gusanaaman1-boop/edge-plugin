@@ -451,6 +451,22 @@ namespace edge::ui
         return { (int) plot.getX() + 8, (int) plot.getBottom() - 30, juce::jmax (60, w), 22 };
     }
 
+    void CurveView::updateTrail (int side, juce::Point<float> puck)
+    {
+        auto& t = trail[side];
+        const auto now = juce::Time::getMillisecondCounter();
+
+        //  Append only real movement; expire after 400 ms.
+        if (t.empty() || std::abs (t.back().x - puck.x) > 0.5f
+                      || std::abs (t.back().y - puck.y) > 0.5f)
+            t.push_back ({ puck.x, puck.y, now });
+
+        t.erase (std::remove_if (t.begin(), t.end(),
+                                 [now] (const TrailPoint& p)
+                                 { return now - p.t > 400; }),
+                 t.end());
+    }
+
     void CurveView::setFreeMode (bool shouldBeFree)
     {
         if (freeMode == shouldBeFree)
@@ -908,6 +924,15 @@ namespace edge::ui
         {
             const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
+            //  How far the SIGNAL is pushing the filter right now: the
+            //  distance between the parameter and the resolved live position.
+            //  Zero when FOLLOW is idle - so everything it drives disappears
+            //  and the instrument goes calm.
+            auto* edgeParam = processor.getState().getParameter (param::edge);
+            const float baseEdge01 = edgeParam->convertFrom0to1 (edgeParam->getValue()) * 0.01f;
+            const float push01 = juce::jlimit (0.0f, 1.0f,
+                                               std::abs (snap.liveEdge01 - baseEdge01));
+
             auto drawPath = [&] (bool isHigh)
             {
                 const float liveHz   = isHigh ? snap.currentCentre.highHz : snap.currentCentre.lowHz;
@@ -925,27 +950,59 @@ namespace edge::ui
                                                   yForDb ((float) (magnitudeDb (shapeNoMid, sr, liveHz)
                                                                    + snap.colourTrimDb)));
 
-                //  Completed portion (origin -> live) at 62 %, remaining
-                //  (live -> target) at 18 %. No arrowheads: the puck's own
-                //  motion is the direction.
-                g.setColour (accent.withAlpha (0.62f));
-                g.drawLine (originX, railY, liveX, railY, 2.0f);
+                //  The journey is the hero. The travelled portion is a solid
+                //  3 px bar; the remaining road is a quiet 2 px. No arrowheads:
+                //  the puck's own motion is the direction.
+                g.setColour (accent.withAlpha (0.85f));
+                g.drawLine (originX, railY, liveX, railY, 3.0f);
                 g.setColour (accent.withAlpha (0.18f));
                 g.drawLine (liveX, railY, targetX, railY, 2.0f);
 
-                //  Target: 7 px hollow diamond, stationary while EDGE moves.
+                //  Target: hollow diamond, stationary while EDGE moves.
                 {
                     juce::Path diamond;
-                    diamond.addQuadrilateral (targetX, railY - kDiamondRadius,
-                                              targetX + kDiamondRadius, railY,
-                                              targetX, railY + kDiamondRadius,
-                                              targetX - kDiamondRadius, railY);
-                    g.setColour (accent.withAlpha (0.85f));
-                    g.strokePath (diamond, juce::PathStrokeType (1.2f));
+                    diamond.addQuadrilateral (targetX, railY - kDiamondRadius - 1.0f,
+                                              targetX + kDiamondRadius + 1.0f, railY,
+                                              targetX, railY + kDiamondRadius + 1.0f,
+                                              targetX - kDiamondRadius - 1.0f, railY);
+                    g.setColour (accent.withAlpha (0.9f));
+                    g.strokePath (diamond, juce::PathStrokeType (1.4f));
                 }
 
-                //  Live position: 11 px filled puck; 15 px halo when its edge
-                //  is the selection.
+                //  Trail: the last 400 ms of positions the puck actually
+                //  occupied, fading with age. It rides ON the rail, so a line
+                //  the rail's own width would vanish into it - the trail is a
+                //  visibly WIDER wake that narrows as it cools. Real history,
+                //  not decoration: with no movement there is no trail.
+                {
+                    const auto& t = trail[isHigh ? 1 : 0];
+                    const auto now = juce::Time::getMillisecondCounter();
+
+                    for (size_t i = 1; i < t.size(); ++i)
+                    {
+                        const float age = (float) (now - t[i].t) / 400.0f;
+                        const float alpha = juce::jlimit (0.0f, 1.0f, 1.0f - age);
+
+                        if (alpha <= 0.02f)
+                            continue;
+
+                        g.setColour (accent.withAlpha (0.30f * alpha));
+                        g.drawLine (t[i - 1].x, t[i - 1].y, t[i].x, t[i].y,
+                                    4.0f + 6.0f * alpha);
+                    }
+                }
+
+                //  FOLLOW's energy: a violet ring around the puck whose size
+                //  and strength are the actual displacement the signal is
+                //  producing. Violet is movement, and this IS the movement.
+                if (push01 > 0.01f)
+                {
+                    const float r = kPuckRadius + 4.0f + 8.0f * push01;
+                    g.setColour (colour::movement.withAlpha (0.20f + 0.50f * push01));
+                    g.drawEllipse (liveX - r, railY - r, r * 2.0f, r * 2.0f, 2.0f);
+                }
+
+                //  Live position: filled puck; halo when its edge is selected.
                 const bool isSelected = (isHigh && selected == Grab::high)
                                      || (! isHigh && selected == Grab::low);
                 if (isSelected)
@@ -958,6 +1015,9 @@ namespace edge::ui
                 g.setColour (accent);
                 g.fillEllipse (liveX - kPuckRadius, railY - kPuckRadius,
                                kPuckRadius * 2.0f, kPuckRadius * 2.0f);
+
+                //  Record the REAL position for the next frame's trail.
+                updateTrail (isHigh ? 1 : 0, { liveX, railY });
             };
 
             if (snap.mode != (int) Mode::lowPass)  drawPath (false);

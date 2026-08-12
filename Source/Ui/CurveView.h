@@ -179,6 +179,14 @@ namespace edge::ui
         //  defect.
         DisplaySnapshot snap;
 
+        //  --- EDGE PATH trail --------------------------------------------------
+        //  A short decaying history of positions the puck ACTUALLY occupied -
+        //  appended from the engine snapshot on the display timer, expired
+        //  after 400 ms. Display-side only; nothing here invents motion.
+        struct TrailPoint { float x, y; juce::uint32 t; };
+        std::vector<TrailPoint> trail[2];        // [0] low side, [1] high side
+        void updateTrail (int side, juce::Point<float> puck);
+
         //  --- cached paths ----------------------------------------------------
         juce::Path currentPath, targetPath, leftPath, rightPath;
 

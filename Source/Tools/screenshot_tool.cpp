@@ -26,7 +26,7 @@ namespace
         int inspector;      // -1 none, else (int) edge::ui::SelectedControl
         int width, height;
         std::vector<std::pair<const char*, float>> values;
-        bool feedAudio = true;
+        int audio = 1;      // 0 silence, 1 pink, 2 techno kick pattern
     };
 
     void setParam (EdgeAudioProcessor& p, const char* id, float value)
@@ -92,12 +92,25 @@ namespace
             //  The two analyzer proofs: silence must show NOTHING (the muted
             //  host is expected to look like this), -18 dBFS noise must show
             //  the input spectrum through a closed filter.
+            //  The product-page frame the v0.14 sign-off asks for: LP, EDGE
+            //  55 %, FOLLOW active, target 1.2 kHz, a techno pattern playing -
+            //  rail, target diamond, live puck, trail and energy ring in one
+            //  frame, inspector closed.
+            { "hero-lp-follow", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 1200.0f },
+                { edge::param::edge, 55.0f },
+                { edge::param::follow, 65.0f },
+                { edge::param::followAttack, 5.0f },
+                { edge::param::followRelease, 220.0f },
+                { edge::param::bite, 40.0f } }, 2 },
+
             { "analyzer-muted", -1, W, H, {
                 { edge::param::mode, (float) (int) edge::Mode::lowPass },
-                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, false },
+                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, 0 },
             { "analyzer-pink", -1, W, H, {
                 { edge::param::mode, (float) (int) edge::Mode::lowPass },
-                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, true },
+                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, 1 },
         };
 
         outputDir.createDirectory();
@@ -128,11 +141,20 @@ namespace
             juce::MidiBuffer midi;
             float lp = 0.0f;
 
-            for (int block = 0; block < 40; ++block)
+            //  Audio for the frame. Mode 2 is a little techno engine: a
+            //  four-on-the-floor kick (pitched sine drop) with an off-beat
+            //  hat, so FOLLOW genuinely pumps and the trail has real
+            //  positions to record.
+            double phase = 0.0;
+            int samplePos = 0;
+            const int kickPeriod = 48000 * 60 / 126;    // 126 BPM
+
+            const int blocks = shot.audio == 2 ? 220 : 40;
+            for (int block = 0; block < blocks; ++block)
             {
                 buf.clear();
 
-                if (shot.feedAudio)
+                if (shot.audio == 1)
                 {
                     for (int i = 0; i < 512; ++i)
                     {
@@ -144,13 +166,84 @@ namespace
                         buf.setSample (1, i, v);
                     }
                 }
+                else if (shot.audio == 2)
+                {
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const int t = (samplePos + i) % kickPeriod;
+                        const float ts = (float) t / 48000.0f;
+
+                        //  Kick: 150 -> 45 Hz drop with a 90 ms decay.
+                        const double hz = 45.0 + 105.0 * std::exp (-ts * 28.0f);
+                        phase += juce::MathConstants<double>::twoPi * hz / 48000.0;
+                        const float kick = 0.9f * std::exp (-ts * 9.0f)
+                                              * (float) std::sin (phase);
+
+                        //  Hat: a noise tick on the off-beat.
+                        const int off = (samplePos + i + kickPeriod / 2) % kickPeriod;
+                        const float hat = 0.12f * std::exp (-(float) off / 1200.0f)
+                                             * (rng.nextFloat() * 2.0f - 1.0f);
+
+                        //  A bit of mid noise so the analyzer has a body.
+                        const float white = rng.nextFloat() * 2.0f - 1.0f;
+                        lp += 0.10f * (white - lp);
+                        const float bed = 0.08f * lp;
+
+                        const float v = kick + hat + bed;
+                        buf.setSample (0, i, v);
+                        buf.setSample (1, i, v);
+                    }
+
+                    samplePos += 512;
+                }
 
                 processor.processBlock (buf, midi);
+
+                //  The techno shot pumps the display DURING playback so the
+                //  trail and the energy ring have live history; the capture
+                //  lands just after a kick.
+                if (shot.audio == 2 && block % 4 == 3)
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (14);
             }
 
-            //  Let the editor's 30 Hz timer actually run, so the analyser
-            //  drains the FIFO and transforms it.
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
+            //  Let the editor's timer actually run, so the analyser drains
+            //  the FIFO and transforms it. The techno shot must NOT idle here:
+            //  a quarter second of silence releases the follower and erases
+            //  exactly the live state the frame exists to show - it keeps
+            //  playing right up to the capture instead.
+            if (shot.audio == 2)
+            {
+                double phase2 = 0.0;
+                int pos2 = samplePos;
+
+                //  Run to just past the next kick onset, pumping as we go, and
+                //  capture ~45 ms after the hit while the envelope is high.
+                const int nextKick = ((pos2 / kickPeriod) + 1) * kickPeriod;
+                const int stopAt = nextKick + 2200;
+
+                while (pos2 < stopAt)
+                {
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const int t = (pos2 + i) % kickPeriod;
+                        const float ts = (float) t / 48000.0f;
+                        const double hz = 45.0 + 105.0 * std::exp (-ts * 28.0f);
+                        phase2 += juce::MathConstants<double>::twoPi * hz / 48000.0;
+                        const float kick = 0.9f * std::exp (-ts * 9.0f)
+                                              * (float) std::sin (phase2);
+                        buf.setSample (0, i, kick);
+                        buf.setSample (1, i, kick);
+                    }
+
+                    processor.processBlock (buf, midi);
+                    pos2 += 512;
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (8);
+                }
+            }
+            else
+            {
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
+            }
 
             editor->setSize (shot.width, shot.height);
 

@@ -226,9 +226,10 @@ namespace edge::ui
                         juce::Justification::centred, false);
         }
 
-        //  "live" is where the control actually IS after modulation, drawn on
-        //  the OUTER edge - automation and FOLLOW move this marker only, never
-        //  the pointer, so the lane and the sound are both always visible.
+        //  "live" is where the control actually IS after modulation. The
+        //  violet arc from the pointer to the live marker IS the push - the
+        //  distance the signal is currently moving the filter. Idle FOLLOW
+        //  means zero arc, and the knob goes calm.
         if (props.contains ("live"))
         {
             const float liveAngle = startAngle
@@ -236,11 +237,19 @@ namespace edge::ui
 
             if (std::abs (liveAngle - angle) > 0.01f)
             {
-                const float r0 = arcR + 3.0f, r1 = arcR - 3.0f;
+                juce::Path push;
+                push.addCentredArc (centre.x, centre.y, arcR + 4.0f, arcR + 4.0f, 0.0f,
+                                    juce::jmin (angle, liveAngle),
+                                    juce::jmax (angle, liveAngle), true);
+                g.setColour (colour::movement.withAlpha (0.85f));
+                g.strokePath (push, { 2.5f, juce::PathStrokeType::curved,
+                                      juce::PathStrokeType::rounded });
+
+                const float r0 = arcR + 6.0f, r1 = arcR - 2.0f;
                 g.setColour (colour::movement);
                 g.drawLine (centre.x + r0 * std::sin (liveAngle), centre.y - r0 * std::cos (liveAngle),
                             centre.x + r1 * std::sin (liveAngle), centre.y - r1 * std::cos (liveAngle),
-                            2.0f);
+                            2.2f);
             }
         }
     }
