@@ -28,6 +28,11 @@ void EdgeAudioProcessorEditor::DeckKnob::attach (juce::Component& parent,
 
     attachment = std::make_unique<SliderAttachment> (state, id, slider);
 
+    //  Accessibility and the 500 ms tooltip: the name, and the value the
+    //  formatter already produces.
+    slider.setTitle (text);
+    slider.setTooltip (text);
+
     if (auto* p = state.getParameter (id))
         slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
 }
@@ -47,27 +52,31 @@ void EdgeAudioProcessorEditor::HeaderPanel::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
 
-    //  Floating titanium glass: #DDE1E5 at 94 %, radius 15, no outer border,
-    //  a 1 px inner highlight, and its shadow onto the graph below.
+    //  Dark glass, not titanium chassis: #171C27 -> #0D111A, radius 12, a 1 px
+    //  top-inner highlight, contact + ambient shadows, no border.
     {
         juce::Path sh;
-        sh.addRoundedRectangle (b.translated (0.0f, 2.0f), 15.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        sh.addRoundedRectangle (b.translated (0.0f, 2.0f), 12.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.38f));
         g.fillPath (sh);
+        juce::Path sh2;
+        sh2.addRoundedRectangle (b.translated (0.0f, 6.0f), 12.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.20f));
+        g.fillPath (sh2);
     }
 
-    g.setColour (juce::Colour (0xffDDE1E5).withAlpha (0.94f));
-    g.fillRoundedRectangle (b, 15.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.38f));
-    g.drawRoundedRectangle (b.reduced (1.0f), 14.0f, 1.0f);
+    g.setGradientFill ({ colour::headerTop, 0.0f, b.getY(),
+                         colour::headerBottom, 0.0f, b.getBottom(), false });
+    g.fillRoundedRectangle (b, 12.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.09f));
+    g.drawLine (b.getX() + 12.0f, b.getY() + 1.0f, b.getRight() - 12.0f, b.getY() + 1.0f, 1.0f);
 
-    //  The one reactive element: the hairline along the header's bottom edge
-    //  takes the active filter function's colour.
-    g.setColour (hairline.withAlpha (0.75f));
-    g.drawLine (b.getX() + 15.0f, b.getBottom() - 1.5f,
-                b.getRight() - 15.0f, b.getBottom() - 1.5f, 1.0f);
+    //  The one reactive element: the hairline takes the active mode's colour.
+    g.setColour (hairline.withAlpha (0.6f));
+    g.drawLine (b.getX() + 12.0f, b.getBottom() - 1.0f,
+                b.getRight() - 12.0f, b.getBottom() - 1.0f, 1.0f);
 
-    drawWordmark (g, b, colour::textOnLight);
+    drawWordmark (g, b, juce::Colour (0xffEEF2FA));
 }
 
 void EdgeAudioProcessorEditor::DockPanel::paint (juce::Graphics& g)
@@ -91,9 +100,18 @@ void EdgeAudioProcessorEditor::DockPanel::paint (juce::Graphics& g)
         g.fillPath (sh);
     }
 
-    g.setColour (juce::Colour (0xff151A21).withAlpha (0.88f));
-    g.fillPath (card);
+    {
+        juce::ColourGradient grad (colour::deckTop, 0.0f, b.getY(),
+                                   colour::deckBottom, 0.0f, b.getBottom(), false);
+        g.setGradientFill (grad);
+        g.fillPath (card);
+    }
     g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawLine (b.getX() + 20.0f, b.getY() + 2.5f, b.getRight() - 28.0f, b.getY() + 2.5f, 1.0f);
+
+    //  The violet-blue seam along the top: 14 % idle, up to 24 % when the
+    //  REAL follow envelope pushes. Never animated on its own.
+    g.setColour (colour::movement.withAlpha (0.14f + 0.10f * juce::jlimit (0.0f, 1.0f, seamEnergy)));
     g.drawLine (b.getX() + 20.0f, b.getY() + 1.0f, b.getRight() - 28.0f, b.getY() + 1.0f, 1.0f);
 
     //  EDGE's label and the CLEAN / CUT endpoints - drawn HERE because the
@@ -134,7 +152,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     //  --- header --------------------------------------------------------------
     presetTitle.setText ("PRESET", juce::dontSendNotification);
     presetTitle.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-    presetTitle.setColour (juce::Label::textColourId, colour::textOnLight.withAlpha (0.65f));
+    presetTitle.setColour (juce::Label::textColourId, colour::tertiary);
     addAndMakeVisible (presetTitle);
 
     refreshPresetBox();
@@ -158,40 +176,57 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     addAndMakeVisible (prevPreset);
     addAndMakeVisible (nextPreset);
 
-    biteKnob.attach (*this, state, param::bite, "BITE", colour::low);
+    //  BITE is champagne - never LOW's amber.
+    biteKnob.attach (*this, state, param::bite, "BITE", colour::champagne);
     biteKnob.slider.getProperties().set ("valueInside", false);
-    biteKnob.caption.setColour (juce::Label::textColourId, colour::textOnLight.withAlpha (0.75f));
+    biteKnob.caption.setColour (juce::Label::textColourId, colour::textDim);
 
     bypassButton.getProperties().set ("accent", (int) colour::low.getARGB());
     bypassButton.getProperties().set ("lamp", true);
     addAndMakeVisible (bypassButton);
     bypassAttachment = std::make_unique<ButtonAttachment> (state, param::bypass, bypassButton);
 
-    //  CHARACTER stays reachable: it is BITE's voicing, and BITE without it is
-    //  half a control. One compact toggle, not a toolbar.
-    characterButton.setClickingTogglesState (false);
-    characterButton.getProperties().set ("accent", (int) colour::low.getARGB());
-    addAndMakeVisible (characterButton);
+    //  CHARACTER: WARM | IRON as two segments. Champagne accent for WARM,
+    //  cold titanium for IRON - violet is forbidden here.
+    for (auto* b : { &warmButton, &ironButton })
+    {
+        b->setClickingTogglesState (false);
+        addAndMakeVisible (*b);
+    }
+    warmButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    ironButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    warmButton.getProperties().set ("accent", (int) colour::champagne.getARGB());
+    ironButton.getProperties().set ("accent", (int) colour::titanBright.getARGB());
 
     if (auto* cp = state.getParameter (param::character))
     {
-        characterButton.onClick = [cp]
+        auto write = [cp] (int c)
         {
-            const int now = (int) std::lround (cp->convertFrom0to1 (cp->getValue()));
             cp->beginChangeGesture();
-            cp->setValueNotifyingHost (cp->convertTo0to1 ((float) ((now + 1) % kNumCharacters)));
+            cp->setValueNotifyingHost (cp->convertTo0to1 ((float) c));
             cp->endChangeGesture();
         };
+        warmButton.onClick = [write] { write ((int) Character::warm); };
+        ironButton.onClick = [write] { write ((int) Character::iron); };
 
         characterAttachment = std::make_unique<juce::ParameterAttachment> (
             *cp,
             [this] (float v)
             {
-                characterButton.setButtonText (characterName ((int) std::lround (v)));
+                const int c = (int) std::lround (v);
+                warmButton.setToggleState (c == (int) Character::warm, juce::dontSendNotification);
+                ironButton.setToggleState (c == (int) Character::iron, juce::dontSendNotification);
             },
             nullptr);
         characterAttachment->sendInitialUpdate();
     }
+
+    //  OUTPUT: the existing parameter finally gets a panel control - a 30 px
+    //  neutral header knob. Presentation only; the parameter is unchanged.
+    outputKnob.attach (*this, state, param::output, "OUT", colour::text);
+    outputKnob.slider.getProperties().set ("bipolar", true);
+    outputKnob.slider.getProperties().set ("valueInside", false);
+    outputKnob.caption.setColour (juce::Label::textColourId, colour::textDim);
 
     //  --- MODE: a segmented control inside the graph ---------------------------
     for (auto* b : { &lpButton, &bandButton, &hpButton, &freeButton })
@@ -239,7 +274,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
                 curve.setFreeMode (m == (int) Mode::freeBand);
                 headerPanel.hairline = m == (int) Mode::lowPass  ? colour::high
                                      : m == (int) Mode::highPass ? colour::low
-                                                                 : colour::shellShadow;
+                                                                 : colour::titanDark;
                 headerPanel.repaint();
 
                 //  A mode that removed the selected edge moves the selection to
@@ -264,15 +299,24 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
                        juce::String::fromUTF8 ("FOLLOW \xe2\x86\x92 EDGE"), colour::movement);
     followKnob.slider.getProperties().set ("bipolar", true);
 
+    //  SPREAD: the existing parameter gets its direct deck control back -
+    //  48 px, bipolar, neutral-violet. Presentation only.
+    spreadKnob.attach (*this, state, param::spread, "SPREAD", colour::textDim);
+    spreadKnob.slider.getProperties().set ("bipolar", true);
+    spreadKnob.slider.getProperties().set ("valueSize", 12.0);
+
     for (auto* k : { &lowKnob, &highKnob, &followKnob })
-        k->slider.getProperties().set ("valueSize", 16.0);
+        k->slider.getProperties().set ("valueSize", 15.0);
 
     edgeKnob.getProperties().set ("accent",  (int) colour::low.getARGB());
     edgeKnob.getProperties().set ("accent2", (int) colour::high.getARGB());
     edgeKnob.getProperties().set ("valueInside", true);
     edgeKnob.getProperties().set ("valueSize", 24.0);   // the largest number on the UI
+    edgeKnob.getProperties().set ("ledOrbit", true);     // 36 violet dots, lit by travel
     edgeKnob.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                   juce::MathConstants<float>::pi * 2.75f, true);
+    edgeKnob.setTitle ("EDGE");
+    edgeKnob.setTooltip ("EDGE");
     addAndMakeVisible (edgeKnob);
     edgeAttachment = std::make_unique<SliderAttachment> (state, param::edge, edgeKnob);
 
@@ -414,6 +458,13 @@ void EdgeAudioProcessorEditor::timerCallback()
     edgeKnob.getProperties().set ("live", snap.liveEdge01);
     edgeKnob.repaint();
 
+    //  The dock's seam brightens with the REAL follow envelope only.
+    if (std::abs (snap.followEnv01 - dockPanel.seamEnergy) > 0.02f)
+    {
+        dockPanel.seamEnergy = snap.followEnv01;
+        dockPanel.repaint (0, 0, dockPanel.getWidth(), 4);
+    }
+
     //  The preset box follows the program the host selected.
     if (presetBox.getSelectedId() != edgeProcessor.getCurrentProgram() + 1)
         presetBox.setSelectedId (edgeProcessor.getCurrentProgram() + 1,
@@ -433,67 +484,81 @@ void EdgeAudioProcessorEditor::resized()
     edgeProcessor.editorWidth.store (getWidth());
     edgeProcessor.editorHeight.store (getHeight());
 
-    //  The graph is the window.
     curve.setBounds (getLocalBounds());
 
-    //  --- floating header: x 16, y 12, height 48 --------------------------------
-    headerPanel.setBounds (16, 12, getWidth() - 32, 48);
+    //  --- header (10, 10, W-20, 48) ---------------------------------------------
+    headerPanel.setBounds (10, 10, getWidth() - 20, 48);
     {
         auto header = headerPanel.getBounds();
 
-        auto left = header.withTrimmedLeft (metric::margin);
-        presetTitle.setBounds (left.removeFromLeft (52).withSizeKeepingCentre (52, 20));
-        const int boxW = juce::jmin (190, getWidth() / 5);
-        presetBox.setBounds (left.removeFromLeft (boxW).withSizeKeepingCentre (boxW, 26));
-        left.removeFromLeft (4);
-        prevPreset.setBounds (left.removeFromLeft (24).withSizeKeepingCentre (24, 26));
-        nextPreset.setBounds (left.removeFromLeft (24).withSizeKeepingCentre (24, 26));
+        //  Preset browser: < [field 160] > with 8 px gaps.
+        auto left = header.withTrimmedLeft (16);
+        presetTitle.setBounds (left.removeFromLeft (50).withSizeKeepingCentre (50, 20));
+        prevPreset.setBounds (left.removeFromLeft (28).withSizeKeepingCentre (28, 28));
+        left.removeFromLeft (8);
+        const int fieldW = juce::jmin (160, getWidth() / 5);
+        presetBox.setBounds (left.removeFromLeft (fieldW).withSizeKeepingCentre (fieldW, 28));
+        left.removeFromLeft (8);
+        nextPreset.setBounds (left.removeFromLeft (28).withSizeKeepingCentre (28, 28));
 
-        auto right = header.withTrimmedRight (metric::margin);
-        bypassButton.setBounds (right.removeFromRight (86).withSizeKeepingCentre (86, 24));
-        right.removeFromRight (8);
-        characterButton.setBounds (right.removeFromRight (58).withSizeKeepingCentre (58, 22));
-        right.removeFromRight (8);
+        //  Right side: BITE, WARM|IRON, OUTPUT, BYPASS.
+        auto right = header.withTrimmedRight (16);
+        bypassButton.setBounds (right.removeFromRight (70).withSizeKeepingCentre (70, 26));
+        right.removeFromRight (10);
 
-        auto bite = right.removeFromRight (76);
-        biteKnob.caption.setBounds (bite.removeFromLeft (34).withSizeKeepingCentre (34, 20));
-        biteKnob.slider.setBounds (bite.withSizeKeepingCentre (36, 36));
+        auto out = right.removeFromRight (66);
+        outputKnob.caption.setBounds (out.removeFromLeft (28).withSizeKeepingCentre (28, 20));
+        outputKnob.slider.setBounds (out.withSizeKeepingCentre (30, 30));
+        right.removeFromRight (10);
+
+        auto character = right.removeFromRight (82).withSizeKeepingCentre (82, 26);
+        warmButton.setBounds (character.removeFromLeft (41));
+        ironButton.setBounds (character);
+        right.removeFromRight (10);
+
+        auto bite = right.removeFromRight (66);
+        biteKnob.caption.setBounds (bite.removeFromLeft (30).withSizeKeepingCentre (30, 20));
+        biteKnob.slider.setBounds (bite.withSizeKeepingCentre (30, 30));
     }
 
-    //  --- floating macro dock: x 24, bottom inset 18, height 116 -----------------
-    dockPanel.setBounds (24, getHeight() - 18 - 116, getWidth() - 48, 116);
+    //  --- performance deck (10, H-170, W-20, 160) ---------------------------------
+    dockPanel.setBounds (10, getHeight() - 170, getWidth() - 20, 160);
     {
-        auto dock = dockPanel.getBounds().reduced (10, 4);
-        const int quarter = dock.getWidth() / 4;
+        const auto dock = dockPanel.getBounds();
+        const float fx = (float) dock.getWidth() / 880.0f;
 
-        auto lowArea    = dock.removeFromLeft (quarter);
-        auto edgeArea   = dock.removeFromLeft (quarter);
-        auto highArea   = dock.removeFromLeft (quarter);
-        auto followArea = dock;
+        //  Reference centres, scaled horizontally with the dock.
+        auto centreAt = [&] (float refX, float refY) -> juce::Point<int>
+        {
+            return { dock.getX() + (int) ((refX - 10.0f) * fx),
+                     dock.getY() + (int) (refY - 390.0f) };
+        };
 
-        lowKnob.place  (lowArea, 64);
-        highKnob.place (highArea, 64);
-        followKnob.place (followArea, 60);
+        auto placeKnob = [&] (DeckKnob& k, float refX, float refY, int d)
+        {
+            const auto c = centreAt (refX, refY);
+            k.slider.setBounds (c.x - d / 2, c.y - d / 2, d, d);
+            k.caption.setBounds (c.x - 48, c.y - d / 2 - 17, 96, 14);
+        };
 
-        //  EDGE: dominant, its caption row shared with the others.
-        auto e = edgeArea.withSizeKeepingCentre (140, 14 + 2 + 92);
-        edgeLabelArea = e.removeFromTop (14);
-        e.removeFromTop (2);
-        const auto knob = e.withSizeKeepingCentre (92, 92);
-        edgeKnob.setBounds (knob);
+        placeKnob (spreadKnob, 78.0f, 478.0f, 48);
+        placeKnob (lowKnob,   216.0f, 474.0f, 82);
+        placeKnob (highKnob,  660.0f, 474.0f, 82);
+        placeKnob (followKnob, 820.0f, 478.0f, 74);
+
+        const auto ec = centreAt (450.0f, 466.0f);
+        edgeKnob.setBounds (ec.x - 58, ec.y - 58, 116, 116);
 
         const auto dockPos = dockPanel.getPosition();
-        dockPanel.edgeLabel = edgeLabelArea - dockPos;
-        dockPanel.cleanRect = juce::Rectangle<int> (knob.getX() - 48, knob.getBottom() - 16,
-                                                    44, 12) - dockPos;
-        dockPanel.cutRect = juce::Rectangle<int> (knob.getRight() + 4, knob.getBottom() - 16,
-                                                  44, 12) - dockPos;
+        dockPanel.edgeLabel = juce::Rectangle<int> (ec.x - 40, ec.y - 58 - 18, 80, 14) - dockPos;
+        dockPanel.cleanRect = juce::Rectangle<int> (ec.x - 58 - 48, ec.y + 42, 44, 12) - dockPos;
+        dockPanel.cutRect   = juce::Rectangle<int> (ec.x + 58 + 4,  ec.y + 42, 44, 12) - dockPos;
     }
 
-    //  --- MODE, floating inside the graph content ---------------------------------
+    //  --- MODE (326, 80, 248, 28), centred to the window --------------------------
     {
-        const int segW = 250, segH = 28;
-        auto seg = juce::Rectangle<int> (getWidth() / 2 - segW / 2, 68 + 8, segW, segH);
+        const int segW = 248, segH = 28;
+        auto seg = juce::Rectangle<int> (getWidth() / 2 - segW / 2, 80, segW, segH);
         const int w = segW / 4;
         lpButton.setBounds   (seg.removeFromLeft (w));
         bandButton.setBounds (seg.removeFromLeft (w));

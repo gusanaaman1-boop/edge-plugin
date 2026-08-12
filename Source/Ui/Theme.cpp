@@ -213,113 +213,126 @@ namespace edge::ui
                                  float pos, float startAngle, float endAngle,
                                  juce::Slider& s)
     {
-        //  The v0.12 knob: 4 px active arc over a 3 px background arc, a
-        //  2 x 12 px pointer inset 11 px from the rim, the value centred
-        //  inside, and nothing else - no tick ring, no gloss, no texture.
+        //  v0.17 universal knob: black-glass centre, 2 px track at 18 %,
+        //  4 px value arc with a 6 px endpoint dot, a 1 px titanium ring -
+        //  no pointer line, no rim, no ticks, no gloss.
         const auto& props = s.getProperties();
         auto accent = juce::Colour ((juce::uint32) (int) props
-                                        .getWithDefault ("accent", (int) colour::low.getARGB()));
+                                        .getWithDefault ("accent", (int) colour::text.getARGB()));
         const bool bipolar = (bool) props.getWithDefault ("bipolar", false);
-
-        //  States: hover lifts the arc +10 % luminance over 120 ms (JUCE
-        //  repaints per frame; the step is small enough to read as a fade);
-        //  drag adds a 2 px halo at 18 %.
         const bool hover = s.isMouseOverOrDragging();
         const bool down  = s.isMouseButtonDown();
-        if (hover)
-            accent = accent.withMultipliedBrightness (1.10f);
 
         auto bounds = juce::Rectangle<int> (x, y, w, h).toFloat().reduced (4.0f);
         const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const auto centre = bounds.getCentre();
-        const float arcR = radius - 2.0f;
+        const float arcR = radius - 3.0f;
         const float angle = startAngle + pos * (endAngle - startAngle);
 
         if (down)
         {
-            g.setColour (accent.withAlpha (0.18f));
+            g.setColour (accent.withAlpha (0.16f));
             g.drawEllipse (centre.x - radius, centre.y - radius,
                            radius * 2.0f, radius * 2.0f, 2.0f);
         }
 
-        //  Background arc, 3 px.
+        //  Background track.
         {
             juce::Path track;
             track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
                                  startAngle, endAngle, true);
-            g.setColour (colour::gridStrong);
-            g.strokePath (track, { 3.0f, juce::PathStrokeType::curved,
+            g.setColour (colour::text.withAlpha (0.18f));
+            g.strokePath (track, { 2.0f, juce::PathStrokeType::curved,
                                    juce::PathStrokeType::rounded });
         }
 
-        //  Active arc, 4 px. Bipolar controls grow out of 12 o'clock so that
-        //  "no modulation" reads as an empty ring, not a half-full one.
-        //
-        //  A second accent SPLITS the arc at 12 o'clock instead of blending:
-        //  amber-to-cyan interpolation passes through exactly the muddy green
-        //  the colour rules forbid.
+        //  Centre: flat black glass with a faint titanium ring and a contact
+        //  shadow below it.
+        const float bodyR = arcR - 8.0f;
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.30f));
+            g.fillEllipse (centre.x - bodyR, centre.y - bodyR + 2.0f, bodyR * 2.0f, bodyR * 2.0f);
+            g.setColour (hover ? colour::controlHover : colour::controlCentre);
+            g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+            g.setColour (colour::titanBright.withAlpha (0.28f));
+            g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+        }
+
+        //  Value arc + endpoint dot. Bipolar grows out of 12 o'clock.
         const float from = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
         const bool hasSecond = props.contains ("accent2");
 
-        if (std::abs (angle - from) > 0.004f)
+        //  LED orbit (the hero EDGE knob): 36 dots outside the arc, violet -
+        //  lit up to the LIVE position, dim beyond it. Travelled = movement.
+        if ((bool) props.getWithDefault ("ledOrbit", false))
+        {
+            const float livePos = juce::jlimit (0.0f, 1.0f,
+                (float) (double) props.getWithDefault ("live", (double) pos));
+            const float dotR = radius + 1.5f;
+
+            for (int i = 0; i < 36; ++i)
+            {
+                const float t = (float) i / 35.0f;
+                const float a = startAngle + t * (endAngle - startAngle);
+                const bool lit = t <= juce::jmax (pos, livePos) + 0.001f;
+
+                g.setColour (colour::movement.withAlpha (lit ? 0.82f : 0.10f));
+                const float d = lit ? 2.4f : 2.0f;
+                g.fillEllipse (centre.x + dotR * std::sin (a) - d * 0.5f,
+                               centre.y - dotR * std::cos (a) - d * 0.5f, d, d);
+            }
+        }
+
+        if (std::abs (angle - from) > 0.004f || ! bipolar)
         {
             const float lo = juce::jmin (from, angle), hi = juce::jmax (from, angle);
-            const float mid = juce::jlimit (lo, hi, (startAngle + endAngle) * 0.5f);
-
-            auto stroke = [&] (float a0, float a1, juce::Colour c)
+            auto stroke = [&] (float a0, float a1, juce::Colour c, float width)
             {
-                if (a1 - a0 < 0.004f)
-                    return;
+                if (a1 - a0 < 0.004f) return;
                 juce::Path arc;
                 arc.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, a0, a1, true);
                 g.setColour (c);
-                g.strokePath (arc, { 4.0f, juce::PathStrokeType::curved,
+                g.strokePath (arc, { width, juce::PathStrokeType::curved,
                                      juce::PathStrokeType::rounded });
             };
 
             if (hasSecond)
             {
                 const auto accent2 = juce::Colour ((juce::uint32) (int) props["accent2"]);
-                stroke (lo, mid, hover ? accent.withMultipliedBrightness (1.1f) : accent);
-                stroke (mid, hi, hover ? accent2.withMultipliedBrightness (1.1f) : accent2);
+                const float mid = juce::jlimit (lo, hi, (startAngle + endAngle) * 0.5f);
+                stroke (lo, mid, accent, 4.0f);
+                stroke (mid, hi, accent2, 4.0f);
             }
             else
             {
-                stroke (lo, hi, accent);
+                stroke (lo, hi, accent, 4.0f);
             }
+
+            //  Endpoint dot: 6 px, 7 on hover, in the accent.
+            const float dotD = hover ? 7.0f : 6.0f;
+            g.setColour (accent);
+            g.fillEllipse (centre.x + arcR * std::sin (angle) - dotD * 0.5f,
+                           centre.y - arcR * std::cos (angle) - dotD * 0.5f, dotD, dotD);
         }
 
-        //  Body: one flat raised disc with a hairline rim. No gradient chrome.
-        const float bodyR = arcR - 6.0f;
-        g.setColour (colour::raised);
-        g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-        g.setColour (colour::panelEdge);
-        g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
-
-        //  Pointer: 2 x 12 px, outer end 11 px inside the knob radius.
+        //  Bipolar centre-zero mark on the track.
+        if (bipolar)
         {
-            const float tipR  = radius - 11.0f;
-            const float rootR = juce::jmax (2.0f, tipR - 12.0f);
-            g.setColour (colour::text);
-            g.drawLine (centre.x + rootR * std::sin (angle), centre.y - rootR * std::cos (angle),
-                        centre.x + tipR  * std::sin (angle), centre.y - tipR  * std::cos (angle),
-                        2.0f);
+            const float za = (startAngle + endAngle) * 0.5f;
+            g.setColour (colour::text.withAlpha (0.45f));
+            g.drawLine (centre.x + (arcR + 3.0f) * std::sin (za),
+                        centre.y - (arcR + 3.0f) * std::cos (za),
+                        centre.x + (arcR - 3.0f) * std::sin (za),
+                        centre.y - (arcR - 3.0f) * std::cos (za), 1.5f);
         }
 
-        //  The value, centred inside the knob, when asked for. The deck knobs
-        //  use this instead of a text box under the circle.
+        //  The value, centred inside. Wider box than the body: "20.00 kHz"
+        //  overhangs a small circle on the flat dark deck rather than clip.
         if ((bool) props.getWithDefault ("valueInside", false))
         {
-            //  Candidate C: the value is the knob's content, and the ONE
-            //  number that matters gets real size - EDGE at 24 px, the deck
-            //  at 16. Reserve enough box for "20.00 kHz" and "-100 %".
             const float valueSize = (float) (double) props.getWithDefault ("valueSize", 13.0);
-
-            //  The box is WIDER than the knob: "20.00 kHz" at 16 px does not
-            //  fit a 64 px body, and the dock behind is flat and dark, so the
-            //  number may overhang the circle rather than be clipped by it.
             const float boxW = juce::jmax (bodyR * 2.0f + 12.0f, valueSize * 6.0f);
-            g.setColour (colour::text);
+            g.setColour (hover ? colour::numeric : colour::text);
             g.setFont (juce::FontOptions (valueSize));
             g.drawText (s.getTextFromValue (s.getValue()),
                         juce::Rectangle<int> ((int) (centre.x - boxW * 0.5f),
@@ -328,11 +341,9 @@ namespace edge::ui
                         juce::Justification::centred, false);
         }
 
-        //  "live" is where the control actually IS after modulation. The
-        //  violet arc from the pointer to the live marker IS the push - the
-        //  distance the signal is currently moving the filter. Idle FOLLOW
-        //  means zero arc, and the knob goes calm.
-        if (props.contains ("live"))
+        //  Live marker (the sound) and the violet push arc from the pointer
+        //  (the lane) to it - EDGE only, driven by resolved engine state.
+        if (props.contains ("live") && ! (bool) props.getWithDefault ("ledOrbit", false))
         {
             const float liveAngle = startAngle
                 + juce::jlimit (0.0f, 1.0f, (float) props["live"]) * (endAngle - startAngle);
@@ -346,13 +357,34 @@ namespace edge::ui
                 g.setColour (colour::movement.withAlpha (0.85f));
                 g.strokePath (push, { 2.5f, juce::PathStrokeType::curved,
                                       juce::PathStrokeType::rounded });
-
-                const float r0 = arcR + 6.0f, r1 = arcR - 2.0f;
-                g.setColour (colour::movement);
-                g.drawLine (centre.x + r0 * std::sin (liveAngle), centre.y - r0 * std::cos (liveAngle),
-                            centre.x + r1 * std::sin (liveAngle), centre.y - r1 * std::cos (liveAngle),
-                            2.2f);
             }
+        }
+
+        if ((bool) props.getWithDefault ("ledOrbit", false) && props.contains ("live"))
+        {
+            //  EDGE's two endpoints: ice-white base (the parameter), violet
+            //  live (after FOLLOW). They coincide exactly at FOLLOW 0.
+            const float liveAngle = startAngle
+                + juce::jlimit (0.0f, 1.0f, (float) props["live"]) * (endAngle - startAngle);
+
+            g.setColour (colour::text);
+            g.fillEllipse (centre.x + arcR * std::sin (angle) - 3.0f,
+                           centre.y - arcR * std::cos (angle) - 3.0f, 6.0f, 6.0f);
+
+            if (std::abs (liveAngle - angle) > 0.01f)
+            {
+                g.setColour (colour::movement);
+                g.fillEllipse (centre.x + arcR * std::sin (liveAngle) - 3.5f,
+                               centre.y - arcR * std::cos (liveAngle) - 3.5f, 7.0f, 7.0f);
+            }
+        }
+
+        //  Keyboard focus: a 1 px ice-white ring 2 px outside the component.
+        if (s.hasKeyboardFocus (false))
+        {
+            g.setColour (colour::text.withAlpha (0.60f));
+            g.drawEllipse (centre.x - radius - 2.0f, centre.y - radius - 2.0f,
+                           radius * 2.0f + 4.0f, radius * 2.0f + 4.0f, 1.0f);
         }
     }
 
@@ -413,9 +445,32 @@ namespace edge::ui
         g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
     }
 
+    static bool drawArrowInstead (juce::Graphics& g, juce::TextButton& b)
+    {
+        const auto t = b.getButtonText();
+        if (t != "<" && t != ">")
+            return false;
+
+        auto r = b.getLocalBounds().toFloat().reduced (9.0f);
+        juce::Path arrow;
+        if (t == "<")
+            arrow.addTriangle (r.getRight(), r.getY(), r.getRight(), r.getBottom(),
+                               r.getX(), r.getCentreY());
+        else
+            arrow.addTriangle (r.getX(), r.getY(), r.getX(), r.getBottom(),
+                               r.getRight(), r.getCentreY());
+
+        g.setColour (colour::textDim);
+        g.fillPath (arrow);
+        return true;
+    }
+
     void Look::drawButtonText (juce::Graphics& g, juce::TextButton& b,
                                bool highlighted, bool)
     {
+        if (drawArrowInstead (g, b))
+            return;
+
         const auto accent = juce::Colour ((juce::uint32) (int) b.getProperties()
                                               .getWithDefault ("accent", (int) colour::low.getARGB()));
 

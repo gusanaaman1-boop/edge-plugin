@@ -89,6 +89,24 @@ namespace
                 { edge::param::mode, (float) (int) edge::Mode::band },
                 { edge::param::edge, 62.0f } } },
 
+            { "spread-neg", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f }, { edge::param::spread, -100.0f } } },
+            { "spread-zero", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f }, { edge::param::spread, 0.0f } } },
+            { "spread-pos", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f }, { edge::param::spread, 100.0f } } },
+            { "state-warm", -1, W, H, {
+                { edge::param::bite, 70.0f },
+                { edge::param::character, (float) (int) edge::Character::warm } } },
+            { "state-iron", -1, W, H, {
+                { edge::param::bite, 70.0f },
+                { edge::param::character, (float) (int) edge::Character::iron } } },
+            { "state-bypass", -1, W, H, {
+                { edge::param::edge, 62.0f }, { edge::param::bypass, 1.0f } } },
+
             //  The two analyzer proofs: silence must show NOTHING (the muted
             //  host is expected to look like this), -18 dBFS noise must show
             //  the input spectrum through a closed filter.

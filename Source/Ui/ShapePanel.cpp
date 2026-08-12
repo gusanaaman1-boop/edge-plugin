@@ -136,6 +136,9 @@ namespace edge::ui
             apvts, paramID, slider);
         ++attachmentCount;
 
+        slider.setTitle (text);
+        slider.setTooltip (text);
+
         auto* sliderPtr = &slider;
         auto* valuePtr = &value;
         slider.onValueChange = [sliderPtr, valuePtr]
@@ -306,10 +309,16 @@ namespace edge::ui
             g.fillPath (sh);
         }
 
-        g.setColour (colour::raised.withAlpha (0.94f));
-        g.fillPath (card);
-        g.setColour (colour::text.withAlpha (0.24f));
-        g.strokePath (card, juce::PathStrokeType (1.0f));
+        {
+            juce::ColourGradient grad (colour::inspTop.withAlpha (0.94f), 0.0f, body.getY(),
+                                       colour::inspBottom.withAlpha (0.94f), 0.0f, body.getBottom(),
+                                       false);
+            g.setGradientFill (grad);
+            g.fillPath (card);
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.09f));
+        g.drawLine (body.getX() + 14.0f, body.getY() + 1.0f,
+                    body.getRight() - 22.0f, body.getY() + 1.0f, 1.0f);
 
         //  The context label, upper-left, 11 px semibold, context-coloured.
         g.setColour (headerColour);

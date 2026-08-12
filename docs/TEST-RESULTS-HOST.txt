@@ -53,9 +53,9 @@ EDGE host-contract suite
   [PASS] the selected preset survives a save/load                   13 of 13
 
 == 7. build identity ==
-  [PASS] a version is compiled in                                   0.15.0
-  [PASS] a git description is compiled in                           v0.14-3-ga726adf-dirty
-  [PASS] a repository build carries a real git description          v0.14-3-ga726adf-dirty
+  [PASS] a version is compiled in                                   0.17.0
+  [PASS] a git description is compiled in                           v0.15-2-g57931c0-dirty
+  [PASS] a repository build carries a real git description          v0.15-2-g57931c0-dirty
   [PASS] the log records the exact build                            written to EDGE.log
 
 == 8. display invalidation ==
@@ -92,10 +92,10 @@ EDGE host-contract suite
 
 == 10. gestures and selection ==
   [PASS] touching MID selects the MID inspector before the gesture  selected
-  [PASS] MID horizontal drag lowers mid.freq                        519.4 Hz
+  [PASS] MID horizontal drag lowers mid.freq                        508.1 Hz
   [PASS] horizontal drag leaves mid.gain alone                      5.00 dB
   [PASS] MID handle x tracks the drag within the same frame         0.000 px
-  [PASS] MID drag up increases gain (peak)                          17.5 dB
+  [PASS] MID drag up increases gain (peak)                          18.0 dB
   [PASS] MID drag down goes negative (notch)                        -18.0 dB
   [PASS] refresh is 60 Hz while dragging                            16 ms interval
   [PASS] refresh drops to 30 Hz when idle                           33 ms interval
@@ -106,10 +106,10 @@ EDGE host-contract suite
   [PASS] zero inspectors after close                                closed
 
 == 11. EDGE travel ==
-  [PASS] LP live cutoff x moves monotonically left                  860.4 > 748.5 > 636.6 px
-  [PASS] HP live cutoff x moves monotonically right                 16.9 < 182.2 < 347.5 px
-  [PASS] BAND low x increases monotonically                         16.9 -> 347.5 px
-  [PASS] BAND high x decreases monotonically                        860.4 -> 636.6 px
+  [PASS] LP live cutoff x moves monotonically left                  858.7 > 750.5 > 642.2 px
+  [PASS] HP live cutoff x moves monotonically right                 42.5 < 202.5 < 362.5 px
+  [PASS] BAND low x increases monotonically                         42.5 -> 362.5 px
+  [PASS] BAND high x decreases monotonically                        858.7 -> 642.2 px
   [PASS] FREE x drift stays within 0.25 px                          0.000 px
   [PASS] target marker drift within 0.25 px                         0.000 px
 
@@ -121,7 +121,7 @@ EDGE host-contract suite
   [PASS] LP inspector opens on the active edge                      visible
 
 == 13. analyzer ==
-  [PASS] 100 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 23, expected 22
+  [PASS] 100 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 22, expected 22
   [PASS] 100 Hz displayed level within 1.5 dB                       -18.03 dBFS
   [PASS] 1000 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 54, expected 54
   [PASS] 1000 Hz displayed level within 1.5 dB                      -18.00 dBFS
@@ -140,8 +140,8 @@ EDGE host-contract suite
   [PASS] position drift across handle moves: 0.000 px               0.000 px
   [PASS] 0 clipped placements                                       0
   [PASS] exactly 1 inspector visible at every position              0 misses
-  [PASS] readout never intersects the fixed inspector               24 323 208 22
-  [PASS] handles drag while the inspector is open                   7341.5 Hz
+  [PASS] readout never intersects the fixed inspector               38 316 194 22
+  [PASS] handles drag while the inspector is open                   7222.2 Hz
 
 == 15. slope choices ==
   [PASS] choice -> value -> choice round-trips exactly              12->50.0%  24->60.0%  36->70.0%  48->80.0%  72->100.0%  
@@ -152,14 +152,13 @@ EDGE host-contract suite
   [PASS] the LOW inspector hosts the slope selector                 present
   [PASS] a key gesture writes the calibrated value exactly          80.000000 % = 48 dB/oct
   [PASS] each slope choice activates its intended section count     12->1  24->2  36->3  48->4  72->6  
-  [PASS] analyzer line opacity at -18 dBFS within 40-55 %           52.0 %
+  [PASS] analyzer line opacity at -18 dBFS within 40-55 %           43.8 %
 
 == 15. palette contract ==
-  [PASS] chassis vs graph: at least 42 L*                           84.2 L*
-  [PASS] graph vs deck: at most 8 L*                                5.2 L*
-  [PASS] header text contrast at least 4.5:1                        12.68:1
-  [PASS] deck text contrast at least 4.5:1                          15.85:1
-  [PASS] inspector text contrast at least 4.5:1                     16.16:1
+  [PASS] graph vs deck: at most 8 L*                                4.7 L*
+  [PASS] header text contrast at least 4.5:1                        15.81:1
+  [PASS] deck text contrast at least 4.5:1                          16.65:1
+  [PASS] inspector text contrast at least 4.5:1                     15.82:1
 
 == 16. editor ==
   [PASS] 20 editor open/close cycles with audio running             no crash, no leak
@@ -168,4 +167,4 @@ EDGE host-contract suite
   [PASS] no two controls share pixels                               0
   [PASS] no control is laid out with zero size                      0
 
-134 checks, 0 failed
+133 checks, 0 failed

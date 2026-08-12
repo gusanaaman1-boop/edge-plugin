@@ -49,7 +49,7 @@ private:
     //  hairline; the dock carries the EDGE CUT corner.
     struct HeaderPanel : public juce::Component
     {
-        juce::Colour hairline = edge::ui::colour::shellShadow;
+        juce::Colour hairline = edge::ui::colour::titanDark;
         void paint (juce::Graphics&) override;
     };
 
@@ -57,6 +57,7 @@ private:
     {
         juce::String versionText;
         juce::Rectangle<int> edgeLabel, cleanRect, cutRect;   // dock-local
+        float seamEnergy = 0.0f;      // real followEnv01, drives the seam only
         void paint (juce::Graphics&) override;
     };
 
@@ -101,7 +102,9 @@ private:
     std::unique_ptr<juce::ParameterAttachment> modeAttachment;
 
     //  --- deck --------------------------------------------------------------
-    DeckKnob lowKnob, highKnob, followKnob;
+    DeckKnob lowKnob, highKnob, followKnob, spreadKnob;
+    DeckKnob outputKnob;                                    // header, 30 px
+    juce::TextButton warmButton { "WARM" }, ironButton { "IRON" };
     juce::Slider edgeKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
     std::unique_ptr<SliderAttachment> edgeAttachment;
 
@@ -110,6 +113,9 @@ private:
 
     HeaderPanel headerPanel;
     DockPanel dockPanel;
+
+    //  500 ms tooltips: parameter name and current value, nothing more.
+    juce::TooltipWindow tooltipWindow { this, 500 };
 
     juce::ComponentBoundsConstrainer constrainer;
     juce::String versionText;

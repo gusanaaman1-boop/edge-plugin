@@ -2085,17 +2085,15 @@ namespace
 
         using namespace edge::ui;
 
-        const float shellGraph = std::abs (lstar (colour::shellLight) - lstar (colour::graph));
-        check (shellGraph >= 42.0f, "chassis vs graph: at least 42 L*",
-               juce::String (shellGraph, 1) + " L*");
-
-        const float graphDeck = std::abs (lstar (colour::graph) - lstar (colour::deck));
+        //  v0.17 is all-dark: the light-shell separation rule is retired and
+        //  the deep-surface steps take its place.
+        const float graphDeck = std::abs (lstar (colour::graph) - lstar (colour::deckTop));
         check (graphDeck <= 8.0f, "graph vs deck: at most 8 L*",
                juce::String (graphDeck, 1) + " L*");
 
-        check (contrast (colour::textOnLight, colour::shellLight) >= 4.5f,
+        check (contrast (colour::text, colour::headerTop) >= 4.5f,
                "header text contrast at least 4.5:1",
-               juce::String (contrast (colour::textOnLight, colour::shellLight), 2) + ":1");
+               juce::String (contrast (colour::text, colour::headerTop), 2) + ":1");
 
         check (contrast (colour::text, colour::deck) >= 4.5f,
                "deck text contrast at least 4.5:1",
