@@ -1,6 +1,6 @@
 # EDGE — user manual
 
-*For v0.14. An autofilter with a destination.*
+*For v0.17. An autofilter with a destination.*
 
 ---
 
@@ -144,11 +144,11 @@ The detector reaches full modulation at the SENS level and zero 24 dB below
 it. In FREE mode, FOLLOW moves the band's **centre** (±2 octaves) instead of
 the depth.
 
-### Hidden parameters
+### SPREAD and OUTPUT
 
-**SPREAD** (stereo width, ±12 semitones of per-channel corner offset) and
-**OUTPUT** (±24 dB trim) have no panel control in this version but are fully
-available to host automation and are set by several factory presets.
+**SPREAD** (stereo width, ±12 semitones of per-channel corner offset) sits at
+the far left of the deck; **OUTPUT** (±24 dB trim) lives in the header next to
+BYPASS. Both are also host-automatable and set by several factory presets.
 
 ---
 

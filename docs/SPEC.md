@@ -1,6 +1,6 @@
-# EDGE v0.14 — product specification
+# EDGE v0.17 — product specification
 
-*2026-08-12 · build `v0.14` · every number below was measured by the test
+*2026-08-12 · build `v0.17.3` · every number below was measured by the test
 suites, not estimated.*
 
 ---
@@ -99,12 +99,12 @@ user gesture writes a calibrated value.
 contract (IDs, ranges, defaults) is hashed and asserted in CI:
 `0x7826a61a1db9aa41`. Full table: [PARAMETER-TABLE.md](PARAMETER-TABLE.md).
 
-*Note: SPREAD and OUTPUT currently have no panel control (not in the approved
-layout); both remain fully host-automatable and preset-settable.*
+*SPREAD (deck, far left) and OUTPUT (header) have direct panel controls as of
+v0.17; the parameters themselves are unchanged.*
 
 ---
 
-## Measured performance (v0.14 universal build)
+## Measured performance (v0.17.3 universal build)
 
 | | measured |
 |---|---|
@@ -146,7 +146,7 @@ layout); both remain fully host-automatable and preset-settable.*
 
 ## Verification
 
-93 DSP checks + 134 host-contract checks, green in Release **and** under
+93 DSP checks + 133 host-contract checks, green in Release **and** under
 ASan+UBSan with zero sanitiser diagnostics. `auval` passes. The MID
 stale-display defect, the EDGE-travel defect and the LP-label defect are each
 reproduced by a regression test that failed before its fix.
@@ -163,8 +163,8 @@ owner**.
 
 | what | where |
 |---|---|
-| `EDGE.vst3` v0.14 | `~/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` v0.14 | `~/Library/Audio/Plug-Ins/Components/` |
+| `EDGE.vst3` v0.17.3 | `~/Library/Audio/Plug-Ins/VST3/` |
+| `EDGE.component` v0.17.3 | `~/Library/Audio/Plug-Ins/Components/` |
 
 In Cubase: **Studio → VST Plug-in Manager → rescan**. EDGE appears under
 *Filter*. If Cubase was open during the install, restart it.
