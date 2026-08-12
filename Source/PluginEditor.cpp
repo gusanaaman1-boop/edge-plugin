@@ -308,10 +308,22 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     for (auto* k : { &lowKnob, &highKnob, &followKnob })
         k->slider.getProperties().set ("valueSize", 15.0);
 
-    edgeKnob.getProperties().set ("accent",  (int) colour::low.getARGB());
-    edgeKnob.getProperties().set ("accent2", (int) colour::high.getARGB());
+    //  Semantic value colours and the restrained micro-tick orbits.
+    lowKnob.slider.getProperties().set    ("valueColour", (int) colour::low.getARGB());
+    highKnob.slider.getProperties().set   ("valueColour", (int) colour::high.getARGB());
+    followKnob.slider.getProperties().set ("valueColour", (int) juce::Colour (0xffB29CFF).getARGB());
+    spreadKnob.slider.getProperties().set ("valueColour", (int) juce::Colour (0xffC6CCDA).getARGB());
+
+    lowKnob.slider.getProperties().set    ("orbitDots", 28);
+    highKnob.slider.getProperties().set   ("orbitDots", 28);
+    followKnob.slider.getProperties().set ("orbitDots", 24);
+    spreadKnob.slider.getProperties().set ("orbitDots", 20);
+
+    //  EDGE is travel, and travel is violet - the amber/cyan split is gone.
+    edgeKnob.getProperties().set ("accent", (int) colour::movement.getARGB());
     edgeKnob.getProperties().set ("valueInside", true);
     edgeKnob.getProperties().set ("valueSize", 24.0);   // the largest number on the UI
+    edgeKnob.getProperties().set ("valueColour", (int) colour::movement.getARGB());
     edgeKnob.getProperties().set ("ledOrbit", true);     // 36 violet dots, lit by travel
     edgeKnob.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                   juce::MathConstants<float>::pi * 2.75f, true);
@@ -546,13 +558,13 @@ void EdgeAudioProcessorEditor::resized()
         placeKnob (highKnob,  660.0f, 474.0f, 82);
         placeKnob (followKnob, 820.0f, 478.0f, 74);
 
-        const auto ec = centreAt (450.0f, 466.0f);
-        edgeKnob.setBounds (ec.x - 58, ec.y - 58, 116, 116);
+        const auto ec = centreAt (450.0f, 474.0f);
+        edgeKnob.setBounds (ec.x - 70, ec.y - 70, 140, 140);
 
         const auto dockPos = dockPanel.getPosition();
-        dockPanel.edgeLabel = juce::Rectangle<int> (ec.x - 40, ec.y - 58 - 18, 80, 14) - dockPos;
-        dockPanel.cleanRect = juce::Rectangle<int> (ec.x - 58 - 48, ec.y + 42, 44, 12) - dockPos;
-        dockPanel.cutRect   = juce::Rectangle<int> (ec.x + 58 + 4,  ec.y + 42, 44, 12) - dockPos;
+        dockPanel.edgeLabel = juce::Rectangle<int> (ec.x - 40, dock.getY() + 2, 80, 12) - dockPos;
+        dockPanel.cleanRect = juce::Rectangle<int> (ec.x - 70 - 44, ec.y + 46, 42, 12) - dockPos;
+        dockPanel.cutRect   = juce::Rectangle<int> (ec.x + 70 + 2,  ec.y + 46, 42, 12) - dockPos;
     }
 
     //  --- MODE (326, 80, 248, 28), centred to the window --------------------------

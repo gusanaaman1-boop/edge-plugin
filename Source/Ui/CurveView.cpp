@@ -296,9 +296,14 @@ namespace edge::ui
     //    -18 dBFS -> 36 %      -66 dBFS -> 96 %
     static float spectrumY01 (float db) noexcept
     {
+        //  Recalibrated so the analyzer OCCUPIES the graph the way the
+        //  approved mockup does: per-band pink-noise energy (~ -38 dBFS per
+        //  96th-octave band for a -18 dBFS total) lands around 42 % of graph
+        //  height instead of hugging the floor. Band VALUES are untouched -
+        //  this is the display mapping only.
         struct P { float db, y; };
-        static constexpr P map[] = { { 0.0f, 0.12f }, { -18.0f, 0.36f },
-                                     { -36.0f, 0.65f }, { -66.0f, 0.96f } };
+        static constexpr P map[] = { { 0.0f, 0.08f }, { -18.0f, 0.30f },
+                                     { -36.0f, 0.55f }, { -66.0f, 0.94f } };
 
         if (db >= map[0].db) return map[0].y;
 
@@ -917,6 +922,21 @@ namespace edge::ui
             const float dashes[] = { 5.0f, 4.0f };
             juce::PathStrokeType (1.25f).createDashedStroke (dashed, targetPath, dashes, 2);
 
+            //  Where the dotted journey rides the cut, the dash hands over -
+            //  drawing both stacked dots onto dashes and buried the route.
+            juce::Graphics::ScopedSaveState dashClip (g);
+
+            if (snap.mode == (int) Mode::lowPass)
+                g.reduceClipRegion (juce::Rectangle<int> ((int) plot.getX(), 0,
+                    (int) (xForHz (snap.currentCentre.highHz) - plot.getX()), getHeight()));
+            else if (snap.mode == (int) Mode::highPass)
+                g.reduceClipRegion (juce::Rectangle<int> ((int) xForHz (snap.currentCentre.lowHz), 0,
+                    getWidth(), getHeight()));
+            else if (snap.mode == (int) Mode::band)
+                g.reduceClipRegion (juce::Rectangle<int> ((int) xForHz (snap.currentCentre.lowHz), 0,
+                    (int) juce::jmax (0.0f, xForHz (snap.currentCentre.highHz)
+                                              - xForHz (snap.currentCentre.lowHz)), getHeight()));
+
             g.setColour (colour::target.withAlpha (0.32f));
             g.fillPath (dashed);
         }
@@ -966,87 +986,107 @@ namespace edge::ui
             tintNear (Grab::high, colour::high);
         }
 
-        // --- EDGE PATH ---------------------------------------------------------
-        //  The repair for "EDGE does not visibly travel". The engine has always
-        //  travelled (resolveFor walks the corner geometrically); what was
-        //  missing was an OBJECT at the live corner. The puck rides the
-        //  resolved corner from the same snapshot the audio published, so the
-        //  display can never invent movement the engine is not producing.
-        //
-        //  LP: right boundary -> LP target.  HP: left boundary -> HP target.
-        //  BAND: both. FREE: no rail - the corners deliberately do not travel.
+        // --- EDGE PATH: dots riding the TARGET response curve ------------------
+        //  The horizontal rail was a rendering defect: the journey the sound
+        //  will take IS the target curve. The dotted route is sampled along
+        //  the cached targetPath by ACCUMULATED ARC LENGTH - every dot's y
+        //  comes from the curve - from the live corner's projection down the
+        //  cut to the destination diamond near the graph floor.
         if (snap.mode != (int) Mode::freeBand)
         {
             const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
-
-            //  How far the SIGNAL is pushing the filter right now: the
-            //  distance between the parameter and the resolved live position.
-            //  Zero when FOLLOW is idle - so everything it drives disappears
-            //  and the instrument goes calm.
             auto* edgeParam = processor.getState().getParameter (param::edge);
             const float baseEdge01 = edgeParam->convertFrom0to1 (edgeParam->getValue()) * 0.01f;
             const float push01 = juce::jlimit (0.0f, 1.0f,
                                                std::abs (snap.liveEdge01 - baseEdge01));
 
-            auto drawPath = [&] (bool isHigh)
+            const float endY = juce::jmin (yForDb (-54.0f), plot.getBottom() - 12.0f);
+
+            auto drawJourney = [&] (bool isHigh)
             {
-                const float liveHz   = isHigh ? snap.currentCentre.highHz : snap.currentCentre.lowHz;
-                const float targetHz = isHigh ? snap.target.highHz : snap.target.lowHz;
-                const float originX  = isHigh ? plot.getRight() : plot.getX();
-                const auto  accent   = isHigh ? colour::high : colour::low;
+                const float liveHz = isHigh ? snap.currentCentre.highHz : snap.currentCentre.lowHz;
+                const float liveX = xForHz (liveHz);
+                const auto accent = isHigh ? colour::high : colour::low;
 
-                const float liveX   = xForHz (liveHz);
-                const float targetX = xForHz (targetHz);
+                //  Sample the target path at ~1 px steps and keep the ordered
+                //  sub-path between the live corner's x and the point where
+                //  the cut reaches the display threshold.
+                const float total = targetPath.getLength();
+                if (total < 4.0f)
+                    return;
 
-                //  The rail sits at the live corner's level on the live curve.
-                auto shapeNoMid = snap.currentCentre;
-                shapeNoMid.midGainDb = 0.0f;
-                const float railY = juce::jlimit (plot.getY() + 8.0f, plot.getBottom() - 8.0f,
-                                                  yForDb ((float) (magnitudeDb (shapeNoMid, sr, liveHz)
-                                                                   + snap.colourTrimDb)));
+                std::vector<juce::Point<float>> route;
+                bool inside = false;
 
-                //  The journey is the hero, as an LED rail: travelled dots
-                //  3 px at 88 %, the remaining road 2.5 px at 28 %, 9 px
-                //  spacing. No arrowheads - the puck's motion is the direction.
+                for (float d = 0.0f; d <= total; d += 1.0f)
                 {
-                    const float span = std::abs (targetX - originX);
-                    const int dots = juce::jmax (2, (int) (span / 9.0f));
+                    const auto pt = isHigh ? targetPath.getPointAlongPath (d)
+                                           : targetPath.getPointAlongPath (total - d);
 
-                    for (int i = 0; i <= dots; ++i)
+                    //  Walking outward from the passband: high side walks
+                    //  right, low side walks left (reversed traversal).
+                    if (! inside)
                     {
-                        const float t = (float) i / (float) dots;
-                        const float dx = originX + (targetX - originX) * t;
-                        const bool travelled = std::abs (dx - originX)
-                                                 <= std::abs (liveX - originX) + 0.5f;
-
-                        const float d = travelled ? 3.0f : 2.5f;
-                        g.setColour (accent.withAlpha (travelled ? 0.88f : 0.28f));
-                        g.fillEllipse (dx - d * 0.5f, railY - d * 0.5f, d, d);
-
-                        if (travelled)
-                        {
-                            g.setColour (accent.withAlpha (0.12f));
-                            g.fillEllipse (dx - 3.0f, railY - 3.0f, 6.0f, 6.0f);
-                        }
+                        if ((isHigh && pt.x >= liveX) || (! isHigh && pt.x <= liveX))
+                            inside = true;
+                        else
+                            continue;
                     }
+
+                    route.push_back (pt);
+
+                    if (pt.y >= endY)
+                        break;
                 }
 
-                //  Target: an 11 px hollow diamond, stationary while EDGE
-                //  moves.
+                if (route.size() < 6)
+                    return;
+
+                //  The live puck's position on the LIVE curve, and its
+                //  exclusion circle - no dot inside the core + 3 px.
+                auto shapeNoMid = snap.currentCentre;
+                shapeNoMid.midGainDb = 0.0f;
+                const float puckY = juce::jlimit (plot.getY() + 8.0f, plot.getBottom() - 8.0f,
+                                                  yForDb ((float) (magnitudeDb (shapeNoMid, sr, liveHz)
+                                                                   + snap.colourTrimDb)));
+                const juce::Point<float> puck (liveX, puckY);
+
+                //  Dots every 9 px of accumulated distance along the route.
+                float acc = 9.0f;
+                for (size_t i = 1; i < route.size(); ++i)
                 {
+                    acc += route[i].getDistanceFrom (route[i - 1]);
+                    if (acc < 9.0f)
+                        continue;
+                    acc = 0.0f;
+
+                    if (route[i].getDistanceFrom (puck) < 9.0f)
+                        continue;
+
+                    //  Brighter where the journey begins, quiet toward the
+                    //  destination - the remaining road at 28 %, rising near
+                    //  the puck.
+                    const float t = (float) i / (float) route.size();
+                    const float alpha = 0.40f + 0.35f * (1.0f - t);
+
+                    g.setColour (accent.withAlpha (juce::jmin (0.75f, alpha)));
+                    g.fillEllipse (route[i].x - 1.4f, route[i].y - 1.4f, 2.8f, 2.8f);
+                }
+
+                //  Destination diamond: ON the target curve at the display
+                //  threshold - the visible end of the cut, not the frequency
+                //  handle.
+                {
+                    const auto endPt = route.back();
                     const float r = 5.5f;
                     juce::Path diamond;
-                    diamond.addQuadrilateral (targetX, railY - r, targetX + r, railY,
-                                              targetX, railY + r, targetX - r, railY);
+                    diamond.addQuadrilateral (endPt.x, endPt.y - r, endPt.x + r, endPt.y,
+                                              endPt.x, endPt.y + r, endPt.x - r, endPt.y);
                     g.setColour (accent);
                     g.strokePath (diamond, juce::PathStrokeType (1.5f));
                 }
 
-                //  Trail: the last 400 ms of positions the puck actually
-                //  occupied, fading with age. It rides ON the rail, so a line
-                //  the rail's own width would vanish into it - the trail is a
-                //  visibly WIDER wake that narrows as it cools. Real history,
-                //  not decoration: with no movement there is no trail.
+                //  Trail: the puck's real recent history.
                 {
                     const auto& t = trail[isHigh ? 1 : 0];
                     const auto now = juce::Time::getMillisecondCounter();
@@ -1054,61 +1094,57 @@ namespace edge::ui
                     for (size_t i = 1; i < t.size(); ++i)
                     {
                         const float age = (float) (now - t[i].t) / 180.0f;
-                        const float alpha = juce::jlimit (0.0f, 1.0f, 1.0f - age);
+                        const float alpha = juce::jlimit (0.0f, 0.26f, (1.0f - age) * 0.26f);
 
                         if (alpha <= 0.02f)
                             continue;
 
-                        g.setColour (accent.withAlpha (0.30f * alpha));
+                        g.setColour (accent.withAlpha (alpha));
                         g.drawLine (t[i - 1].x, t[i - 1].y, t[i].x, t[i].y,
-                                    4.0f + 6.0f * alpha);
+                                    2.0f + 3.0f * (1.0f - age));
                     }
                 }
 
-                //  FOLLOW's energy: three concentric violet strokes, radius
-                //  12-22 px from the real envelope, gated hard on the actual
-                //  displacement - amount 0 means no ring at all.
+                //  FOLLOW energy: three violet strokes, hard-gated on real
+                //  displacement, capped at 28 %.
                 if (push01 > 0.01f)
                 {
                     const float env = juce::jlimit (0.0f, 1.0f, snap.followEnv01);
                     const float r = 12.0f + 10.0f * env;
-                    const float a = juce::jmin (0.30f, 0.10f + 0.20f * env);
+                    const float aRing = juce::jmin (0.28f, 0.10f + 0.18f * env);
 
-                    g.setColour (colour::movement.withAlpha (a));
-                    g.drawEllipse (liveX - r, railY - r, r * 2.0f, r * 2.0f, 1.5f);
-                    g.setColour (colour::movement.withAlpha (a * 0.5f));
-                    g.drawEllipse (liveX - r - 2.5f, railY - r - 2.5f,
+                    g.setColour (colour::movement.withAlpha (aRing));
+                    g.drawEllipse (puck.x - r, puck.y - r, r * 2.0f, r * 2.0f, 1.5f);
+                    g.setColour (colour::movement.withAlpha (aRing * 0.5f));
+                    g.drawEllipse (puck.x - r - 2.5f, puck.y - r - 2.5f,
                                    r * 2.0f + 5.0f, r * 2.0f + 5.0f, 4.0f);
-                    g.setColour (colour::movement.withAlpha (a * 0.25f));
-                    g.drawEllipse (liveX - r - 6.0f, railY - r - 6.0f,
+                    g.setColour (colour::movement.withAlpha (aRing * 0.25f));
+                    g.drawEllipse (puck.x - r - 6.0f, puck.y - r - 6.0f,
                                    r * 2.0f + 12.0f, r * 2.0f + 12.0f, 9.0f);
                 }
 
-                //  Live puck, layered: 12 px semantic core, 2 px dark
-                //  separation ring, 4 px ice-white centre.
+                //  The layered live puck.
                 const bool isSelected = (isHigh && selected == Grab::high)
                                      || (! isHigh && selected == Grab::low);
                 if (isSelected)
                 {
                     g.setColour (accent.withAlpha (0.22f));
-                    g.fillEllipse (liveX - 9.0f, railY - 9.0f, 18.0f, 18.0f);
+                    g.fillEllipse (puck.x - 9.0f, puck.y - 9.0f, 18.0f, 18.0f);
                 }
 
                 g.setColour (accent);
-                g.fillEllipse (liveX - 6.0f, railY - 6.0f, 12.0f, 12.0f);
+                g.fillEllipse (puck.x - 6.0f, puck.y - 6.0f, 12.0f, 12.0f);
                 g.setColour (colour::graph);
-                g.drawEllipse (liveX - 4.0f, railY - 4.0f, 8.0f, 8.0f, 2.0f);
+                g.drawEllipse (puck.x - 4.0f, puck.y - 4.0f, 8.0f, 8.0f, 2.0f);
                 g.setColour (colour::text);
-                g.fillEllipse (liveX - 2.0f, railY - 2.0f, 4.0f, 4.0f);
+                g.fillEllipse (puck.x - 2.0f, puck.y - 2.0f, 4.0f, 4.0f);
 
-                //  Record the REAL position for the next frame's trail.
-                updateTrail (isHigh ? 1 : 0, { liveX, railY });
+                updateTrail (isHigh ? 1 : 0, puck);
             };
 
-            if (snap.mode != (int) Mode::lowPass)  drawPath (false);
-            if (snap.mode != (int) Mode::highPass) drawPath (true);
+            if (snap.mode != (int) Mode::lowPass)  drawJourney (false);
+            if (snap.mode != (int) Mode::highPass) drawJourney (true);
 
-            //  The badge names the object once, top right, out of the way.
             g.setColour (colour::text.withAlpha (0.46f));
             g.setFont (juce::FontOptions (9.0f));
             g.drawText ("EDGE PATH",
@@ -1116,7 +1152,7 @@ namespace edge::ui
                         juce::Justification::centredRight, false);
         }
 
-        // --- handles ----------------------------------------------------------
+        // --- handles ----------------------------------------------------------        // --- handles ----------------------------------------------------------
         const auto& target = snap.target;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 

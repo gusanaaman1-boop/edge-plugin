@@ -128,7 +128,8 @@ namespace edge::ui
         parent.addAndMakeVisible (caption);
 
         value.setJustificationType (juce::Justification::centred);
-        value.setColour (juce::Label::textColourId, colour::text);
+        value.setColour (juce::Label::textColourId, accent == colour::text
+                                                        ? colour::midNeutral : accent);
         value.setFont (juce::FontOptions (10.0f));
         parent.addAndMakeVisible (value);
 

@@ -262,6 +262,27 @@ namespace edge::ui
         const float from = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
         const bool hasSecond = props.contains ("accent2");
 
+        //  Micro-tick orbits for the deck knobs: N restrained dots, active up
+        //  to the parameter's own value in the accent. Never animated.
+        if (props.contains ("orbitDots"))
+        {
+            const int n = juce::jlimit (4, 64, (int) props["orbitDots"]);
+            const float dotR = radius + 1.5f;
+
+            for (int i = 0; i < n; ++i)
+            {
+                const float t = (float) i / (float) (n - 1);
+                const float a = startAngle + t * (endAngle - startAngle);
+                const bool active = t <= pos + 0.001f;
+
+                g.setColour (active ? accent.withAlpha (0.75f)
+                                    : colour::text.withAlpha (0.10f));
+                const float d = active ? 2.0f : 1.5f;
+                g.fillEllipse (centre.x + dotR * std::sin (a) - d * 0.5f,
+                               centre.y - dotR * std::cos (a) - d * 0.5f, d, d);
+            }
+        }
+
         //  LED orbit (the hero EDGE knob): 36 dots outside the arc, violet -
         //  lit up to the LIVE position, dim beyond it. Travelled = movement.
         if ((bool) props.getWithDefault ("ledOrbit", false))
@@ -332,7 +353,12 @@ namespace edge::ui
         {
             const float valueSize = (float) (double) props.getWithDefault ("valueSize", 13.0);
             const float boxW = juce::jmax (bodyR * 2.0f + 12.0f, valueSize * 6.0f);
-            g.setColour (hover ? colour::numeric : colour::text);
+            auto valueInk = props.contains ("valueColour")
+                              ? juce::Colour ((juce::uint32) (int) props["valueColour"])
+                              : colour::text;
+            if (hover)
+                valueInk = valueInk.withMultipliedBrightness (1.08f);
+            g.setColour (valueInk);
             g.setFont (juce::FontOptions (valueSize));
             g.drawText (s.getTextFromValue (s.getValue()),
                         juce::Rectangle<int> ((int) (centre.x - boxW * 0.5f),
@@ -363,9 +389,21 @@ namespace edge::ui
         if ((bool) props.getWithDefault ("ledOrbit", false) && props.contains ("live"))
         {
             //  EDGE's two endpoints: ice-white base (the parameter), violet
-            //  live (after FOLLOW). They coincide exactly at FOLLOW 0.
+            //  live (after FOLLOW), and the brighter displacement arc between
+            //  them. They coincide exactly at FOLLOW 0.
             const float liveAngle = startAngle
                 + juce::jlimit (0.0f, 1.0f, (float) props["live"]) * (endAngle - startAngle);
+
+            if (std::abs (liveAngle - angle) > 0.01f)
+            {
+                juce::Path push;
+                push.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
+                                    juce::jmin (angle, liveAngle),
+                                    juce::jmax (angle, liveAngle), true);
+                g.setColour (juce::Colour (0xffB5A4FF));
+                g.strokePath (push, { 5.0f, juce::PathStrokeType::curved,
+                                      juce::PathStrokeType::rounded });
+            }
 
             g.setColour (colour::text);
             g.fillEllipse (centre.x + arcR * std::sin (angle) - 3.0f,
