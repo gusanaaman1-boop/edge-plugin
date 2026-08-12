@@ -11,4 +11,9 @@ namespace edge
     inline constexpr const char* kVersion     = "@EDGE_VERSION@";
     inline constexpr const char* kGitDescribe = "@EDGE_GIT_DESCRIBE@";
     inline constexpr const char* kBuildDate   = "@EDGE_BUILD_DATE@";
+
+    //  True only when CMake configured from a real git checkout. A source
+    //  bundle has no .git and honestly reports "no-git" - the test must know
+    //  the difference as a FACT, not guess it from the executable's path.
+    inline constexpr bool kFromGitRepo = @EDGE_FROM_GIT_REPO@;
 }

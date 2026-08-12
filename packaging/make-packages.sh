@@ -16,6 +16,21 @@ VERSION="${1:-$(git describe --tags --always 2>/dev/null || echo dev)}"
 DIST="$ROOT/dist"
 
 echo "EDGE packaging — version $VERSION"
+
+# The Windows bundle is produced with `git archive HEAD`, so anything not
+# committed is silently absent from it - the macOS binaries would be built from
+# the working tree while the Windows source shipped the last commit. That
+# mismatch is exactly the kind of thing that only surfaces on someone else's
+# machine, so refuse rather than ship it.
+if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+    echo
+    echo "REFUSING: the working tree has uncommitted changes."
+    echo "The Windows bundle is built from HEAD, so those changes would NOT ship"
+    echo "while the macOS binaries WOULD contain them. Commit first."
+    echo
+    git status --short
+    exit 1
+fi
 rm -rf "$DIST"
 mkdir -p "$DIST"
 
@@ -112,6 +127,7 @@ git archive HEAD | tar -x -C "$SRC"
 
 cp "$ROOT/packaging/BUILD-ME-FIRST.txt" "$SRC/"
 cp "$ROOT/packaging/build-windows.bat" "$SRC/"
+cp "$ROOT/packaging/UNINSTALL-EDGE.bat" "$SRC/"
 
 ( cd "$DIST/stage-win" && zip -qr "$DIST/EDGE-$VERSION-windows-src.zip" "EDGE-$VERSION-src" )
 rm -rf "$DIST/stage-win"

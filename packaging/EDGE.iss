@@ -83,8 +83,14 @@ var
 begin
   Missing := '';
 
+  //  The VST3 bundle AND its actual payload - an empty EDGE.vst3 folder is a
+  //  build that failed halfway, and installing it gives Cubase something that
+  //  scans and then fails to load.
   if not DirExists(ExpandConstant('{src}\..\build\Edge_artefacts\Release\VST3\EDGE.vst3')) then
     Missing := Missing + '  build\Edge_artefacts\Release\VST3\EDGE.vst3' + #13#10;
+
+  if not FileExists(ExpandConstant('{src}\..\build\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3')) then
+    Missing := Missing + '  ...\EDGE.vst3\Contents\x86_64-win\EDGE.vst3 (the payload)' + #13#10;
 
   Result := (Missing = '');
 

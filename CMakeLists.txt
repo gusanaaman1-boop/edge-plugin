@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Edge VERSION 0.17.0 LANGUAGES C CXX)
+project(Edge VERSION 0.17.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,9 +37,14 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
         ERROR_QUIET)
 endif()
 
-if(NOT EDGE_GIT_DESCRIBE)
-    # A source zip has no .git. Say so rather than inventing a hash.
+if(EDGE_GIT_DESCRIBE)
+    set(EDGE_FROM_GIT_REPO "true")
+else()
+    # A source zip has no .git. Say so rather than inventing a hash - and
+    # record that this is a legitimate bundle build, so the identity test can
+    # tell it apart from a repository build whose git lookup silently failed.
     set(EDGE_GIT_DESCRIBE "no-git")
+    set(EDGE_FROM_GIT_REPO "false")
 endif()
 
 string(TIMESTAMP EDGE_BUILD_DATE "%Y-%m-%d" UTC)

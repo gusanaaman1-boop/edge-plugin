@@ -16,6 +16,11 @@ Then:
 
   2. Double-click        build-windows.bat
 
+     Run it from the EXTRACTED folder - not from inside Windows' ZIP viewer.
+     Opening a .bat straight out of a ZIP copies only the script to a temp
+     folder, without the source. (The script now detects this and says so
+     rather than failing with a confusing CMake error.)
+
 That is the whole procedure. The script clones JUCE itself, at the exact
 commit this build was tested against, so you do not have to find or configure
 anything.
@@ -34,6 +39,21 @@ and the script offers to copy it to
 which is where Cubase looks. Copying there needs administrator rights - if it
 fails, copy the folder by hand, or point Cubase's plug-in manager at the build
 folder instead.
+
+BEFORE IT COPIES ANYTHING
+-------------------------
+The install step refuses to run while a DAW is open - Windows will not let a
+script replace a plug-in a DAW holds, and it fails silently. It also removes an
+old install in BOTH shapes (a folder bundle or a stray single file), verifies
+the removal before copying, and verifies the payload afterwards. If any of that
+does not work, it stops and tells you which step and where.
+
+To remove EDGE completely at any time:
+
+  Double-click        UNINSTALL-EDGE.bat
+
+It clears every plausible install location, both shapes, and verifies that
+nothing is left behind.
 
 IF SOMETHING GOES WRONG
 -----------------------

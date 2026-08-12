@@ -912,12 +912,16 @@ namespace
 
         check (describe.isNotEmpty(), "a git description is compiled in", describe);
 
-        //  A source zip has no .git and says so. A build FROM the repository
-        //  must not: "no-git" there means the version wiring silently fell back.
-        const bool fromRepo = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
-                                  .getParentDirectory().getFullPathName().contains ("Edge");
-        check (! fromRepo || describe != "no-git",
-               "a repository build carries a real git description", describe);
+        //  A source zip has no .git and says so; a repository build must not.
+        //  This used to GUESS from the executable's path - and every build
+        //  directory contains "EdgeHostTests_artefacts", so a legitimate
+        //  source-bundle build always failed here and build-windows.bat would
+        //  have refused to install on the user's Windows machine. CMake knows
+        //  the answer at configure time; it is a compiled-in fact now.
+        check (! edge::kFromGitRepo || describe != "no-git",
+               edge::kFromGitRepo ? "a repository build carries a real git description"
+                                  : "a source-bundle build honestly reports no-git",
+               describe);
 
         //  And the same string has to reach the log, which is the only place a
         //  support e-mail can get it from.
