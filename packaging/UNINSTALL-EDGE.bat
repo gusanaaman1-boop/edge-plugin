@@ -70,7 +70,7 @@ if not "%LEFT%"=="0" (
 
 echo.
 echo   Removed. Nothing left behind.
-echo   In Cubase: Studio ^> VST Plug-in Manager ^> rescan.
+echo   In Cubase: Studio menu, then VST Plug-in Manager, then Update.
 
 :done
 echo.

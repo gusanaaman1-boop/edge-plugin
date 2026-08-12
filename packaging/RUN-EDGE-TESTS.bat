@@ -59,18 +59,32 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM  Multi-config generators add a Release\ level, single-config ones do not.
+set "T1=%BUILD%\EdgeTests_artefacts\Release\EdgeTests.exe"
+if not exist "!T1!" set "T1=%BUILD%\EdgeTests_artefacts\EdgeTests.exe"
+set "T2=%BUILD%\EdgeHostTests_artefacts\Release\EdgeHostTests.exe"
+if not exist "!T2!" set "T2=%BUILD%\EdgeHostTests_artefacts\EdgeHostTests.exe"
+
+if not exist "!T1!" (
+    echo   [X] EdgeTests.exe was not produced. See:
+    echo       %LOG%
+    echo.
+    pause
+    exit /b 1
+)
+
 echo.
 echo   ---------------- DSP measurements ----------------
-"%BUILD%\EdgeTests_artefacts\Release\EdgeTests.exe"
-set "R1=%ERRORLEVEL%"
+"!T1!"
+set "R1=!ERRORLEVEL!"
 
 echo.
 echo   ---------------- host contract -------------------
-"%BUILD%\EdgeHostTests_artefacts\Release\EdgeHostTests.exe"
-set "R2=%ERRORLEVEL%"
+"!T2!"
+set "R2=!ERRORLEVEL!"
 
 echo.
-if "%R1%"=="0" if "%R2%"=="0" (
+if "!R1!"=="0" if "!R2!"=="0" (
     echo   ============================================================
     echo     Every check passed on this machine.
     echo   ============================================================

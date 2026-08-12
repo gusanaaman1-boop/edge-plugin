@@ -91,6 +91,8 @@ begin
 
   if not FileExists(ExpandConstant('{src}\..\build-win\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3')) then
     Missing := Missing + '  ...\EDGE.vst3\Contents\x86_64-win\EDGE.vst3 (the payload)' + #13#10;
+  //  Inno is only ever run after INSTALL-EDGE.bat, which uses the Visual
+  //  Studio generator, so the Release\ level is always present here.
 
   Result := (Missing = '');
 

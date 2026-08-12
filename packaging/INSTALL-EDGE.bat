@@ -214,15 +214,33 @@ if errorlevel 1 (
 )
 echo         [OK] Built.
 
-set "SRC=%BUILD%\Edge_artefacts\Release\VST3\EDGE.vst3"
-if not exist "%SRC%\Contents\x86_64-win\EDGE.vst3" (
-    echo         [X] The build reported success but the plug-in is not where
-    echo             it should be. Expected:
-    echo             %SRC%
-    echo MISSING ARTEFACT >> "%LOG%"
+REM  Where the artefact lands depends on the generator: Visual Studio is
+REM  multi-config and inserts a Release\ level, single-config generators do
+REM  not. Look for both rather than assuming - and if neither is there, SEARCH
+REM  the build tree before giving up, so the log can say what was really made.
+set "SRC="
+if exist "%BUILD%\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3" (
+    set "SRC=%BUILD%\Edge_artefacts\Release\VST3\EDGE.vst3"
+)
+if not defined SRC if exist "%BUILD%\Edge_artefacts\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3" (
+    set "SRC=%BUILD%\Edge_artefacts\VST3\EDGE.vst3"
+)
+if not defined SRC (
+    for /f "delims=" %%F in ('dir /s /b /ad "%BUILD%\EDGE.vst3" 2^>nul') do (
+        if not defined SRC if exist "%%F\Contents\x86_64-win\EDGE.vst3" set "SRC=%%F"
+    )
+)
+
+if not defined SRC (
+    echo         [X] The build reported success but no EDGE.vst3 with a
+    echo             Windows binary inside it exists under:
+    echo             %BUILD%
+    echo MISSING ARTEFACT - what was actually built: >> "%LOG%"
     dir /s /b "%BUILD%\Edge_artefacts" >> "%LOG%" 2>&1
     goto :fail
 )
+echo         found: !SRC!
+echo ARTEFACT: !SRC! >> "%LOG%"
 
 REM --- 4. a running DAW will block the copy -----------------------------------------
 echo.
@@ -267,7 +285,7 @@ if exist "%DEST%\EDGE.vst3" (
     goto :fail
 )
 
-xcopy /e /i /y "%SRC%" "%DEST%\EDGE.vst3\" >> "%LOG%" 2>&1
+xcopy /e /i /y "!SRC!" "%DEST%\EDGE.vst3\" >> "%LOG%" 2>&1
 if errorlevel 1 (
     echo         [X] The copy failed. xcopy's own message is in the log.
     echo COPY FAILED >> "%LOG%"
@@ -276,9 +294,10 @@ if errorlevel 1 (
 echo         [OK] Plug-in installed.
 
 set "EXE=%BUILD%\Edge_artefacts\Release\Standalone\EDGE.exe"
-if exist "%EXE%" (
+if not exist "!EXE!" set "EXE=%BUILD%\Edge_artefacts\Standalone\EDGE.exe"
+if exist "!EXE!" (
     if not exist "C:\Program Files\Naaman\EDGE\" mkdir "C:\Program Files\Naaman\EDGE" 2>nul
-    copy /y "%EXE%" "C:\Program Files\Naaman\EDGE\EDGE.exe" >nul 2>&1
+    copy /y "!EXE!" "C:\Program Files\Naaman\EDGE\EDGE.exe" >nul 2>&1
     echo         [OK] Standalone app installed.
 )
 
