@@ -1,287 +1,201 @@
 # EDGE — user manual
 
-A two-sided filter for electronic music. VST3, AU and Standalone.
+*For v0.14. An autofilter with a destination.*
 
 ---
 
 ## The one idea
 
-Every filter you have used has a shelf mode and a cut mode, and a switch between
-them. EDGE has neither. **Each spectral edge moves continuously from a gentle
-shelf, through deeper attenuation, to a real cut — and it is the same filter the
-whole way.** Nothing switches in, nothing crossfades, so nothing clicks.
+**Draw the destination. EDGE travels there. Your sound pushes it.**
 
-One large control, **EDGE**, drives that journey from both sides at once. And the
-signal itself can drive it, through **FOLLOW**.
+LOW and HIGH define where the filter is going. The big **EDGE** knob travels
+from CLEAN towards that destination — each spectral edge moving continuously
+from a gentle shelf, through deeper attenuation, into a real cut. It is the
+same filter the whole way: nothing switches, nothing crossfades, nothing
+clicks. And **FOLLOW → EDGE** lets the signal itself drive that travel.
 
-At **EDGE 0 the plug-in is a bit-exact wire** — the output is the input, sample
-for sample, whatever else is set. It also adds **zero latency**, so you can leave
-it on a track and forget about it.
+At **EDGE 0 the plug-in is a bit-exact wire** — output equals input, sample for
+sample, whatever else is set — and it adds **zero latency**. Leave it on a
+track and forget it is there.
 
 ---
 
 ## Ten minutes with it
 
-1. Load EDGE. Turn **EDGE** up slowly. Both corners walk inwards from the edges
-   of the spectrum and the band closes around your sound.
-2. Press **SHAPE**. Set **Low Depth** to about −6 dB. Turn EDGE up again — now
-   the low side leans instead of cutting. That is the same filter.
-3. Set **High Curve** to `24 dB/oct` with the combo on the display. Turn
-   **High Reso** up. Now it is the filter you expected.
-4. Put **FOLLOW** at +70. Play something with transients. The filter opens and
-   closes with the music.
-5. Press **FREE**. Drag the band on the display. It travels as one shape and
-   keeps its width.
-6. Turn **BITE** up. The colour arrives with the depth, not with the knob.
+1. Load EDGE on a loop. Turn **EDGE** up slowly and watch the puck ride the
+   **EDGE PATH** towards the target diamond. That line is the whole product.
+2. Grab the **HIGH** handle on the graph and drag it where you want the cut.
+   The inspector opens at the bottom of the graph with that edge's controls.
+3. Pick a slope: **12 | 24 | 36 | 48 | 72** dB/oct. Turn **RESO** up.
+4. Turn **FOLLOW → EDGE** to +60 and play something with transients. The
+   filter opens and closes with the music — the violet marker on the EDGE knob
+   shows where the sound is pushing it.
+5. Press **FREE**. Drag the band as one shape across the spectrum.
+6. Raise **BITE**. The colour arrives with the depth, not with the knob.
 
 ---
 
-## The front panel
+## The window
 
-### EDGE
+```
+[ PRESET browser ]        E D G E        [ BITE ] [ WARM ] [ BYPASS ]
+[                    the graph                                      ]
+[   LOW        EDGE (CLEAN <-> CUT)        HIGH      FOLLOW -> EDGE ]
+```
 
-**0–100 %.** The master control, and the one you play.
+### Header
 
-At 0 the plug-in does nothing at all, bit for bit. Opening it walks both corners
-geometrically from the boundaries of their ranges to the frequencies you set in
-SHAPE, and scales Depth, Shoulder, Resonance and the MID bell's gain from
-nothing to their targets. One gesture, both sides, everything.
-
-In **FREE** mode EDGE stops moving the corners and becomes purely *how deep*.
-
-### MODE — LP / BAND / HP / FREE
-
-| | |
+| control | function |
 |---|---|
-| **LP** | The low edge becomes an identity; the high edge is your low-pass. |
-| **HP** | The mirror. |
-| **BAND** | Both edges active. |
-| **FREE** | Both active, but the corners do **not** travel with EDGE. The band is draggable as a unit on the display, and FOLLOW moves its **centre** by up to ±2 octaves instead of driving EDGE's position. |
+| **PRESET** | 23 factory programs, with prev/next arrows |
+| **BITE** | 0–100 %. Hidden colour. `drive = maxDrive(BITE) · activity^γ` — a shelf gets a little, a full cut gets the ceiling |
+| **WARM / IRON** | the colour voicing: a soft sag saturator, or the same inside a feedback core-loss loop — denser, transformer-ish |
+| **BYPASS** | a bit-exact dry path, not a muted wet one |
 
-Switching modes is silent by construction: a disabled edge has its gains driven
-to 1, which is already a bit-exact wire, so there is nothing to fade.
+### The graph
 
-### FOLLOW
+The visual centre of the product. Everything on it is live engine state:
 
-**−100 … +100 %.** An envelope follower on the input, modulating EDGE's position
-— or, in FREE, the band's centre.
+* **MODE** — `LP | BAND | HP | FREE`, floating at the top.
+* **Handles** — amber LOW, cyan HIGH, neutral MID. Drag horizontally for
+  frequency; vertically for depth (edges) or gain (MID). In LP the low handle
+  is gone entirely — that edge is a wire, and a control that provably does
+  nothing is not shown.
+* **EDGE PATH** — the rail from the neutral boundary to the target diamond.
+  The filled puck rides the **live** corner: turn EDGE, watch it travel; use
+  FOLLOW, watch the signal move it.
+* **The readout** — bottom left, always present: `LP • 3.2 kHz`, `LOW • 140 Hz
+  HIGH • 6 kHz`. The identity you chose never disappears.
+* **The analyzer** — the **incoming** signal, before the filter touches it, on
+  its own dBFS scale. What you see is what you are shaping, even through a
+  closed cut. It fades out below −66 dBFS and is gone by −84.
 
-Positive drives further into the cut when the signal gets loud; negative opens
-up. It scales by the headroom in the direction of travel, so ±100 % feel
-balanced and the control can never clamp against an end.
+### The inspector
 
-At exactly 0 it is bit-identical to the follower being switched off.
+One strip, one fixed place: centred, near the bottom of the graph.
 
-Its **Sensitivity**, **Attack** and **Release** live in SHAPE.
+* Touch **LOW**, **HIGH** or **MID** on the graph — or the **FOLLOW → EDGE**
+  knob — and the strip shows that context's controls.
+* Click empty graph space, or press **Escape**, and it goes away.
+* The graph stays fully draggable while it is open.
 
-### SPREAD
+| context | controls |
+|---|---|
+| **LOW / HP** | DEPTH · **SLOPE** · RESO · SHOULDER |
+| **HIGH / LP** | DEPTH · **SLOPE** · RESO · SHOULDER |
+| **MID** | FREQUENCY · GAIN · WIDTH |
+| **FOLLOW → EDGE** | AMOUNT · ATTACK · RELEASE · SENS |
 
-**−100 … +100 %.** Offsets the two channels' corners in opposite directions,
-in octaves. **Both corners of a channel move together**, so each channel keeps
-its bandwidth — this widens, it does not detune the shape. ±12 semitones total
-at full.
+In LP the strip's label says **LP** — the plug-in never shows you an internal
+name.
 
-At 0 the two channels null bit-exactly.
+### The macro deck
 
-### BITE and CHARACTER
-
-**BITE 0–100 %, default 35.** How much hidden colour. There is no drive, no mix,
-no bias and no oversampling control, because the amount of colour is not a
-separate decision from how hard the filter is working:
-
-```
-drive = maxDrive(BITE) · activity ^ gamma(BITE)
-```
-
-`activity` is what the filter is actually doing. A shelf gets a little, a full
-cut gets the ceiling. The lamp beside CHARACTER lights when the engine is
-genuinely engaged — not merely when BITE is above zero.
-
-**CHARACTER — WARM or IRON.**
-
-* **WARM** — a soft saturator with a slow sag envelope. Round, fat, gently
-  compressing.
-* **IRON** — the same saturator inside a feedback loop whose return is
-  low-passed, so what it does depends on what just happened. Denser,
-  transformer-ish.
-
-Their ceilings differ (24 % and 46 %) because each one's ceiling is set by its
-own measured aliasing, not by taste. Switching is a 20 ms crossfade between two
-engines that are both always running.
-
-### OUTPUT and BYPASS
-
-Trim, ±24 dB. BYPASS is a bit-exact dry path, not a muted wet one.
+| control | function |
+|---|---|
+| **LOW** | the low edge's destination, 20 Hz – 8 kHz |
+| **EDGE** | CLEAN → CUT. The pointer is your setting; the violet outer marker is where FOLLOW has actually pushed it right now |
+| **HIGH** | the high edge's destination, 200 Hz – 20 kHz |
+| **FOLLOW → EDGE** | −100…+100 %. Positive: louder = deeper. Negative: louder = opens up. At exactly 0 it is bit-identical to off |
 
 ---
 
-## SHAPE — where the edges are going
+## The controls in depth
 
-Press **SHAPE**. Nothing in here is played; it is set once per sound.
+### DEPTH — 0 dB → CUT
 
-**There is one set of knobs, not four.** Pick **LOW**, **MID**, **HIGH** or
-**FOLLOW** and the row underneath drives that band. Touching a handle on the
-display picks it too — and opens SHAPE if it was closed — so the thing you just
-grabbed is the thing the knobs are controlling. The selected handle is filled
-rather than merely outlined, so one glance answers "what am I editing?".
+How far down that side goes at full EDGE: a shelf whose gain degenerates
+smoothly into a cut. There is no mode switch anywhere along it.
 
-It used to show sixteen knobs in four labelled blocks. Nobody needs DEPTH for
-the low edge and DEPTH for the high edge on screen at the same time; they need
-DEPTH for the edge they are working on. The panel is now half the height, and
-the display keeps the difference.
+### SLOPE — 12 | 24 | 36 | 48 | 72 dB/oct
 
-### Frequency
+Five musical choices; click, scroll or use the arrow keys. Each activates
+exactly that many filter sections (12 = one second-order section … 72 = six).
 
-Where that edge is heading. Low 20 Hz – 8 kHz, high 200 Hz – 20 kHz, both
-logarithmic. Drag the handle on the display instead if you prefer — it is the
-same control.
+Honesty note: the steepest choices cannot fully develop before the response
+reaches its −132 dB floor — a slope needs an octave of room to fall 72 dB. The
+measured steepest slopes are 12.0 / 24.1 / 35.7 / 46.0 / 61.4 dB/oct. The six
+sections behind the 72 choice are real; the finite-band measurement is what it
+is, and we publish it rather than round it up.
 
-### Depth — 0 dB → CUT
+Old projects saved with in-between values keep their exact sound; the strip
+just highlights the nearest choice until you deliberately pick one.
 
-How far down that side goes. This is the control that makes EDGE what it is:
-a shelf whose gain degenerates smoothly into a cut. There is no mode change
-anywhere along it.
+### RESO
 
-### Curve
+Lifts the corner without compounding through the cascade (first section only).
+Silent at DEPTH 0 by construction.
 
-Two things in one control, split at the middle:
+### SHOULDER — OFF → −12 dB
 
-* **the soft half** widens the knee — gentler, more "hi-fi";
-* **the tight half** adds pole pairs — steeper, more "synth".
+A second, much gentler shelf six octaves into the passband, so the whole
+passing side leans towards the cut — and the lean travels with the cutoff.
+This is what makes an LP at 9 kHz also calm everything below it.
 
-The combo on the display snaps it to a named slope. The names are **pole
-counts**, which is what the structure actually has:
+### MID — FREQUENCY · GAIN · WIDTH
 
-| combo | poles | measured steepest slope |
-|---|---|---|
-| SOFT | — | a knee, not a slope |
-| 12 dB/oct | 2 | 12.0 dB/oct |
-| 24 dB/oct | 4 | 24.1 |
-| 36 dB/oct | 6 | 35.7 |
-| 48 dB/oct | 8 | 46.0 |
-| 72 dB/oct | 12 | 61.4 |
+A movable bell inside whatever the edges allow. ±18 dB, 60 Hz – 12 kHz, from a
+broad tilt to a formant. **It stays where you put it** — EDGE scales its gain
+but never moves its frequency. At 0 dB it is a bit-exact wire.
 
-The steep entries fall short of their asymptote and that is structural, not a
-defect: a slope can only develop over the depth there is to fall through, and
-72 dB/oct needs a whole octave to drop 72 dB. The measured numbers are published
-rather than rounded up.
+### FOLLOW setup — AMOUNT · ATTACK · RELEASE · SENS
 
-Between two entries Curve is a voicing, and reads as a percentage rather than
-claiming a slope it does not deliver.
+The detector reaches full modulation at the SENS level and zero 24 dB below
+it. In FREE mode, FOLLOW moves the band's **centre** (±2 octaves) instead of
+the depth.
 
-### Shoulder — OFF → −12 dB
+### Hidden parameters
 
-A second, much gentler shelf **six octaves into the passband** from the cut's
-corner. It leans the whole passing side down towards the corner, and the lean
-**travels with the cutoff**.
-
-This is what makes a high-pass at 9 kHz also thin out everything below it,
-instead of leaving the passband flat up to the corner.
-
-### Resonance
-
-Lowers the damping of the first section only, so it lifts the corner without
-compounding through the cascade. It is silent at Depth 0 by construction — there
-is nothing to resonate when the section is a wire.
-
-It weakens as Curve tightens (+7.8 dB at SOFT, +2.8 dB at the tight end),
-because the other sections keep falling through the peak.
-
-### MID Freq / Gain / Reso
-
-A movable bell inside whatever the edges let through. ±18 dB, 60 Hz – 12 kHz,
-from a broad 4.1-octave tilt down to a 0.7-octave formant.
-
-**It stays where you put it.** EDGE scales its gain and leaves its frequency
-alone — a control you place has to stay placed. It travels only with SPREAD and
-FREE, which move everything at once so the shape stays one shape.
-
-At 0 dB it is a bit-exact wire and costs nothing.
-
-### Follow Sens / Attack / Release
-
-The detector's operating level and timing. Sensitivity is the input level at
-which FOLLOW reaches full modulation; it reaches zero 24 dB below that.
-
----
-
-## The display
-
-* **The solid curve** is what the plug-in is doing right now.
-* **The dashed curve** is where EDGE at 100 % would take it.
-* **The two faint traces** appear when SPREAD is up: the left and right
-  channels.
-* **The handles** are TARGET handles. Drag them. A handle grows a tick on the
-  solid curve when the two have pulled apart, and the **selected** one — the
-  band SHAPE's knobs are driving — is filled in.
-* **An edge that MODE has turned into an identity has no handle at all.** In LP
-  the low edge is a wire, so there is nothing there to drag. A dimmed handle
-  sitting at 0.0 dB only invited the question "why does moving this do
-  nothing?".
-* **The read-out** appears in the top-left of the plot while you touch a
-  handle, not floating over the handle itself where it used to cover the label.
-* **The analyser** behind everything is the plug-in's output.
-* **The combo** snaps Curve to a named slope.
-
-The solid curve and the handles are drawn from the same shape, always — so a
-handle is never somewhere the curve is not.
+**SPREAD** (stereo width, ±12 semitones of per-channel corner offset) and
+**OUTPUT** (±24 dB trim) have no panel control in this version but are fully
+available to host automation and are set by several factory presets.
 
 ---
 
 ## Presets
 
-23 factory presets, exposed as host programs, so your DAW's own preset menu
-lists them. **Program 0 is DEFAULT** and is exactly the plug-in's neutral state.
-
-No preset ever touches **Bypass** — auditioning presets on a bypassed insert
-will not silently un-bypass it.
-
-See [PARAMETER-TABLE.md](PARAMETER-TABLE.md) for the full list, generated from
-the plug-in itself.
+23 programs in the header browser. **Program 0 is DEFAULT** — exactly the
+neutral state. No preset ever touches BYPASS.
 
 ---
 
 ## Installing
 
-**macOS.** The zip contains three folders. Copy:
+**macOS** — run `EDGE-<version>.pkg` (VST3 / AU / Standalone, each optional),
+or copy by hand:
 
 | | |
 |---|---|
-| `EDGE.vst3` | `/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` | `/Library/Audio/Plug-Ins/Components/` |
-| `EDGE.app` | `/Applications/` |
+| `EDGE.vst3` | `~/Library/Audio/Plug-Ins/VST3/` |
+| `EDGE.component` | `~/Library/Audio/Plug-Ins/Components/` |
 
-The build is **not signed or notarised yet**, so macOS will refuse it the first
-time. Right-click → Open, or System Settings → Privacy & Security → "Open
-Anyway".
+The build is not notarised yet: the standalone needs right-click → Open the
+first time. Plug-ins loaded by a DAW are unaffected.
 
-**Windows.** The download is source plus a build script, because there is no
-Windows machine here to build on and shipping an untested binary would be worse
-than shipping none. Install CMake, Git and Visual Studio with the "Desktop
-development with C++" workload, then run `build-windows.bat`. It clones JUCE at
-a pinned commit, builds, **runs both test suites**, and only then offers to
-install. If any check fails it stops and installs nothing.
+**Windows** — the download is source plus `build-windows.bat`, which builds,
+runs both test suites (227 checks), and only then offers to install. If any
+check fails on your machine it refuses.
 
-In Cubase: Studio → VST Plug-in Manager → rescan. EDGE appears under **Filter**.
+In Cubase: Studio → VST Plug-in Manager → rescan. EDGE is under **Filter**.
 
 ---
 
 ## If something goes wrong
 
-The bottom right of the window shows the exact build. EDGE also appends one line
-per session to a log file — version, build, host, sample rate, block size:
+EDGE writes one line per session — version, build, host, sample rate, block
+size — to a local log you can paste into an email. Nothing is ever sent
+anywhere.
 
 * macOS: `~/Library/Logs/EDGE/EDGE.log`
 * Windows: `%APPDATA%\EDGE\EDGE.log`
-
-Nothing is sent anywhere. The file exists so you can paste it.
 
 ---
 
 ## What EDGE deliberately is not
 
 No LFO, no step sequencer, no drawable modulation, no randomiser. One envelope
-follower, and it is FOLLOW. No hidden compressor, dynamic EQ or loudness rider.
-No exposed saturation controls beyond BITE and CHARACTER.
+follower — FOLLOW — and that is the whole modulation story. No hidden
+compressor or loudness rider. No exposed saturation controls beyond BITE and
+the WARM/IRON switch.
 
 It is a filter you play.

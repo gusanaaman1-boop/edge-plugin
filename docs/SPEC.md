@@ -1,6 +1,6 @@
-# EDGE v0.13 — product specification
+# EDGE v0.14 — product specification
 
-*2026-08-12 · build `v0.13` · every number below was measured by the test
+*2026-08-12 · build `v0.14` · every number below was measured by the test
 suites, not estimated.*
 
 ---
@@ -71,7 +71,7 @@ cut. Monotonicity (no unplanned peak) is proven analytically for `k ≥ √2`.
 | EDGE PATH | rail from the neutral boundary to the target diamond; the filled puck rides the **live** corner from the engine snapshot |
 | readout | persistent semantic identity, e.g. `LP • 3.2 kHz` — never disappears |
 | analyzer | the **incoming** signal, 96 log bands, behind everything |
-| inspector | one floating strip; opens on handle/FOLLOW touch, closes on empty space or Escape |
+| inspector | one FIXED strip, centred, 18 px above the graph's bottom; opens on handle/FOLLOW touch, closes on empty space or Escape; graph stays draggable |
 
 ### Macro deck
 | control | size | function |
@@ -84,10 +84,16 @@ cut. Monotonicity (no unplanned peak) is proven analytically for `k ≥ √2`.
 ### Inspector contexts
 | context | contents |
 |---|---|
-| LOW / HP | DEPTH · CURVE · RESO · SHOULDER |
-| HIGH / LP | DEPTH · CURVE · RESO · SHOULDER |
+| LOW / HP | DEPTH · SLOPE (12/24/36/48/72 dB/oct selector) · RESO · SHOULDER |
+| HIGH / LP | DEPTH · SLOPE selector · RESO · SHOULDER |
 | MID | FREQUENCY · GAIN · WIDTH |
-| FOLLOW | AMOUNT · ATTACK · RELEASE · SENS |
+| FOLLOW → EDGE | AMOUNT · ATTACK · RELEASE · SENS |
+
+**SLOPE** is never shown as a percentage. Five calibrated choices
+(50/60/70/80/100 % internally — not evenly spaced, derived from the
+section-weight table) activating 1/2/3/4/6 second-order sections. Old
+continuous values recall exactly and highlight the nearest choice; only a
+user gesture writes a calibrated value.
 
 24 host parameters, state version 2 with migration from v0.1; the parameter
 contract (IDs, ranges, defaults) is hashed and asserted in CI:
@@ -98,7 +104,7 @@ layout); both remain fully host-automatable and preset-settable.*
 
 ---
 
-## Measured performance (v0.13 universal build)
+## Measured performance (v0.14 universal build)
 
 | | measured |
 |---|---|
@@ -127,8 +133,11 @@ layout); both remain fully host-automatable and preset-settable.*
 | handle x vs parameter | 0.000 px, same frame as the gesture |
 | refresh | 60 Hz interacting, 30 Hz idle; analyzer on its own 30 Hz clock |
 | mode-label dropouts over 80 switches | 0 |
-| inspector placement (4 contexts × 5 freqs) | 0 clipped, 0 handle/selector/readout overlaps |
+| fixed inspector (4 contexts × 5 freqs) | centre error 0.000 px, inset error 0.000 px, drift 0.000 px |
 | inspector attachment constructions over 100 switches | 0 |
+| slope choices | 12→1, 24→2, 36→3, 48→4, 72→6 sections, asserted |
+| old continuous curve state recall | exact (63.700001 % in = out, editor open/close included) |
+| analyzer line opacity at −18 dBFS | 52.0 % (spec 40–55) |
 | analyzer tone placement (100 Hz / 1 k / 10 k) | correct band ±1 |
 | analyzer level accuracy | −18.30 / −18.01 / −18.00 dBFS for a −18 dBFS tone |
 | analyzer gating | −84 dBFS in: 0 bands lit; 1.5 s silence: 0 lit |
@@ -137,15 +146,16 @@ layout); both remain fully host-automatable and preset-settable.*
 
 ## Verification
 
-93 DSP checks + 124 host-contract checks, green in Release **and** under
+93 DSP checks + 134 host-contract checks, green in Release **and** under
 ASan+UBSan with zero sanitiser diagnostics. `auval` passes. The MID
 stale-display defect, the EDGE-travel defect and the LP-label defect are each
 reproduced by a regression test that failed before its fix.
 
 **Verified on this machine:** macOS universal, auval, both suites, installed
-to `~/Library/Audio/Plug-Ins` (VST3 + AU, v0.13, signatures valid).
-**Not yet verified:** Cubase 15 session behaviour (v0.1 was the last version
-tried in the host), Windows/MSVC build, pluginval, signing/notarisation.
+to `~/Library/Audio/Plug-Ins` (VST3 + AU, v0.14, signatures valid, registered
+in Cubase's scanner cache), **and confirmed working inside Cubase 15 by the
+owner**.
+**Not yet verified:** Windows/MSVC build, pluginval, signing/notarisation.
 
 ---
 
@@ -153,8 +163,8 @@ tried in the host), Windows/MSVC build, pluginval, signing/notarisation.
 
 | what | where |
 |---|---|
-| `EDGE.vst3` v0.13 | `~/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` v0.13 | `~/Library/Audio/Plug-Ins/Components/` |
+| `EDGE.vst3` v0.14 | `~/Library/Audio/Plug-Ins/VST3/` |
+| `EDGE.component` v0.14 | `~/Library/Audio/Plug-Ins/Components/` |
 
 In Cubase: **Studio → VST Plug-in Manager → rescan**. EDGE appears under
 *Filter*. If Cubase was open during the install, restart it.

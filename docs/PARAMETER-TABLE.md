@@ -2,12 +2,12 @@
 |---|---|---|---|
 | Low Freq | `low.freq` | 20.0 Hz … 8.00 kHz | 250 Hz |
 | Low Depth | `low.depth` | 0.0 dB … CUT | CUT |
-| Low Curve | `low.curve` | SOFT … 72 dB/oct | 75 % |
+| Low Curve | `low.curve` | 12 dB/oct … 72 dB/oct | 36 dB/oct |
 | Low Shoulder | `low.shoulder` | OFF … -12.0 dB | OFF |
 | Low Reso | `low.reso` | 0 % … 100 % | 0 % |
 | High Freq | `high.freq` | 200 Hz … 20.0 kHz | 6.00 kHz |
 | High Depth | `high.depth` | 0.0 dB … CUT | CUT |
-| High Curve | `high.curve` | SOFT … 72 dB/oct | 75 % |
+| High Curve | `high.curve` | 12 dB/oct … 72 dB/oct | 36 dB/oct |
 | High Shoulder | `high.shoulder` | OFF … -12.0 dB | OFF |
 | High Reso | `high.reso` | 0 % … 100 % | 0 % |
 | Mid Freq | `mid.freq` | 60.0 Hz … 12.0 kHz | 1.00 kHz |
