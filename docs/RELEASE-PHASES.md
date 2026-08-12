@@ -50,10 +50,10 @@ dead private field (`dragStartMidGain`) left over from the MID anchoring fix.
 ### Still unverified
 
 The actual MSVC compile, and the numbers the suites print on Windows.
-`packaging/build-windows.bat` now builds `EdgeTests` and `EdgeHostTests`
-alongside the VST3 and **runs both**, refusing to offer the install step if
-either fails — so the Windows run reports its own numbers instead of inheriting
-these.
+Windows delivery was later rebuilt on FOUR COLOR's proven pattern:
+`packaging/INSTALL-EDGE.bat` (one file, right-click, run as administrator) and
+`packaging/RUN-EDGE-TESTS.bat` (optional, runs both suites with the user's own
+compiler).
 
 ---
 

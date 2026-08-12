@@ -126,7 +126,8 @@ mkdir -p "$SRC"
 git archive HEAD | tar -x -C "$SRC"
 
 cp "$ROOT/packaging/BUILD-ME-FIRST.txt" "$SRC/"
-cp "$ROOT/packaging/build-windows.bat" "$SRC/"
+cp "$ROOT/packaging/INSTALL-EDGE.bat" "$SRC/"
+cp "$ROOT/packaging/RUN-EDGE-TESTS.bat" "$SRC/"
 cp "$ROOT/packaging/UNINSTALL-EDGE.bat" "$SRC/"
 
 ( cd "$DIST/stage-win" && zip -qr "$DIST/EDGE-$VERSION-windows-src.zip" "EDGE-$VERSION-src" )

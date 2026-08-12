@@ -172,9 +172,18 @@ or copy by hand:
 The build is not notarised yet: the standalone needs right-click → Open the
 first time. Plug-ins loaded by a DAW are unaffected.
 
-**Windows** — the download is source plus `build-windows.bat`, which builds,
-runs both test suites (227 checks), and only then offers to install. If any
-check fails on your machine it refuses.
+**Windows** — the download is source plus one script. Extract the ZIP, close
+your DAW, then right-click **`INSTALL-EDGE.bat`** and choose *Run as
+administrator*. It checks what you have (finding CMake inside Visual Studio if
+it is not on your PATH), builds, installs and verifies — writing every step to
+`EDGE-install-log.txt` and stopping at the first real problem rather than
+claiming success.
+
+JUCE lives at `%USERPROFILE%\JUCE` and is shared by every plug-in, so if you
+have built one of the others it is already there.
+
+`RUN-EDGE-TESTS.bat` is optional: it runs the 226 measurement checks with your
+own compiler. `UNINSTALL-EDGE.bat` removes everything.
 
 In Cubase: Studio → VST Plug-in Manager → rescan. EDGE is under **Filter**.
 

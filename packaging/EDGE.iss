@@ -2,7 +2,7 @@
 ;
 ;   iscc packaging\EDGE.iss
 ;
-; Run build-windows.bat FIRST. This script installs what that produced; it does
+; Run INSTALL-EDGE.bat FIRST. This script installs what that produced; it does
 ; not build anything itself, so an installer can never ship a binary nobody
 ; tested.
 ;
@@ -13,7 +13,7 @@
 #define AppName    "EDGE"
 #define AppPublisher "Naaman"
 #define AppVersion "0.17.0"
-#define SrcRoot    "..\build\Edge_artefacts\Release"
+#define SrcRoot    "..\build-win\Edge_artefacts\Release"
 
 [Setup]
 AppId={{8F2C4A61-3D7E-4B92-9C15-EDGE0000A001}
@@ -74,7 +74,7 @@ Name: "{group}\{#AppName}"; Filename: "{app}\EDGE.exe"; Components: app
 Type: dirifempty; Name: "{commoncf64}\VST3\EDGE.vst3"
 
 [Code]
-// Fail before copying anything, not after. build-windows.bat produces these;
+// Fail before copying anything, not after. INSTALL-EDGE.bat produces these;
 // if they are missing the user ran the wrong thing, and saying so is far more
 // use than an installer that succeeds and installs nothing.
 function InitializeSetup(): Boolean;
@@ -86,10 +86,10 @@ begin
   //  The VST3 bundle AND its actual payload - an empty EDGE.vst3 folder is a
   //  build that failed halfway, and installing it gives Cubase something that
   //  scans and then fails to load.
-  if not DirExists(ExpandConstant('{src}\..\build\Edge_artefacts\Release\VST3\EDGE.vst3')) then
-    Missing := Missing + '  build\Edge_artefacts\Release\VST3\EDGE.vst3' + #13#10;
+  if not DirExists(ExpandConstant('{src}\..\build-win\Edge_artefacts\Release\VST3\EDGE.vst3')) then
+    Missing := Missing + '  build-win\Edge_artefacts\Release\VST3\EDGE.vst3' + #13#10;
 
-  if not FileExists(ExpandConstant('{src}\..\build\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3')) then
+  if not FileExists(ExpandConstant('{src}\..\build-win\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3')) then
     Missing := Missing + '  ...\EDGE.vst3\Contents\x86_64-win\EDGE.vst3 (the payload)' + #13#10;
 
   Result := (Missing = '');
@@ -97,7 +97,7 @@ begin
   if not Result then
     MsgBox('EDGE has not been built yet.' + #13#10#13#10 +
            'Missing:' + #13#10 + Missing + #13#10 +
-           'Run build-windows.bat first — it builds EDGE and runs its test ' +
+           'Run INSTALL-EDGE.bat first — it builds EDGE and runs its test ' +
            'suites before anything is installed.',
            mbCriticalError, MB_OK);
 end;
