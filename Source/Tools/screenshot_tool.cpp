@@ -70,6 +70,9 @@ namespace
             { "inspector-lp-high", (int) edge::ui::SelectedControl::high, W, H, {
                 { edge::param::mode, (float) (int) edge::Mode::lowPass },
                 { edge::param::highFreq, 3200.0f }, { edge::param::edge, 56.0f } } },
+            { "inspector-high", (int) edge::ui::SelectedControl::high, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f } } },
             { "inspector-mid", (int) edge::ui::SelectedControl::mid, W, H, {
                 { edge::param::mode, (float) (int) edge::Mode::band },
                 { edge::param::midGain, 8.0f }, { edge::param::edge, 62.0f } } },
@@ -152,8 +155,14 @@ namespace
             editor->setSize (shot.width, shot.height);
 
             if (shot.inspector >= 0)
+            {
                 if (auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (editor.get()))
                     ed->openInspectorForTest ((edge::ui::SelectedControl) shot.inspector);
+
+                //  The strip fades in over 90 ms; give the animator time to
+                //  land on full opacity before the frame is captured.
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+            }
 
             juce::Image image (juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
             {

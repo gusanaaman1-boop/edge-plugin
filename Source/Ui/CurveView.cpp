@@ -27,8 +27,8 @@ namespace edge::ui
         constexpr float kFloorDb = -96.0f;
         constexpr float kSpectrumFadeDb = -66.0f;
         constexpr float kSpectrumGateDb = -84.0f;
-        constexpr float kAttackSeconds  = 0.035f;
-        constexpr float kReleaseSeconds = 0.220f;
+        constexpr float kAttackSeconds  = 0.028f;
+        constexpr float kReleaseSeconds = 0.260f;
         constexpr float kSpecMinHz = 20.0f, kSpecMaxHz = 20000.0f;
     }
 
@@ -282,11 +282,40 @@ namespace edge::ui
         responseDirty = false;
     }
 
+    //  The analyzer's own vertical mapping, from the v0.14 spec - NOT the
+    //  response curve's gain axis, which squeezed all useful signal into the
+    //  top strip of the display:
+    //
+    //      0 dBFS -> 12 %      -36 dBFS -> 65 %
+    //    -18 dBFS -> 36 %      -66 dBFS -> 96 %
+    static float spectrumY01 (float db) noexcept
+    {
+        struct P { float db, y; };
+        static constexpr P map[] = { { 0.0f, 0.12f }, { -18.0f, 0.36f },
+                                     { -36.0f, 0.65f }, { -66.0f, 0.96f } };
+
+        if (db >= map[0].db) return map[0].y;
+
+        for (int i = 1; i < 4; ++i)
+            if (db >= map[i].db)
+                return map[i - 1].y + (map[i].y - map[i - 1].y)
+                         * (map[i - 1].db - db) / (map[i - 1].db - map[i].db);
+
+        return 1.0f;
+    }
+
+    float CurveView::spectrumLineAlphaForDb (float db) noexcept
+    {
+        //  44 % idle rising to 55 % at full scale, times the -66/-84 gate.
+        const float gate = juce::jlimit (0.0f, 1.0f,
+                                         (db - (-84.0f)) / ((-66.0f) - (-84.0f)));
+        const float level = juce::jmap (juce::jlimit (-66.0f, 0.0f, db),
+                                        -66.0f, 0.0f, 0.44f, 0.55f);
+        return level * gate;
+    }
+
     void CurveView::updateSpectrumPath()
     {
-        //  The analyzer has its OWN vertical scale: 0 dBFS at the top of the
-        //  plot, -66 at the bottom, faded to nothing by -84. It is a signal
-        //  meter behind a transfer function, not a curve on the response axes.
         spectrumPoints.clear();
 
         if (haveSpectrum)
@@ -300,10 +329,9 @@ namespace edge::ui
 
                 const float f = kSpecMinHz * std::pow (kSpecMaxHz / kSpecMinHz,
                                                        ((float) b + 0.5f) / (float) numBands);
-                const float t = juce::jlimit (0.0f, 1.0f, -db / 66.0f);
 
                 spectrumPoints.push_back (
-                    { xForHz (f), plot.getY() + t * plot.getHeight(), alpha });
+                    { xForHz (f), plot.getY() + spectrumY01 (db) * plot.getHeight(), alpha });
             }
         }
 
@@ -413,8 +441,14 @@ namespace edge::ui
 
     juce::Rectangle<int> CurveView::readoutBounds() const noexcept
     {
-        //  Matches the box paint() draws, with a conservative width.
-        return { (int) plot.getX() + 8, (int) plot.getBottom() - 30, 260, 22 };
+        //  Matches the box paint() draws, with a conservative width - clamped
+        //  by the same limit paint() applies, so the fixed inspector's region
+        //  is honestly excluded here too.
+        int w = 260;
+        if (readoutRightLimit > 0)
+            w = juce::jmin (w, readoutRightLimit - ((int) plot.getX() + 8));
+
+        return { (int) plot.getX() + 8, (int) plot.getBottom() - 30, juce::jmax (60, w), 22 };
     }
 
     void CurveView::setFreeMode (bool shouldBeFree)
@@ -758,14 +792,14 @@ namespace edge::ui
         const auto& shape = snap.currentCentre;
 
         // --- spectrum: above the grid, below every response curve -------------
-        //  1 px line at 24 %, a 10 % fill underneath, nothing brighter than
-        //  30 %, and a fade to zero between -66 and -84 dBFS.
+        //  Two layers: a gradient body (#557895, 22 % at the line falling to
+        //  4 % at the floor) and a 1.5 px line (#7898B2, 44-55 % with level).
+        //  Still quieter than the response, the path and the handles.
         if (spectrumPoints.size() > 1)
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.toNearestInt());
 
-            //  Fill first, one path, gated segments dropped to the floor.
             juce::Path fillPath;
             fillPath.startNewSubPath (spectrumPoints.front().x, plot.getBottom());
 
@@ -775,20 +809,30 @@ namespace edge::ui
             fillPath.lineTo (spectrumPoints.back().x, plot.getBottom());
             fillPath.closeSubPath();
 
-            g.setColour (colour::spectrum.withAlpha (0.10f));
+            const juce::Colour body (0xff557895);
+            juce::ColourGradient grad (body.withAlpha (0.22f),
+                                       plot.getCentreX(), plot.getY() + 0.12f * plot.getHeight(),
+                                       body.withAlpha (0.04f),
+                                       plot.getCentreX(), plot.getBottom(), false);
+            g.setGradientFill (grad);
             g.fillPath (fillPath);
 
+            const juce::Colour line (0xff7898B2);
             for (size_t i = 1; i < spectrumPoints.size(); ++i)
             {
                 const auto& a = spectrumPoints[i - 1];
                 const auto& b = spectrumPoints[i];
-                const float alpha = 0.5f * (a.alpha + b.alpha);
 
-                if (alpha <= 0.01f)
+                //  Per-segment level from the y mapping is not recoverable, so
+                //  the alpha comes from the band dB via the shared helper.
+                const float db = bandDb[(size_t) juce::jlimit (0, numBands - 1, (int) i)];
+                const float alpha = spectrumLineAlphaForDb (db);
+
+                if (a.alpha <= 0.01f && b.alpha <= 0.01f)
                     continue;
 
-                g.setColour (colour::spectrum.withAlpha (juce::jmin (0.30f, 0.24f * alpha)));
-                g.drawLine (a.x, a.y, b.x, b.y, 1.0f);
+                g.setColour (line.withAlpha (alpha));
+                g.drawLine (a.x, a.y, b.x, b.y, 1.5f);
             }
         }
 
@@ -1086,8 +1130,12 @@ namespace edge::ui
             const auto text = readoutText();
             g.setFont (juce::FontOptions (font::readout));
 
-            const int w = juce::jmax (110, juce::GlyphArrangement::getStringWidthInt (
+            int w = juce::jmax (110, juce::GlyphArrangement::getStringWidthInt (
                               juce::Font (juce::FontOptions (font::readout)), text) + 22);
+
+            //  Never under the fixed inspector: truncate at its left edge.
+            if (readoutRightLimit > 0)
+                w = juce::jmin (w, readoutRightLimit - ((int) plot.getX() + 8));
             const auto box = juce::Rectangle<int> ((int) plot.getX() + 8,
                                                    (int) plot.getBottom() - 30, w, 22);
 

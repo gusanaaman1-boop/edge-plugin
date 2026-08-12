@@ -180,6 +180,36 @@ namespace edge
         return juce::jlimit (0.0f, 100.0f, t.getFloatValue());
     }
 
+    float curveValueForNominalSlope (int dbPerOctave) noexcept
+    {
+        //  Derived from kSlopeChoices - the calibrated positions at which the
+        //  smoothstep section weights hand the depth to exactly 1/2/3/4/6
+        //  second-order sections. NOT evenly spaced, and never assumed to be.
+        for (int i = 1; i < kNumSlopeChoices; ++i)
+            if (juce::String (kSlopeChoices[i].name).getIntValue() == dbPerOctave)
+                return kSlopeChoices[i].curvePercent;
+
+        return kSlopeChoices[kNumSlopeChoices - 1].curvePercent;
+    }
+
+    int nominalSlopeForCurveValue (float curvePercent) noexcept
+    {
+        int best = kNominalSlopes[0];
+        float bestDist = 1.0e9f;
+
+        for (int slope : kNominalSlopes)
+        {
+            const float d = std::abs (curvePercent - curveValueForNominalSlope (slope));
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = slope;
+            }
+        }
+
+        return best;
+    }
+
     // --- BITE ----------------------------------------------------------------
 
     float biteMaxDrive (float bitePercent, int character) noexcept

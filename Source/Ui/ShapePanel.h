@@ -23,6 +23,32 @@
 
 namespace edge::ui
 {
+    //  The five musical slopes, as a stepped selector. It NEVER shows a
+    //  percentage: any continuous value the parameter holds highlights the
+    //  nearest choice, and only a deliberate user gesture - click, wheel,
+    //  arrow key - writes a calibrated value back.
+    class SlopeSelector : public juce::Component
+    {
+    public:
+        SlopeSelector (juce::RangedAudioParameter&, juce::Colour accent);
+
+        void paint (juce::Graphics&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+        void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+        bool keyPressed (const juce::KeyPress&) override;
+
+        int currentNominal() const noexcept { return nominal; }
+
+    private:
+        void choose (int index);       // a USER gesture: writes the parameter
+
+        juce::ParameterAttachment attachment;
+        juce::Colour accent;
+        int nominal = 24;              // highlighted choice, follows the value
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlopeSelector)
+    };
+
     //  The one selection shared by the graph and the inspector. The editor
     //  owns the current value; both views are told about changes and neither
     //  keeps its own copy of any parameter.
@@ -42,16 +68,14 @@ namespace edge::ui
         void setContext (SelectedControl, const juce::String& headerText);
         SelectedControl getSelected() const noexcept { return selected; }
 
-        //  The size this context wants, from the v0.12 spec.
+        //  The size this context wants, from the v0.14 spec: one fixed strip,
+        //  420 wide (330 for MID), 88 tall. No notch - the position is fixed,
+        //  so there is nothing to point at.
         juce::Point<int> preferredSize() const noexcept;
-
-        //  Where the notch points, in the PARENT's coordinates. The editor
-        //  positions the panel; the panel draws its pointer toward this.
-        void setAnchor (juce::Point<int> parentPos) noexcept { anchor = parentPos; }
-        juce::Point<int> getAnchor() const noexcept { return anchor; }
 
         //  Test support -------------------------------------------------------
         juce::Slider* sliderFor (const juce::String& paramID) noexcept;
+        SlopeSelector* slopeSelectorFor (SelectedControl) noexcept;
         static int attachmentConstructions() noexcept { return attachmentCount; }
 
     private:
@@ -71,6 +95,7 @@ namespace edge::ui
         struct ContextPanel : public juce::Component
         {
             std::vector<std::unique_ptr<Knob>> knobs;
+            juce::Rectangle<int> slopeArea;       // reserved for the selector
             void resized() override;
         };
 
@@ -78,9 +103,10 @@ namespace edge::ui
         SelectedControl selected = SelectedControl::low;
         juce::String header;
         juce::Colour headerColour = colour::text;
-        juce::Point<int> anchor;
 
         std::array<ContextPanel, (size_t) kNumSelectable> panels;
+        std::unique_ptr<SlopeSelector> lowSlope, highSlope;
+        juce::Rectangle<int> slopeArea;           // active selector, panel coords
 
         static int attachmentCount;
 

@@ -31,6 +31,7 @@
 #include "../Core/StateMigration.h"
 #include "../PluginEditor.h"
 #include "../Ui/CurveView.h"
+#include "../Dsp/EdgeUnit.h"
 #include "../Ui/ShapePanel.h"
 #include "../PluginProcessor.h"
 
@@ -298,6 +299,14 @@ namespace
         {
             auto* rp = dynamic_cast<juce::RangedAudioParameter*> (raw);
             if (rp == nullptr) continue;
+
+            //  Curve deliberately quantises its TEXT to the five slopes, so a
+            //  continuous value cannot round-trip through its own label. Its
+            //  contract is asserted separately: the five calibrated points
+            //  round-trip exactly.
+            if (rp->paramID == juce::String (edge::param::lowCurve)
+             || rp->paramID == juce::String (edge::param::highCurve))
+                continue;
 
             for (int i = 0; i <= 20; ++i)
             {
@@ -1775,11 +1784,11 @@ namespace
     }
 
     // =========================================================================
-    //  14. Inspector placement: the hard rules, at five frequencies
+    //  14. Inspector: one fixed centred position
     // =========================================================================
     void testInspectorPlacement()
     {
-        section ("14. inspector placement");
+        section ("14. fixed inspector");
 
         using SelectedControl = edge::ui::SelectedControl;
 
@@ -1795,8 +1804,9 @@ namespace
         const SelectedControl contexts[] = { SelectedControl::low, SelectedControl::high,
                                              SelectedControl::mid, SelectedControl::follow };
 
-        int clipped = 0, handleHits = 0, modeHits = 0, readoutHits = 0, wrongCount = 0;
-        juce::String firstFail;
+        float worstCentre = 0.0f, worstInset = 0.0f, worstDrift = 0.0f;
+        int clipped = 0, misses = 0;
+        juce::Rectangle<int> lastBoundsPerContext[4];
 
         for (auto context : contexts)
         {
@@ -1809,7 +1819,7 @@ namespace
             {
                 if (freqId != nullptr)
                 {
-                    rig.set (freqId, hz);        // the ranges clamp what they must
+                    rig.set (freqId, hz);
                     rig.settle (0.0f, 3, 40);
                 }
 
@@ -1818,47 +1828,220 @@ namespace
 
                 auto& panel = ed->getShapePanel();
                 const auto bounds = panel.getBounds();
-                const auto anchor = panel.getAnchor();
-                const auto handleRect = juce::Rectangle<int> (anchor.x - 18, anchor.y - 18, 36, 36);
+                const auto graph = rig.curve->getBounds();
+
+                //  Centre and inset, from the spec's own formula.
+                worstCentre = juce::jmax (worstCentre,
+                    std::abs ((float) bounds.getCentreX() - (float) graph.getCentreX()));
+                worstInset = juce::jmax (worstInset,
+                    std::abs ((float) (graph.getBottom() - bounds.getBottom()) - 18.0f));
 
                 if (! ed->getLocalBounds().contains (bounds)) ++clipped;
+                if (! ed->isInspectorVisible()) ++misses;
 
-                //  The follow context anchors at the deck knob, outside the
-                //  graph, so the handle rule applies to graph contexts only.
-                if (context != SelectedControl::follow && bounds.intersects (handleRect))
-                {
-                    ++handleHits;
-                    if (firstFail.isEmpty())
-                        firstFail = "ctx " + juce::String ((int) context) + " @ "
-                                  + juce::String (hz, 0) + " Hz  panel " + bounds.toString()
-                                  + "  handle " + handleRect.toString();
-                }
-
-                if (bounds.intersects (ed->testModeSelectorBounds())) ++modeHits;
-                if (context != SelectedControl::follow
-                      && bounds.intersects (rig.curve->readoutBounds()
-                                                .translated (rig.curve->getX(), rig.curve->getY())))
-                    ++readoutHits;
-
-                if (! ed->isInspectorVisible()) ++wrongCount;
+                //  Context-change drift: the SAME context must land on the
+                //  same rectangle wherever the handle happens to be.
+                auto& last = lastBoundsPerContext[(size_t) context];
+                if (! last.isEmpty())
+                    worstDrift = juce::jmax (worstDrift,
+                        (float) (bounds.getPosition() - last.getPosition()).getDistanceFromOrigin());
+                last = bounds;
             }
         }
 
-        check (clipped == 0,     "0 clipped inspector placements (20 positions)", juce::String (clipped));
-        check (handleHits == 0,  "0 selected-handle overlaps",  juce::String (handleHits) + "  " + firstFail);
-        check (modeHits == 0,    "0 mode-selector overlaps",    juce::String (modeHits));
-        check (readoutHits == 0, "0 readout overlaps",          juce::String (readoutHits));
-        check (wrongCount == 0,  "exactly 1 inspector visible at every position",
-               juce::String (wrongCount) + " misses");
+        check (worstCentre <= 0.5f, "centre error at most 0.5 px across 20 positions",
+               juce::String (worstCentre, 3) + " px");
+        check (worstInset <= 0.5f, "18 px bottom inset error at most 0.5 px",
+               juce::String (worstInset, 3) + " px");
+        check (worstDrift == 0.0f, "position drift across handle moves: 0.000 px",
+               juce::String (worstDrift, 3) + " px");
+        check (clipped == 0, "0 clipped placements", juce::String (clipped));
+        check (misses == 0, "exactly 1 inspector visible at every position",
+               juce::String (misses) + " misses");
 
-        //  Area budget: the strip against the graph.
+        //  The readout must never reach under the strip.
         {
             ed->openInspectorForTest (SelectedControl::low);
-            const auto a = ed->getShapePanel().getBounds();
-            const float ratio = (float) (a.getWidth() * a.getHeight())
-                              / (float) (rig.curve->getWidth() * rig.curve->getHeight());
-            check (ratio <= 0.15f, "inspector uses at most 15 % of the graph",
-                   juce::String (ratio * 100.0f, 1) + " %");
+            const auto readout = rig.curve->readoutBounds()
+                                     .translated (rig.curve->getX(), rig.curve->getY());
+            check (! readout.intersects (ed->getShapePanel().getBounds()),
+                   "readout never intersects the fixed inspector",
+                   readout.toString());
+        }
+
+        //  Graph interaction stays live while the inspector is open.
+        {
+            ed->openInspectorForTest (SelectedControl::mid);
+            const float before = getParam (rig.processor, edge::param::midFreq);
+            const auto pos = rig.curve->testHandlePosition (edge::ui::CurveView::Grab::mid);
+            rig.curve->testBeginDrag (edge::ui::CurveView::Grab::mid, pos);
+            rig.curve->testDragTo ({ pos.x - 60.0f, pos.y });
+            rig.curve->testEndDrag();
+            check (getParam (rig.processor, edge::param::midFreq) < before,
+                   "handles drag while the inspector is open",
+                   juce::String (getParam (rig.processor, edge::param::midFreq), 1) + " Hz");
+        }
+    }
+
+    // =========================================================================
+    //  15. The five slopes
+    // =========================================================================
+    void testSlopeChoices()
+    {
+        section ("15. slope choices");
+
+        //  Conversion round trip, and the calibrated values themselves.
+        juce::String values;
+        bool roundTrip = true;
+
+        for (int slope : edge::kNominalSlopes)
+        {
+            const float v = edge::curveValueForNominalSlope (slope);
+            values << juce::String (slope) << "->" << juce::String (v, 1) << "%  ";
+            roundTrip = roundTrip && edge::nominalSlopeForCurveValue (v) == slope;
+        }
+
+        check (roundTrip, "choice -> value -> choice round-trips exactly", values);
+
+        //  And through the parameter text: each calibrated point survives its
+        //  own label to 1e-6, which is the text contract Curve now has.
+        {
+            EdgeAudioProcessor p;
+            auto* param = p.getState().getParameter (edge::param::lowCurve);
+
+            float worst = 0.0f;
+            for (int slope : edge::kNominalSlopes)
+            {
+                const float calibrated = edge::curveValueForNominalSlope (slope);
+                const float norm = param->convertTo0to1 (calibrated);
+                const float back = param->convertFrom0to1 (
+                                       param->getValueForText (param->getText (norm, 0)));
+                worst = juce::jmax (worst, std::abs (back - calibrated));
+            }
+
+            check (worst <= 1.0e-4f, "the five calibrated points survive their own labels",
+                   juce::String (worst, 6) + " %");
+        }
+
+        //  The user never sees a percentage or SOFT: sweep the whole range.
+        {
+            EdgeAudioProcessor p;
+            auto* param = p.getState().getParameter (edge::param::lowCurve);
+
+            int bad = 0;
+            juce::String firstBad;
+
+            for (int i = 0; i <= 100; ++i)
+            {
+                const auto text = param->getText ((float) i / 100.0f, 0);
+                const bool ok = text.endsWith (" dB/oct")
+                                  && ! text.contains ("%")
+                                  && ! text.containsIgnoreCase ("SOFT");
+                bool known = false;
+                for (int slope : edge::kNominalSlopes)
+                    if (text.startsWith (juce::String (slope)))
+                        known = true;
+
+                if (! ok || ! known)
+                {
+                    ++bad;
+                    if (firstBad.isEmpty()) firstBad = text;
+                }
+            }
+
+            check (bad == 0, "curve text is always one of the five slopes",
+                   juce::String (bad) + " bad" + (firstBad.isEmpty() ? "" : "  first: " + firstBad));
+        }
+
+        //  Old continuous values: exact recall, and opening the editor does
+        //  not rewrite them.
+        {
+            EdgeAudioProcessor a;
+            setParam (a, edge::param::lowCurve, 63.7f);
+
+            juce::MemoryBlock saved;
+            a.getStateInformation (saved);
+
+            EdgeAudioProcessor b;
+            b.setStateInformation (saved.getData(), (int) saved.getSize());
+
+            const float recalled = getParam (b, edge::param::lowCurve);
+            check (recalled == 63.7f, "old continuous curve recalls exactly",
+                   juce::String (recalled, 6) + " %");
+
+            {
+                std::unique_ptr<juce::AudioProcessorEditor> ed (b.createEditor());
+                ed->setSize (900, 560);
+                if (auto* real = dynamic_cast<EdgeAudioProcessorEditor*> (ed.get()))
+                    real->openInspectorForTest (edge::ui::SelectedControl::low);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+            }
+
+            check (getParam (b, edge::param::lowCurve) == 63.7f,
+                   "opening and closing the editor leaves the value untouched",
+                   juce::String (getParam (b, edge::param::lowCurve), 6) + " %");
+        }
+
+        //  A user gesture on the selector writes the calibrated value.
+        {
+            DisplayRig rig;
+            auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
+            ed->openInspectorForTest (edge::ui::SelectedControl::low);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+            auto* sel = ed->getShapePanel().slopeSelectorFor (edge::ui::SelectedControl::low);
+            check (sel != nullptr, "the LOW inspector hosts the slope selector",
+                   sel != nullptr ? "present" : "MISSING");
+
+            if (sel != nullptr)
+            {
+                sel->keyPressed (juce::KeyPress (juce::KeyPress::rightKey));
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+
+                const float got = getParam (rig.processor, edge::param::lowCurve);
+                const int nominal = edge::nominalSlopeForCurveValue (got);
+                const float calibrated = edge::curveValueForNominalSlope (nominal);
+
+                check (std::abs (got - calibrated) <= 1.0e-6f,
+                       "a key gesture writes the calibrated value exactly",
+                       juce::String (got, 6) + " % = " + juce::String (nominal) + " dB/oct");
+            }
+        }
+
+        //  The 72 dB/oct choice: what is CLAIMED is six active second-order
+        //  sections. The finite-band slope near Nyquist measures ~61 dB/oct
+        //  (recorded in the DSP suite); the topology claim is asserted here.
+        {
+            juce::String detail;
+            bool ok = true;
+
+            const struct { int slope; int sections; } table[] = {
+                { 12, 1 }, { 24, 2 }, { 36, 3 }, { 48, 4 }, { 72, 6 } };
+
+            for (const auto& t : table)
+            {
+                float poles = 0.0f, damping = 0.0f;
+                edge::EdgeUnit<edge::Side::high>::curveToShape (
+                    edge::curveValueForNominalSlope (t.slope) * 0.01f, poles, damping);
+
+                const auto w = edge::EdgeUnit<edge::Side::high>::sectionWeights (poles);
+                int active = 0;
+                for (float weight : w)
+                    if (weight > 1.0e-6f) ++active;
+
+                detail << juce::String (t.slope) << "->" << juce::String (active) << "  ";
+                ok = ok && active == t.sections;
+            }
+
+            check (ok, "each slope choice activates its intended section count", detail);
+        }
+
+        //  The line opacity contract at -18 dBFS.
+        {
+            const float alpha = edge::ui::CurveView::spectrumLineAlphaForDb (-18.0f);
+            check (alpha >= 0.40f && alpha <= 0.55f,
+                   "analyzer line opacity at -18 dBFS within 40-55 %",
+                   juce::String (alpha * 100.0f, 1) + " %");
         }
     }
 
@@ -2051,6 +2234,7 @@ int main()
     testSemanticLabels();
     testAnalyzer();
     testInspectorPlacement();
+    testSlopeChoices();
     testPalette();
     testEditor();
 

@@ -248,7 +248,7 @@ juce::String EdgeAudioProcessorEditor::semanticHeaderFor (SelectedControl c) con
         case SelectedControl::low:    return m == (int) Mode::highPass ? "HP" : "LOW";
         case SelectedControl::high:   return m == (int) Mode::lowPass ? "LP" : "HIGH";
         case SelectedControl::mid:    return "MID";
-        case SelectedControl::follow: return "FOLLOW";
+        case SelectedControl::follow: return juce::String::fromUTF8 ("FOLLOW \xe2\x86\x92 EDGE");
     }
 
     return {};
@@ -256,6 +256,8 @@ juce::String EdgeAudioProcessorEditor::semanticHeaderFor (SelectedControl c) con
 
 void EdgeAudioProcessorEditor::openInspector (SelectedControl c)
 {
+    const bool wasVisible = inspector.isVisible();
+
     selected = c;
     inspector.setContext (c, semanticHeaderFor (c));
 
@@ -265,96 +267,47 @@ void EdgeAudioProcessorEditor::openInspector (SelectedControl c)
                                                   : CurveView::Grab::none);
 
     positionInspector();
-    inspector.setVisible (true);
+
+    //  Opacity only: 90 ms in on open, 70 ms content change. The POSITION
+    //  never animates - it is fixed.
+    if (! wasVisible)
+    {
+        inspector.setAlpha (0.0f);
+        inspector.setVisible (true);
+        juce::Desktop::getInstance().getAnimator().fadeIn (&inspector, 90);
+    }
+    else
+    {
+        inspector.setAlpha (0.55f);
+        juce::Desktop::getInstance().getAnimator().fadeIn (&inspector, 70);
+    }
+
     inspector.toFront (false);
 }
 
 void EdgeAudioProcessorEditor::closeInspector()
 {
-    inspector.setVisible (false);
+    if (inspector.isVisible())
+        juce::Desktop::getInstance().getAnimator().fadeOut (&inspector, 70);
 }
 
 void EdgeAudioProcessorEditor::positionInspector()
 {
+    //  v0.14: ONE fixed position. Horizontally centred in the graph, bottom
+    //  edge 18 px above the graph's bottom, at every window size. No anchor,
+    //  no notch, no candidates - the inspector is part of the instrument, not
+    //  a tooltip chasing the cursor.
     const auto size = inspector.preferredSize();
+    const auto graph = curve.getBounds();
 
-    juce::Point<int> anchor;
+    inspector.setBounds (graph.getCentreX() - size.x / 2,
+                         graph.getBottom() - 18 - size.y,
+                         size.x, size.y);
 
-    if (selected == SelectedControl::follow)
-        anchor = followKnob.slider.getBounds().getCentre().translated (0, -8);
-    else
-    {
-        const auto g = selected == SelectedControl::low  ? CurveView::Grab::low
-                     : selected == SelectedControl::high ? CurveView::Grab::high
-                                                         : CurveView::Grab::mid;
-        anchor = curve.getBounds().getTopLeft()
-               + curve.testHandlePosition (g).toInt();
-    }
-
-    //  Four candidates around the anchor - upper-left, upper-right,
-    //  lower-left, lower-right - scored by what they would cover. The hard
-    //  rules (handle, mode selector, readout, graph edge) disqualify; the
-    //  response-path length inside breaks ties.
-    const auto graphInset = curve.getBounds().reduced (metric::margin);
-    const auto handleRect = juce::Rectangle<int> (anchor.x - 18, anchor.y - 18, 36, 36);
-    const auto modeRect = lpButton.getBounds().getUnion (freeButton.getBounds()).expanded (4);
-    const auto readoutRect = curve.readoutBounds().translated (curve.getX(), curve.getY());
-
-    const juce::Point<int> offsets[] = { { -size.x - 14, -size.y - 14 },
-                                         { 14,           -size.y - 14 },
-                                         { -size.x - 14, 14 },
-                                         { 14,           14 } };
-
-    juce::Rectangle<int> best;
-    float bestScore = 1.0e9f;
-
-    for (const auto& o : offsets)
-    {
-        const juce::Rectangle<int> cand (anchor.x + o.x, anchor.y + o.y, size.x, size.y);
-
-        if (! graphInset.contains (cand))                 continue;   // clipping: 0 px
-        if (cand.intersects (handleRect))                 continue;   // handle: 0 px
-        if (cand.intersects (modeRect))                   continue;   // selector: 0 px
-        if (cand.intersects (readoutRect))                continue;   // readout: 0 px
-
-        const float score = curve.responseLengthInside (
-            (cand - curve.getPosition()).toFloat().expanded (22.0f));
-
-        if (score < bestScore)
-        {
-            bestScore = score;
-            best = cand;
-        }
-    }
-
-    //  All four failed: dock in a graph corner - but the dock obeys the same
-    //  hard rules, or a handle near a corner ends up underneath it.
-    if (best.isEmpty())
-    {
-        const juce::Rectangle<int> docks[] = {
-            { graphInset.getRight() - size.x, graphInset.getBottom() - size.y, size.x, size.y },
-            { graphInset.getX(),              readoutRect.getY() - size.y - 6, size.x, size.y },
-            { graphInset.getRight() - size.x, graphInset.getY(),               size.x, size.y },
-            { graphInset.getX(),              graphInset.getY(),               size.x, size.y },
-        };
-
-        for (const auto& dock : docks)
-        {
-            if (! graphInset.contains (dock))        continue;
-            if (dock.intersects (handleRect))        continue;
-            if (dock.intersects (modeRect))          continue;
-            if (dock.intersects (readoutRect))       continue;
-
-            best = dock;
-            break;
-        }
-
-        if (best.isEmpty())
-            best = docks[0];        // last resort, still inside the graph
-    }
-
-    inspector.setAnchor (anchor);
-    inspector.setBounds (best);
+    //  The readout keeps the bottom-left and must never run under the strip.
+    //  The limit applies always - the strip's position is fixed, so the
+    //  readout simply never grows into that region.
+    curve.setReadoutRightLimit (inspector.getX() - curve.getX() - 8);
 }
 
 bool EdgeAudioProcessorEditor::keyPressed (const juce::KeyPress& key)

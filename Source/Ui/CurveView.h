@@ -80,11 +80,16 @@ namespace edge::ui
         const std::vector<float>& testSpectrumBands() const noexcept { return bandDb; }
         void testForceSpectrumTick() { pullAudio(); if (updateSpectrumData()) updateSpectrumPath(); }
 
-        //  For the inspector's placement scorer: how much of the live response
-        //  path runs through `area` (component coordinates), and where the
-        //  persistent readout sits.
         float responseLengthInside (juce::Rectangle<float> area) const noexcept;
         juce::Rectangle<int> readoutBounds() const noexcept;
+
+        //  The fixed inspector owns the bottom middle; the readout truncates
+        //  rather than run underneath it. -1 = no limit.
+        void setReadoutRightLimit (int limit) noexcept { readoutRightLimit = limit; }
+
+        //  Shared by paint and the acceptance test, so the "line opacity at
+        //  -18 dBFS" number is asserted against the code that draws it.
+        static float spectrumLineAlphaForDb (float db) noexcept;
         juce::Point<float> testHandlePosition (Grab g) const noexcept { return handlePosition (g); }
 
         //  Drive a drag without synthesising juce::MouseEvents: the same
@@ -163,6 +168,7 @@ namespace edge::ui
         std::vector<float> frameDb;      // this frame's bands, pre-smoothing
         juce::uint32 lastSpectrumMs = 0; // for the 35/220 ms time constants
         juce::uint32 lastSpectrumTickMs = 0;
+        int readoutRightLimit = -1;
         bool haveSpectrum = false;
 
         //  --- display state ---------------------------------------------------

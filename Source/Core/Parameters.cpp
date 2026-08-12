@@ -48,9 +48,25 @@ namespace edge
             return depthDbToPercent (t.getFloatValue());
         }
 
-        //  Exactly what the display's slope combo shows, from the same table.
-        juce::String curveText (float percent, int) { return slopeTextFor (percent); }
-        float curveValue (const juce::String& t) { return curvePercentForText (t); }
+        //  The user never sees Curve as a percentage: any continuous value -
+        //  an old project, moving automation - reads as the NEAREST of the
+        //  five musical slopes. The stored value itself is untouched.
+        juce::String curveText (float percent, int)
+        {
+            return juce::String (nominalSlopeForCurveValue (percent)) + " dB/oct";
+        }
+
+        float curveValue (const juce::String& t)
+        {
+            const int wanted = t.getIntValue();
+            for (int slope : kNominalSlopes)
+                if (slope == wanted)
+                    return curveValueForNominalSlope (slope);
+
+            //  Anything else typed lands on the nearest choice.
+            return curveValueForNominalSlope (nominalSlopeForCurveValue (
+                curvePercentForText (t)));
+        }
 
         juce::String shoulderText (float percent, int)
         {

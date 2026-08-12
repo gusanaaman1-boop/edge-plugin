@@ -130,6 +130,23 @@ namespace edge
     //  parses the WORDS as a percentage.
     float curvePercentForText (const juce::String& text) noexcept;
 
+    //  THE slope conversion, shared by the inspector selector, the parameter
+    //  text, preset authoring and the tests. One table, one direction each way:
+    //
+    //    curveValueForNominalSlope: the calibrated Curve percent whose
+    //      section-weight distribution activates the intended pole count
+    //      (12 -> 1 section ... 72 -> 6 sections).
+    //    nominalSlopeForCurveValue: the NEAREST of 12/24/36/48/72 for any
+    //      continuous value an old project or moving automation may hold.
+    //
+    //  The user-facing choices are exactly these five. There is deliberately
+    //  no 60: five sections is not offered.
+    inline constexpr int kNominalSlopes[] = { 12, 24, 36, 48, 72 };
+    inline constexpr int kNumNominalSlopes = 5;
+
+    float curveValueForNominalSlope (int dbPerOctave) noexcept;
+    int   nominalSlopeForCurveValue (float curvePercent) noexcept;
+
     //  BITE -> the two halves of the colour law. Exposed so the tests can
     //  assert the law rather than the audio it happens to produce.
     float biteMaxDrive (float bitePercent, int character = 0) noexcept;
