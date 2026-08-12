@@ -53,9 +53,9 @@ EDGE host-contract suite
   [PASS] the selected preset survives a save/load                   13 of 13
 
 == 7. build identity ==
-  [PASS] a version is compiled in                                   0.12.0
-  [PASS] a git description is compiled in                           v0.10-1-g86c80ea-dirty
-  [PASS] a repository build carries a real git description          v0.10-1-g86c80ea-dirty
+  [PASS] a version is compiled in                                   0.13.0
+  [PASS] a git description is compiled in                           v0.12-dirty
+  [PASS] a repository build carries a real git description          v0.12-dirty
   [PASS] the log records the exact build                            written to EDGE.log
 
 == 8. display invalidation ==
@@ -120,11 +120,40 @@ EDGE host-contract suite
   [PASS] in HP the active handle is named HP                        HP
   [PASS] LP inspector opens on the active edge                      visible
 
-== 13. editor ==
+== 13. analyzer ==
+  [PASS] 100 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 23, expected 22
+  [PASS] 100 Hz displayed level within 1.5 dB                       -18.03 dBFS
+  [PASS] 1000 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 54, expected 54
+  [PASS] 1000 Hz displayed level within 1.5 dB                      -18.00 dBFS
+  [PASS] 10000 Hz sine peaks in the right band (pre-filter, LP closed at 300 Hz) band 86, expected 86
+  [PASS] 10000 Hz displayed level within 1.5 dB                     -18.00 dBFS
+  [PASS] left-only vs right-only within 0.5 dB                      0.00 dB
+  [PASS] stereo equal-channel level within 0.5 dB                   -18.00 dBFS
+  [PASS] -18 dBFS noise lights at least 70 of 96 bands              96 of 96
+  [PASS] release falls 60 dB within 1.5 s of silence                -32.6 -> -95.5 dB
+  [PASS] 1.5 s of silence leaves 0 drawn analyzer bands             0 still lit
+  [PASS] -84 dBFS noise draws 0 analyzer bands                      0 lit
+
+== 14. inspector placement ==
+  [PASS] 0 clipped inspector placements (20 positions)              0
+  [PASS] 0 selected-handle overlaps                                 0  
+  [PASS] 0 mode-selector overlaps                                   0
+  [PASS] 0 readout overlaps                                         0
+  [PASS] exactly 1 inspector visible at every position              0 misses
+  [PASS] inspector uses at most 15 % of the graph                   10.2 %
+
+== 15. palette contract ==
+  [PASS] chassis vs graph: at least 42 L*                           84.2 L*
+  [PASS] graph vs deck: at most 8 L*                                5.2 L*
+  [PASS] header text contrast at least 4.5:1                        12.68:1
+  [PASS] deck text contrast at least 4.5:1                          15.85:1
+  [PASS] inspector text contrast at least 4.5:1                     16.16:1
+
+== 16. editor ==
   [PASS] 20 editor open/close cycles with audio running             no crash, no leak
   [PASS] every size x scale lays out and paints                     9 of 9
   [PASS] no control is clipped by its parent                        0
   [PASS] no two controls share pixels                               0
   [PASS] no control is laid out with zero size                      0
 
-101 checks, 0 failed
+124 checks, 0 failed

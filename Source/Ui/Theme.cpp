@@ -162,16 +162,39 @@ namespace edge::ui
 
         //  Active arc, 4 px. Bipolar controls grow out of 12 o'clock so that
         //  "no modulation" reads as an empty ring, not a half-full one.
+        //
+        //  A second accent SPLITS the arc at 12 o'clock instead of blending:
+        //  amber-to-cyan interpolation passes through exactly the muddy green
+        //  the colour rules forbid.
         const float from = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
+        const bool hasSecond = props.contains ("accent2");
 
         if (std::abs (angle - from) > 0.004f)
         {
-            juce::Path value;
-            value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
-                                 juce::jmin (from, angle), juce::jmax (from, angle), true);
-            g.setColour (accent);
-            g.strokePath (value, { 4.0f, juce::PathStrokeType::curved,
-                                   juce::PathStrokeType::rounded });
+            const float lo = juce::jmin (from, angle), hi = juce::jmax (from, angle);
+            const float mid = juce::jlimit (lo, hi, (startAngle + endAngle) * 0.5f);
+
+            auto stroke = [&] (float a0, float a1, juce::Colour c)
+            {
+                if (a1 - a0 < 0.004f)
+                    return;
+                juce::Path arc;
+                arc.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, a0, a1, true);
+                g.setColour (c);
+                g.strokePath (arc, { 4.0f, juce::PathStrokeType::curved,
+                                     juce::PathStrokeType::rounded });
+            };
+
+            if (hasSecond)
+            {
+                const auto accent2 = juce::Colour ((juce::uint32) (int) props["accent2"]);
+                stroke (lo, mid, hover ? accent.withMultipliedBrightness (1.1f) : accent);
+                stroke (mid, hi, hover ? accent2.withMultipliedBrightness (1.1f) : accent2);
+            }
+            else
+            {
+                stroke (lo, hi, accent);
+            }
         }
 
         //  Body: one flat raised disc with a hairline rim. No gradient chrome.

@@ -77,6 +77,14 @@ namespace edge::ui
         const juce::Path& testResponsePath() const noexcept { return currentPath; }
         const juce::Path& testTargetPath() const noexcept { return targetPath; }
         int testSpectrumPointCount() const noexcept { return (int) spectrumPoints.size(); }
+        const std::vector<float>& testSpectrumBands() const noexcept { return bandDb; }
+        void testForceSpectrumTick() { pullAudio(); if (updateSpectrumData()) updateSpectrumPath(); }
+
+        //  For the inspector's placement scorer: how much of the live response
+        //  path runs through `area` (component coordinates), and where the
+        //  persistent readout sits.
+        float responseLengthInside (juce::Rectangle<float> area) const noexcept;
+        juce::Rectangle<int> readoutBounds() const noexcept;
         juce::Point<float> testHandlePosition (Grab g) const noexcept { return handlePosition (g); }
 
         //  Drive a drag without synthesising juce::MouseEvents: the same
@@ -90,9 +98,13 @@ namespace edge::ui
 
     private:
 
-        static constexpr int fftOrder = 11;
-        static constexpr int fftSize  = 1 << fftOrder;   // 2048
-        static constexpr int numBands = 220;
+        //  8192 points: at 100 Hz the display bands are 7 Hz wide, and a
+        //  2048-point FFT's 23 Hz bins could not place a tone in the right
+        //  band. 8192 gives 5.9 Hz bins - finer than the bands everywhere the
+        //  acceptance tests look.
+        static constexpr int fftOrder = 13;
+        static constexpr int fftSize  = 1 << fftOrder;   // 8192
+        static constexpr int numBands = 96;
 
         void timerCallback() override;
         void pullAudio();
@@ -149,6 +161,8 @@ namespace edge::ui
         std::vector<float> window;
         std::vector<float> bandDb;       // smoothed, display resolution
         std::vector<float> frameDb;      // this frame's bands, pre-smoothing
+        juce::uint32 lastSpectrumMs = 0; // for the 35/220 ms time constants
+        juce::uint32 lastSpectrumTickMs = 0;
         bool haveSpectrum = false;
 
         //  --- display state ---------------------------------------------------

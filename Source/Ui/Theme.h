@@ -10,32 +10,45 @@ namespace edge::ui
 {
     namespace colour
     {
-        //  The v0.12 direction's palette. Three accents with FIXED meanings:
-        //  amber is the low-frequency edge, cyan is the high edge (and so the
-        //  LP cutoff), violet is movement/modulation and NOTHING else - it is
-        //  never a third band colour.
-        inline const juce::Colour chassis      { 0xff17191D };
-        inline const juce::Colour graph        { 0xff0B0D10 };
-        inline const juce::Colour raised       { 0xff15171B };
+        //  v0.13: light shell, dark instrument. The chassis is titanium/pearl;
+        //  the graph and the deck are the dark instrument sitting inside it.
+        //  Three accents with FIXED meanings: amber = low edge / HP cutoff,
+        //  cyan = high edge / LP cutoff, violet = movement and NOTHING else.
+        inline const juce::Colour shellLight   { 0xffD9DDE2 };   // outer chassis
+        inline const juce::Colour shellHilite  { 0xffF3F5F6 };
+        inline const juce::Colour shellShadow  { 0xffA8AFB8 };
+        inline const juce::Colour textOnLight  { 0xff171B20 };
 
-        inline const juce::Colour shellTop     { 0xff1D2025 };
-        inline const juce::Colour shellBottom  { 0xff131519 };
+        inline const juce::Colour graphFrame   { 0xffBEC4CB };
+        inline const juce::Colour graph        { 0xff090E13 };
+        inline const juce::Colour deck         { 0xff151A20 };
+        inline const juce::Colour raised       { 0xff121820 };   // inspector card
+
+        inline const juce::Colour chassis      { 0xff17191D };   // menus, dark UI
         inline const juce::Colour wellTop      { 0xff0B0D10 };
         inline const juce::Colour wellBottom   { 0xff0E1013 };
+        inline const juce::Colour shellTop     { 0xff1D2025 };
+        inline const juce::Colour shellBottom  { 0xff131519 };
         inline const juce::Colour panelEdge    { 0xff2A2D33 };
         inline const juce::Colour panelHilite  { 0xff3A3E46 };
 
         inline const juce::Colour grid         { 0xff1A1D22 };
         inline const juce::Colour gridStrong   { 0xff23262C };
-        inline const juce::Colour spectrum     { 0xff8a8f98 };
+        inline const juce::Colour spectrum     { 0xff5A7892 };
 
-        inline const juce::Colour text         { 0xffE7EBF0 };
-        inline const juce::Colour textDim      { 0xff7C8490 };
+        inline const juce::Colour text         { 0xffF1F4F7 };
+        inline const juce::Colour textDim      { 0xff8D96A3 };
         inline const juce::Colour textBright   { 0xffF4F7FA };
 
-        inline const juce::Colour low          { 0xffF2A03C };
-        inline const juce::Colour high         { 0xff31C6E8 };
-        inline const juce::Colour movement     { 0xff9B8CFF };
+        inline const juce::Colour low          { 0xffFFAA36 };
+        inline const juce::Colour high         { 0xff31CEF0 };
+        inline const juce::Colour movement     { 0xff9B86FF };
+
+        //  The response itself is neutral ice-white; the accents touch it only
+        //  within 28 px of their own handle. No amber-to-cyan interpolation -
+        //  that is where the muddy green came from.
+        inline const juce::Colour response     { 0xffE8F0F5 };
+        inline const juce::Colour target       { 0xff69737E };
     }
 
     namespace metric

@@ -10,11 +10,14 @@ namespace edge::ui
 
     namespace
     {
-        //  Inspector geometry, from the v0.12 spec.
-        constexpr int kPadding = 16;
-        [[maybe_unused]] constexpr int kGap = 12;
+        //  Inspector geometry, v0.13: a one-row instrument strip, not a modal.
+        constexpr int kPadding = 12;
+        constexpr int kGap = 8;
         constexpr int kHeaderRow = 18;
-        constexpr int kNotchW = 12, kNotchH = 7;
+        constexpr int kNotchW = 10, kNotchH = 6;
+        constexpr int kCellW = 59;
+        constexpr int kMiniKnob = 30;
+        constexpr int kStripH = 92;
     }
 
     void ShapePanel::Knob::init (juce::Component& parent,
@@ -30,14 +33,14 @@ namespace edge::ui
         parent.addAndMakeVisible (slider);
 
         caption.setText (text.toUpperCase(), juce::dontSendNotification);
-        caption.setJustificationType (juce::Justification::centredLeft);
+        caption.setJustificationType (juce::Justification::centred);
         caption.setColour (juce::Label::textColourId, colour::textDim);
-        caption.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
+        caption.setFont (juce::FontOptions (9.0f).withStyle ("Bold"));
         parent.addAndMakeVisible (caption);
 
-        value.setJustificationType (juce::Justification::centredRight);
+        value.setJustificationType (juce::Justification::centred);
         value.setColour (juce::Label::textColourId, colour::text);
-        value.setFont (juce::FontOptions (font::caption));
+        value.setFont (juce::FontOptions (10.0f));
         parent.addAndMakeVisible (value);
 
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -57,15 +60,14 @@ namespace edge::ui
             slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
     }
 
-    //  The mockup's layout: one ROW per control - the name on the left, a
-    //  small knob, the value on the right. Four rows fit 272 x 128 with room
-    //  to breathe; four columns squeezed "SHOULDER" into "SHOULD...".
+    //  One horizontal CELL per control: 9 px label above a 30 px mini-knob,
+    //  the exact value under it. Four cells in a row read as an instrument
+    //  strip; four tall rows read as a dialog.
     void ShapePanel::Knob::setBounds (juce::Rectangle<int> r)
     {
-        caption.setBounds (r.removeFromLeft (76));
-        value.setBounds (r.removeFromRight (52));
-        slider.setBounds (r.withSizeKeepingCentre (juce::jmin (r.getHeight(), 24),
-                                                   juce::jmin (r.getHeight(), 24)));
+        caption.setBounds (r.removeFromTop (10));
+        value.setBounds (r.removeFromBottom (12));
+        slider.setBounds (r.withSizeKeepingCentre (kMiniKnob, juce::jmin (r.getHeight(), kMiniKnob)));
     }
 
     void ShapePanel::ContextPanel::resized()
@@ -75,10 +77,13 @@ namespace edge::ui
         if (used == 0)
             return;
 
-        const int rowH = r.getHeight() / used;
+        auto row = r.withSizeKeepingCentre (kCellW * used + kGap * (used - 1), r.getHeight());
 
         for (auto& k : knobs)
-            k->setBounds (r.removeFromTop (rowH));
+        {
+            k->setBounds (row.removeFromLeft (kCellW));
+            row.removeFromLeft (kGap);
+        }
     }
 
     ShapePanel::ShapePanel (juce::AudioProcessorValueTreeState& s) : state (s)
@@ -129,12 +134,11 @@ namespace edge::ui
 
     juce::Point<int> ShapePanel::preferredSize() const noexcept
     {
-        //  From the spec: LOW/HIGH 272 x 128, MID 240 x 116, FOLLOW 264 x 120,
-        //  plus the notch below.
-        if (selected == SelectedControl::mid)    return { 240, 116 + kNotchH };
-        if (selected == SelectedControl::follow) return { 264, 120 + kNotchH };
+        //  Width follows the cell count; the height is one strip everywhere.
+        const int cells = (int) panels[(size_t) selected].knobs.size();
+        const int w = kPadding * 2 + kCellW * cells + kGap * (cells - 1);
 
-        return { 272, 128 + kNotchH };
+        return { juce::jmax (w, 200), kStripH + kNotchH };
     }
 
     void ShapePanel::setContext (SelectedControl which, const juce::String& headerText)
@@ -168,32 +172,42 @@ namespace edge::ui
 
     void ShapePanel::paint (juce::Graphics& g)
     {
-        auto body = getLocalBounds().toFloat().withTrimmedBottom ((float) kNotchH);
+        //  The notch flips: below the card when the card sits above its
+        //  anchor, above it when the placement algorithm put the card
+        //  underneath.
+        const bool notchBelow = getAnchor().y >= getBounds().getCentreY();
+        auto body = getLocalBounds().toFloat();
+        body = notchBelow ? body.withTrimmedBottom ((float) kNotchH)
+                          : body.withTrimmedTop ((float) kNotchH);
 
-        //  Shadow: offset (0, 8), then the raised card at 96 % over the graph.
+        //  Shadow y 6 at 28 %, then the card at 94 %.
         {
             juce::Path shape;
-            shape.addRoundedRectangle (body.translated (0.0f, 8.0f), metric::radiusLarge);
-            g.setColour (juce::Colours::black.withAlpha (0.38f));
+            shape.addRoundedRectangle (body.translated (0.0f, 6.0f), 14.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.28f));
             g.fillPath (shape);
         }
 
         juce::Path card;
-        card.addRoundedRectangle (body, metric::radiusLarge);
+        card.addRoundedRectangle (body, 14.0f);
 
-        //  Pointer notch, 12 x 7, aimed at the anchor's x.
         {
-            const float ax = juce::jlimit (body.getX() + metric::radiusLarge + kNotchW,
-                                           body.getRight() - metric::radiusLarge - kNotchW,
+            const float ax = juce::jlimit (body.getX() + 14.0f + kNotchW,
+                                           body.getRight() - 14.0f - kNotchW,
                                            (float) (getAnchor().x - getX()));
             juce::Path notch;
-            notch.addTriangle (ax - kNotchW * 0.5f, body.getBottom(),
-                               ax + kNotchW * 0.5f, body.getBottom(),
-                               ax, body.getBottom() + (float) kNotchH);
+            if (notchBelow)
+                notch.addTriangle (ax - kNotchW * 0.5f, body.getBottom(),
+                                   ax + kNotchW * 0.5f, body.getBottom(),
+                                   ax, body.getBottom() + (float) kNotchH);
+            else
+                notch.addTriangle (ax - kNotchW * 0.5f, body.getY(),
+                                   ax + kNotchW * 0.5f, body.getY(),
+                                   ax, body.getY() - (float) kNotchH);
             card.addPath (notch);
         }
 
-        g.setColour (colour::raised.withAlpha (0.96f));
+        g.setColour (colour::raised.withAlpha (0.94f));
         g.fillPath (card);
         g.setColour (colour::text.withAlpha (0.24f));
         g.strokePath (card, juce::PathStrokeType (1.0f));
@@ -201,17 +215,17 @@ namespace edge::ui
         //  Semantic header: "LP", never "HIGH EDGE".
         g.setColour (headerColour);
         g.setFont (juce::FontOptions (font::title).withStyle ("Bold"));
-        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 8,
-                    (int) body.getWidth() - kPadding * 2, kHeaderRow,
+        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 4,
+                    (int) body.getWidth() - kPadding * 2, kHeaderRow - 4,
                     juce::Justification::centredLeft, false);
     }
 
     void ShapePanel::resized()
     {
-        auto r = getLocalBounds().withTrimmedBottom (kNotchH)
-                                 .reduced (kPadding, 0)
-                                 .withTrimmedTop (8 + kHeaderRow)
-                                 .withTrimmedBottom (10);
+        const bool notchBelow = getAnchor().y >= getBounds().getCentreY();
+        auto r = getLocalBounds();
+        r = notchBelow ? r.withTrimmedBottom (kNotchH) : r.withTrimmedTop (kNotchH);
+        r = r.reduced (kPadding, 0).withTrimmedTop (kHeaderRow).withTrimmedBottom (6);
 
         for (auto& panel : panels)
             panel.setBounds (r);

@@ -26,6 +26,7 @@ namespace
         int inspector;      // -1 none, else (int) edge::ui::SelectedControl
         int width, height;
         std::vector<std::pair<const char*, float>> values;
+        bool feedAudio = true;
     };
 
     void setParam (EdgeAudioProcessor& p, const char* id, float value)
@@ -84,6 +85,16 @@ namespace
             { "size-max", -1, edge::ui::metric::maxWidth, edge::ui::metric::maxHeight, {
                 { edge::param::mode, (float) (int) edge::Mode::band },
                 { edge::param::edge, 62.0f } } },
+
+            //  The two analyzer proofs: silence must show NOTHING (the muted
+            //  host is expected to look like this), -18 dBFS noise must show
+            //  the input spectrum through a closed filter.
+            { "analyzer-muted", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, false },
+            { "analyzer-pink", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 1200.0f }, { edge::param::edge, 70.0f } }, true },
         };
 
         outputDir.createDirectory();
@@ -116,13 +127,19 @@ namespace
 
             for (int block = 0; block < 40; ++block)
             {
-                for (int i = 0; i < 512; ++i)
+                buf.clear();
+
+                if (shot.feedAudio)
                 {
-                    const float white = rng.nextFloat() * 2.0f - 1.0f;
-                    lp += 0.06f * (white - lp);
-                    const float v = 0.35f * (lp * 2.2f + white * 0.35f);
-                    buf.setSample (0, i, v);
-                    buf.setSample (1, i, v);
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const float white = rng.nextFloat() * 2.0f - 1.0f;
+                        lp += 0.06f * (white - lp);
+                        const float v = 0.35f * (lp * 2.2f + white * 0.35f)
+                                      * 0.5f;                       // ~-18 dBFS
+                        buf.setSample (0, i, v);
+                        buf.setSample (1, i, v);
+                    }
                 }
 
                 processor.processBlock (buf, midi);

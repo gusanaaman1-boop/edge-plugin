@@ -1590,11 +1590,341 @@ namespace
     }
 
     // =========================================================================
-    //  13. The editor
+    //  13. Analyzer: numeric verification of the pre-filter spectrum
+    // =========================================================================
+    void testAnalyzer()
+    {
+        section ("13. analyzer");
+
+        constexpr int kBands = 96;
+        constexpr float kMinHz = 20.0f, kMaxHz = 20000.0f;
+
+        auto expectedBand = [] (float hz)
+        {
+            return (int) std::floor ((float) kBands * std::log (hz / kMinHz)
+                                                    / std::log (kMaxHz / kMinHz));
+        };
+
+        //  Feed BEFORE-the-filter proof: a deep LP at 300 Hz is applied, and a
+        //  10 kHz tone must still register - the analyzer shows what ENTERS.
+        auto feedSine = [] (DisplayRig& rig, float hz, float amplitude,
+                            bool left, bool right, int blocks)
+        {
+            juce::AudioBuffer<float> b (2, 512);
+            juce::MidiBuffer midi;
+            static double phase = 0.0;
+            const double inc = juce::MathConstants<double>::twoPi * hz / 48000.0;
+
+            for (int k = 0; k < blocks; ++k)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = amplitude * (float) std::sin (phase);
+                    phase += inc;
+                    b.setSample (0, i, left ? v : 0.0f);
+                    b.setSample (1, i, right ? v : 0.0f);
+                }
+
+                rig.processor.processBlock (b, midi);
+            }
+
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (400);
+        };
+
+        auto peakBand = [] (DisplayRig& rig) -> std::pair<int, float>
+        {
+            const auto& bands = rig.curve->testSpectrumBands();
+            int best = 0;
+            for (int i = 1; i < (int) bands.size(); ++i)
+                if (bands[(size_t) i] > bands[(size_t) best])
+                    best = i;
+            return { best, bands[(size_t) best] };
+        };
+
+        const float amp = juce::Decibels::decibelsToGain (-18.0f);
+
+        //  --- tone placement and level, THROUGH a closed filter ------------------
+        {
+            DisplayRig rig;
+            rig.set (edge::param::mode, (float) (int) edge::Mode::lowPass);
+            rig.set (edge::param::highFreq, 300.0f);
+            rig.set (edge::param::edge, 100.0f);
+            rig.settle();
+
+            const struct { float hz; } tones[] = { { 100.0f }, { 1000.0f }, { 10000.0f } };
+
+            for (const auto& t : tones)
+            {
+                feedSine (rig, t.hz, amp, true, true, 120);
+                const auto [band, db] = peakBand (rig);
+
+                check (std::abs (band - expectedBand (t.hz)) <= 1,
+                       (juce::String (t.hz, 0) + " Hz sine peaks in the right band "
+                          + "(pre-filter, LP closed at 300 Hz)").toRawUTF8(),
+                       "band " + juce::String (band) + ", expected "
+                          + juce::String (expectedBand (t.hz)));
+
+                check (std::abs (db - (-18.0f)) <= 1.5f,
+                       (juce::String (t.hz, 0) + " Hz displayed level within 1.5 dB").toRawUTF8(),
+                       juce::String (db, 2) + " dBFS");
+            }
+        }
+
+        //  --- channel symmetry ----------------------------------------------------
+        {
+            DisplayRig rigL, rigR, rigBoth;
+            feedSine (rigL, 1000.0f, amp, true, false, 120);
+            feedSine (rigR, 1000.0f, amp, false, true, 120);
+            feedSine (rigBoth, 1000.0f, amp, true, true, 120);
+
+            const float l = peakBand (rigL).second;
+            const float r = peakBand (rigR).second;
+            const float both = peakBand (rigBoth).second;
+
+            check (std::abs (l - r) <= 0.5f, "left-only vs right-only within 0.5 dB",
+                   juce::String (std::abs (l - r), 2) + " dB");
+            check (std::abs (both - (-18.0f)) <= 0.5f,
+                   "stereo equal-channel level within 0.5 dB",
+                   juce::String (both, 2) + " dBFS");
+        }
+
+        //  --- noise, gating and release ---------------------------------------------
+        {
+            DisplayRig rig;
+
+            //  -18 dBFS pink-ish noise: at least 70 of 96 bands above the gate.
+            juce::AudioBuffer<float> b (2, 512);
+            juce::MidiBuffer midi;
+            Lcg rng;
+            float lp = 0.0f;
+
+            for (int k = 0; k < 120; ++k)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float white = rng.next();
+                    lp += 0.12f * (white - lp);
+                    const float v = 0.35f * (lp * 2.0f + white * 0.5f)
+                                  * juce::Decibels::decibelsToGain (-6.0f);
+                    b.setSample (0, i, v);
+                    b.setSample (1, i, v);
+                }
+                rig.processor.processBlock (b, midi);
+            }
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (400);
+
+            int lit = 0;
+            for (float db : rig.curve->testSpectrumBands())
+                if (db > -84.0f) ++lit;
+
+            check (lit >= 70, "-18 dBFS noise lights at least 70 of 96 bands",
+                   juce::String (lit) + " of 96");
+
+            const float peakBefore = peakBand (rig).second;
+
+            //  Silence: the release must fall at least 60 dB inside 1.5 s and
+            //  the display must go completely dark.
+            b.clear();
+            const auto t0 = juce::Time::getMillisecondCounter();
+            while (juce::Time::getMillisecondCounter() - t0 < 1500)
+            {
+                rig.processor.processBlock (b, midi);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+            }
+
+            const float peakAfter = peakBand (rig).second;
+            check (peakBefore - peakAfter >= 60.0f || peakAfter <= -84.0f,
+                   "release falls 60 dB within 1.5 s of silence",
+                   juce::String (peakBefore, 1) + " -> " + juce::String (peakAfter, 1) + " dB");
+
+            int drawn = 0;
+            for (float db : rig.curve->testSpectrumBands())
+                if (db > -84.0f + 0.2f) ++drawn;
+
+            check (drawn == 0, "1.5 s of silence leaves 0 drawn analyzer bands",
+                   juce::String (drawn) + " still lit");
+        }
+
+        //  --- quiet noise draws nothing ---------------------------------------------
+        {
+            DisplayRig rig;
+            juce::AudioBuffer<float> b (2, 512);
+            juce::MidiBuffer midi;
+            Lcg rng;
+
+            const float tiny = juce::Decibels::decibelsToGain (-84.0f);
+            for (int k = 0; k < 90; ++k)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = tiny * rng.next();
+                    b.setSample (0, i, v);
+                    b.setSample (1, i, v);
+                }
+                rig.processor.processBlock (b, midi);
+            }
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+
+            int drawn = 0;
+            for (float db : rig.curve->testSpectrumBands())
+                if (db > -84.0f + 0.2f) ++drawn;
+
+            check (drawn == 0, "-84 dBFS noise draws 0 analyzer bands",
+                   juce::String (drawn) + " lit");
+        }
+    }
+
+    // =========================================================================
+    //  14. Inspector placement: the hard rules, at five frequencies
+    // =========================================================================
+    void testInspectorPlacement()
+    {
+        section ("14. inspector placement");
+
+        using SelectedControl = edge::ui::SelectedControl;
+
+        DisplayRig rig;
+        auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
+
+        rig.set (edge::param::mode, (float) (int) edge::Mode::band);
+        rig.set (edge::param::edge, 62.0f);
+        rig.set (edge::param::midGain, 6.0f);
+        rig.settle();
+
+        const float freqs[] = { 20.0f, 100.0f, 1000.0f, 5000.0f, 20000.0f };
+        const SelectedControl contexts[] = { SelectedControl::low, SelectedControl::high,
+                                             SelectedControl::mid, SelectedControl::follow };
+
+        int clipped = 0, handleHits = 0, modeHits = 0, readoutHits = 0, wrongCount = 0;
+        juce::String firstFail;
+
+        for (auto context : contexts)
+        {
+            const char* freqId = context == SelectedControl::low  ? edge::param::lowFreq
+                               : context == SelectedControl::high ? edge::param::highFreq
+                               : context == SelectedControl::mid  ? edge::param::midFreq
+                                                                  : nullptr;
+
+            for (float hz : freqs)
+            {
+                if (freqId != nullptr)
+                {
+                    rig.set (freqId, hz);        // the ranges clamp what they must
+                    rig.settle (0.0f, 3, 40);
+                }
+
+                ed->openInspectorForTest (context);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+                auto& panel = ed->getShapePanel();
+                const auto bounds = panel.getBounds();
+                const auto anchor = panel.getAnchor();
+                const auto handleRect = juce::Rectangle<int> (anchor.x - 18, anchor.y - 18, 36, 36);
+
+                if (! ed->getLocalBounds().contains (bounds)) ++clipped;
+
+                //  The follow context anchors at the deck knob, outside the
+                //  graph, so the handle rule applies to graph contexts only.
+                if (context != SelectedControl::follow && bounds.intersects (handleRect))
+                {
+                    ++handleHits;
+                    if (firstFail.isEmpty())
+                        firstFail = "ctx " + juce::String ((int) context) + " @ "
+                                  + juce::String (hz, 0) + " Hz  panel " + bounds.toString()
+                                  + "  handle " + handleRect.toString();
+                }
+
+                if (bounds.intersects (ed->testModeSelectorBounds())) ++modeHits;
+                if (context != SelectedControl::follow
+                      && bounds.intersects (rig.curve->readoutBounds()
+                                                .translated (rig.curve->getX(), rig.curve->getY())))
+                    ++readoutHits;
+
+                if (! ed->isInspectorVisible()) ++wrongCount;
+            }
+        }
+
+        check (clipped == 0,     "0 clipped inspector placements (20 positions)", juce::String (clipped));
+        check (handleHits == 0,  "0 selected-handle overlaps",  juce::String (handleHits) + "  " + firstFail);
+        check (modeHits == 0,    "0 mode-selector overlaps",    juce::String (modeHits));
+        check (readoutHits == 0, "0 readout overlaps",          juce::String (readoutHits));
+        check (wrongCount == 0,  "exactly 1 inspector visible at every position",
+               juce::String (wrongCount) + " misses");
+
+        //  Area budget: the strip against the graph.
+        {
+            ed->openInspectorForTest (SelectedControl::low);
+            const auto a = ed->getShapePanel().getBounds();
+            const float ratio = (float) (a.getWidth() * a.getHeight())
+                              / (float) (rig.curve->getWidth() * rig.curve->getHeight());
+            check (ratio <= 0.15f, "inspector uses at most 15 % of the graph",
+                   juce::String (ratio * 100.0f, 1) + " %");
+        }
+    }
+
+    // =========================================================================
+    //  15. Palette contract: the luminance and contrast numbers
+    // =========================================================================
+    float lstar (juce::Colour c)
+    {
+        auto lin = [] (float u)
+        {
+            return u <= 0.04045f ? u / 12.92f : std::pow ((u + 0.055f) / 1.055f, 2.4f);
+        };
+        const float y = 0.2126f * lin (c.getFloatRed())
+                      + 0.7152f * lin (c.getFloatGreen())
+                      + 0.0722f * lin (c.getFloatBlue());
+        return y > 0.008856f ? 116.0f * std::pow (y, 1.0f / 3.0f) - 16.0f : 903.3f * y;
+    }
+
+    float contrast (juce::Colour a, juce::Colour b)
+    {
+        auto lum = [] (juce::Colour c)
+        {
+            auto lin = [] (float u)
+            {
+                return u <= 0.04045f ? u / 12.92f : std::pow ((u + 0.055f) / 1.055f, 2.4f);
+            };
+            return 0.2126f * lin (c.getFloatRed()) + 0.7152f * lin (c.getFloatGreen())
+                 + 0.0722f * lin (c.getFloatBlue());
+        };
+        const float la = lum (a) + 0.05f, lb = lum (b) + 0.05f;
+        return juce::jmax (la, lb) / juce::jmin (la, lb);
+    }
+
+    void testPalette()
+    {
+        section ("15. palette contract");
+
+        using namespace edge::ui;
+
+        const float shellGraph = std::abs (lstar (colour::shellLight) - lstar (colour::graph));
+        check (shellGraph >= 42.0f, "chassis vs graph: at least 42 L*",
+               juce::String (shellGraph, 1) + " L*");
+
+        const float graphDeck = std::abs (lstar (colour::graph) - lstar (colour::deck));
+        check (graphDeck <= 8.0f, "graph vs deck: at most 8 L*",
+               juce::String (graphDeck, 1) + " L*");
+
+        check (contrast (colour::textOnLight, colour::shellLight) >= 4.5f,
+               "header text contrast at least 4.5:1",
+               juce::String (contrast (colour::textOnLight, colour::shellLight), 2) + ":1");
+
+        check (contrast (colour::text, colour::deck) >= 4.5f,
+               "deck text contrast at least 4.5:1",
+               juce::String (contrast (colour::text, colour::deck), 2) + ":1");
+
+        check (contrast (colour::text, colour::raised) >= 4.5f,
+               "inspector text contrast at least 4.5:1",
+               juce::String (contrast (colour::text, colour::raised), 2) + ":1");
+    }
+
+    // =========================================================================
+    //  16. The editor
     // =========================================================================
     void testEditor()
     {
-        section ("13. editor");
+        section ("16. editor");
 
         EdgeAudioProcessor p;
         applyBusySettings (p);
@@ -1719,6 +2049,9 @@ int main()
     testGestures();
     testEdgeTravel();
     testSemanticLabels();
+    testAnalyzer();
+    testInspectorPlacement();
+    testPalette();
     testEditor();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

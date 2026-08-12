@@ -20,18 +20,16 @@ namespace edge::ui
         constexpr float kDiamondRadius = 3.5f;
         constexpr float kGrabRadius = 11.0f;
 
-        //  Display smoothing. Electronic music is dense and percussive; a fast
-        //  rise with a slow fall reads as "what is there" rather than as a
-        //  flickering hedge.
-        constexpr float kRise = 0.55f;
-        constexpr float kFall = 0.12f;
+        //  Analyzer constants, v0.13. Time-based ballistics (35 ms attack,
+        //  220 ms release), 96 log bands over 20 Hz - 20 kHz, a visible range
+        //  of 0 to -66 dBFS with a fade to nothing by -84. Display gating
+        //  only - the audio is untouched.
         constexpr float kFloorDb = -96.0f;
-
-        //  Display gating for the analyzer - NOT an audio gate. Content fades
-        //  out below -66 dBFS and is not drawn at all at -84, which removes the
-        //  writhing low-level hedge without touching anything audible.
         constexpr float kSpectrumFadeDb = -66.0f;
         constexpr float kSpectrumGateDb = -84.0f;
+        constexpr float kAttackSeconds  = 0.035f;
+        constexpr float kReleaseSeconds = 0.220f;
+        constexpr float kSpecMinHz = 20.0f, kSpecMaxHz = 20000.0f;
     }
 
     CurveView::CurveView (EdgeAudioProcessor& p) : processor (p)
@@ -130,45 +128,71 @@ namespace edge::ui
 
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
         const float binHz = (float) (sr / fftSize);
-        const float norm = 2.0f / (float) fftSize;
+
+        //  Two calibrations against the Hann window, and the louder wins.
+        //
+        //    - kSumNorm: from Parseval, the amplitude a band's summed POWER
+        //      implies. Right for broadband content.
+        //    - kPeakNorm: the amplitude the strongest single bin implies
+        //      (coherent gain 0.5). Right for a tone, whose main lobe a narrow
+        //      low band cannot contain - the sum there under-reads, the peak
+        //      does not. Worst case is the 1.4 dB Hann scalloping loss.
+        const float kSumNorm  = std::sqrt (32.0f / 3.0f) / (float) fftSize;
+        const float kPeakNorm = 4.0f / (float) fftSize;
 
         for (int b = 0; b < numBands; ++b)
         {
-            //  Log-spaced bands. Each takes the peak of the bins it covers, so
-            //  a narrow tone does not vanish into an average at the top end.
-            const float f0 = metric::displayMinHz
-                * std::pow (metric::displayMaxHz / metric::displayMinHz,
-                            (float) b / (float) numBands);
-            const float f1 = metric::displayMinHz
-                * std::pow (metric::displayMaxHz / metric::displayMinHz,
-                            (float) (b + 1) / (float) numBands);
+            const float f0 = kSpecMinHz * std::pow (kSpecMaxHz / kSpecMinHz,
+                                                    (float) b / (float) numBands);
+            const float f1 = kSpecMinHz * std::pow (kSpecMaxHz / kSpecMinHz,
+                                                    (float) (b + 1) / (float) numBands);
 
             const int k0 = juce::jlimit (1, fftSize / 2 - 1, (int) (f0 / binHz));
             const int k1 = juce::jlimit (k0, fftSize / 2 - 1, (int) (f1 / binHz));
 
-            //  Aggregate POWER across the band's bins, not the loudest bin.
-            //  Peak-picking meant one noisy bin set the whole band, which is
-            //  most of the low-level visual noise this display had.
-            float power = 0.0f;
+            float power = 0.0f, peak = 0.0f;
             for (int k = k0; k <= k1; ++k)
+            {
                 power += scratch[(size_t) k] * scratch[(size_t) k];
+                peak = juce::jmax (peak, scratch[(size_t) k]);
+            }
 
-            const float amplitude = std::sqrt (power / (float) (k1 - k0 + 1));
-            frameDb[(size_t) b] = juce::Decibels::gainToDecibels (amplitude * norm, kFloorDb);
+            const float amplitude = juce::jmax (std::sqrt (power) * kSumNorm,
+                                                peak * kPeakNorm);
+            frameDb[(size_t) b] = juce::Decibels::gainToDecibels (amplitude, kFloorDb);
         }
 
-        //  Restrained smoothing ACROSS adjacent display bands, then the
-        //  fast-rise / slow-fall smoothing in time. Order matters: smoothing
-        //  the already-slewed values would smear attacks sideways.
+        //  Spatial smoothing, radius 2 bands (1-2-3-2-1 kernel), BEFORE the
+        //  temporal ballistics so attacks are not smeared sideways.
+        //  Then 35 ms attack / 220 ms release, from real elapsed time.
+        const auto now = juce::Time::getMillisecondCounter();
+        const float dt = lastSpectrumMs == 0 ? 0.033f
+                        : juce::jlimit (0.001f, 0.5f, (float) (now - lastSpectrumMs) * 0.001f);
+        lastSpectrumMs = now;
+
+        const float aAtk = 1.0f - std::exp (-dt / kAttackSeconds);
+        const float aRel = 1.0f - std::exp (-dt / kReleaseSeconds);
+
         for (int b = 0; b < numBands; ++b)
         {
-            const float left   = frameDb[(size_t) juce::jmax (0, b - 1)];
-            const float centre = frameDb[(size_t) b];
-            const float right  = frameDb[(size_t) juce::jmin (numBands - 1, b + 1)];
-            const float smooth = 0.25f * left + 0.5f * centre + 0.25f * right;
+            //  Peak-preserving smoothing, radius 2, in the POWER domain.
+            //  Averaging in dB crushed tones: one lit band among floor-level
+            //  neighbours read (3*(-18) + 6*(-96)) / 9 = -70 dB - a 50 dB lie
+            //  at 10 kHz. A max-combine keeps the band's own level exact and
+            //  gives its neighbours skirts.
+            static constexpr float skirt[5] = { 0.25f, 0.55f, 1.0f, 0.55f, 0.25f };
+
+            float smooth = kFloorDb;
+            for (int o = -2; o <= 2; ++o)
+            {
+                const int idx = juce::jlimit (0, numBands - 1, b + o);
+                smooth = juce::jmax (smooth,
+                                     frameDb[(size_t) idx]
+                                       + juce::Decibels::gainToDecibels (skirt[o + 2]));
+            }
 
             auto& slot = bandDb[(size_t) b];
-            slot += (smooth > slot ? kRise : kFall) * (smooth - slot);
+            slot += (smooth > slot ? aAtk : aRel) * (smooth - slot);
         }
 
         return true;
@@ -178,8 +202,16 @@ namespace edge::ui
     {
         pullAudio();
 
-        if (updateSpectrumData())
-            spectrumDirty = true;
+        //  The analyzer holds its own 30 Hz clock: interaction lifts the
+        //  timer to 60 Hz for the response, and the spectrum must not follow
+        //  it up - its ballistics are tuned for ~33 ms frames.
+        const auto tickNow = juce::Time::getMillisecondCounter();
+        if (tickNow - lastSpectrumTickMs >= 30)
+        {
+            lastSpectrumTickMs = tickNow;
+            if (updateSpectrumData())
+                spectrumDirty = true;
+        }
 
         //  One coherent snapshot per tick. The revision moves exactly when the
         //  geometry moved - the engine decides, not a hash of a subset here.
@@ -252,8 +284,9 @@ namespace edge::ui
 
     void CurveView::updateSpectrumPath()
     {
-        //  Drawn from the smoothed bands, not from raw bins - and on its own
-        //  clock: a new FFT frame rebuilds this and nothing else.
+        //  The analyzer has its OWN vertical scale: 0 dBFS at the top of the
+        //  plot, -66 at the bottom, faded to nothing by -84. It is a signal
+        //  meter behind a transfer function, not a curve on the response axes.
         spectrumPoints.clear();
 
         if (haveSpectrum)
@@ -261,21 +294,16 @@ namespace edge::ui
             for (int b = 0; b < numBands; ++b)
             {
                 const float db = bandDb[(size_t) b];
-
-                //  Nothing at or below the gate; a fade up to full between the
-                //  gate and the fade threshold.
                 const float alpha = juce::jlimit (0.0f, 1.0f,
                                                   (db - kSpectrumGateDb)
                                                       / (kSpectrumFadeDb - kSpectrumGateDb));
 
-                const float f = metric::displayMinHz
-                    * std::pow (metric::displayMaxHz / metric::displayMinHz,
-                                (float) b / (float) (numBands - 1));
+                const float f = kSpecMinHz * std::pow (kSpecMaxHz / kSpecMinHz,
+                                                       ((float) b + 0.5f) / (float) numBands);
+                const float t = juce::jlimit (0.0f, 1.0f, -db / 66.0f);
 
                 spectrumPoints.push_back (
-                    { xForHz (f),
-                      yForDb (juce::jmax (metric::displayBottomDb - 4.0f, db)),
-                      alpha });
+                    { xForHz (f), plot.getY() + t * plot.getHeight(), alpha });
             }
         }
 
@@ -368,6 +396,25 @@ namespace edge::ui
                  << sep << (gain > 0 ? "+" : "") << juce::String (gain, 1) << " dB";
 
         return text;
+    }
+
+    float CurveView::responseLengthInside (juce::Rectangle<float> area) const noexcept
+    {
+        //  Walk the cached path in ~4 px steps and add up what falls inside.
+        const float total = currentPath.getLength();
+        float inside = 0.0f;
+
+        for (float d = 0.0f; d < total; d += 4.0f)
+            if (area.contains (currentPath.getPointAlongPath (d)))
+                inside += 4.0f;
+
+        return inside;
+    }
+
+    juce::Rectangle<int> CurveView::readoutBounds() const noexcept
+    {
+        //  Matches the box paint() draws, with a conservative width.
+        return { (int) plot.getX() + 8, (int) plot.getBottom() - 30, 260, 22 };
     }
 
     void CurveView::setFreeMode (bool shouldBeFree)
@@ -667,8 +714,13 @@ namespace edge::ui
         auto frame = getLocalBounds().toFloat().reduced (1.0f);
         g.setColour (colour::graph);
         g.fillRoundedRectangle (frame, metric::radiusLarge);
-        g.setColour (colour::panelEdge.withAlpha (0.8f));
+
+        //  The seam between chassis and instrument: a 1 px light border
+        //  outside, a 1 px white-at-7 % highlight inside.
+        g.setColour (colour::shellShadow);
         g.drawRoundedRectangle (frame.reduced (0.5f), metric::radiusLarge, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.07f));
+        g.drawRoundedRectangle (frame.reduced (1.5f), metric::radiusLarge - 1.0f, 1.0f);
 
         //  Nothing is rebuilt in paint: the timer owns invalidation, paint
         //  only draws what is cached. (First paint before the first tick still
@@ -706,13 +758,25 @@ namespace edge::ui
         const auto& shape = snap.currentCentre;
 
         // --- spectrum: above the grid, below every response curve -------------
-        //  Per-segment opacity: full above -66 dBFS, fading to nothing at -84,
-        //  and no line at all below that. No fill under it - the analyzer is a
-        //  reading, not a shape.
+        //  1 px line at 24 %, a 10 % fill underneath, nothing brighter than
+        //  30 %, and a fade to zero between -66 and -84 dBFS.
         if (spectrumPoints.size() > 1)
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.toNearestInt());
+
+            //  Fill first, one path, gated segments dropped to the floor.
+            juce::Path fillPath;
+            fillPath.startNewSubPath (spectrumPoints.front().x, plot.getBottom());
+
+            for (const auto& pt : spectrumPoints)
+                fillPath.lineTo (pt.x, pt.alpha > 0.01f ? pt.y : plot.getBottom());
+
+            fillPath.lineTo (spectrumPoints.back().x, plot.getBottom());
+            fillPath.closeSubPath();
+
+            g.setColour (colour::spectrum.withAlpha (0.10f));
+            g.fillPath (fillPath);
 
             for (size_t i = 1; i < spectrumPoints.size(); ++i)
             {
@@ -723,7 +787,7 @@ namespace edge::ui
                 if (alpha <= 0.01f)
                     continue;
 
-                g.setColour (colour::spectrum.withAlpha (0.22f * alpha));
+                g.setColour (colour::spectrum.withAlpha (juce::jmin (0.30f, 0.24f * alpha)));
                 g.drawLine (a.x, a.y, b.x, b.y, 1.0f);
             }
         }
@@ -744,7 +808,7 @@ namespace edge::ui
             const float dashes[] = { 5.0f, 4.0f };
             juce::PathStrokeType (1.25f).createDashedStroke (dashed, targetPath, dashes, 2);
 
-            g.setColour (colour::text.withAlpha (0.28f));
+            g.setColour (colour::target.withAlpha (0.75f));
             g.fillPath (dashed);
         }
 
@@ -759,16 +823,32 @@ namespace edge::ui
             g.strokePath (rightPath, { 1.0f, juce::PathStrokeType::curved });
         }
 
-        // --- current response: 2.25 px, full opacity, nothing behind it -------
-        //  The area fill and the 6 px glow are gone: the response line is the
-        //  focal point, and decoration under it only diluted that.
+        // --- current response: neutral ice-white, 2.25 px ---------------------
+        //  Band identity comes from a 28 px wash of amber or cyan around each
+        //  edge's OWN handle - never from interpolating the two across the
+        //  whole curve, which is where the muddy green came from.
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.expanded (0.0f, 6.0f).toNearestInt());
 
-            g.setGradientFill ({ colour::low, plot.getX(), 0.0f,
-                                 colour::high, plot.getRight(), 0.0f, false });
+            g.setColour (colour::response);
             g.strokePath (currentPath, { 2.25f, juce::PathStrokeType::curved });
+
+            auto tintNear = [&] (Grab which, juce::Colour accent)
+            {
+                if (! isHandleLive (which))
+                    return;
+
+                const float x = handlePosition (which).x;
+                juce::Graphics::ScopedSaveState tintClip (g);
+                g.reduceClipRegion (juce::Rectangle<int> ((int) (x - 28.0f), (int) plot.getY(),
+                                                          56, (int) plot.getHeight() + 8));
+                g.setColour (accent);
+                g.strokePath (currentPath, { 2.25f, juce::PathStrokeType::curved });
+            };
+
+            tintNear (Grab::low,  colour::low);
+            tintNear (Grab::high, colour::high);
         }
 
         // --- EDGE PATH ---------------------------------------------------------

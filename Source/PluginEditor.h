@@ -34,6 +34,10 @@ public:
     bool isInspectorVisible() const noexcept { return inspector.isVisible(); }
     void openInspectorForTest (edge::ui::SelectedControl c) { openInspector (c); }
     void closeInspectorForTest() { closeInspector(); }
+    juce::Rectangle<int> testModeSelectorBounds() const
+    {
+        return lpButton.getBounds().getUnion (freeButton.getBounds()).expanded (4);
+    }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -86,6 +90,7 @@ private:
 
     edge::ui::SelectedControl selected = edge::ui::SelectedControl::low;
     juce::Rectangle<int> edgeLabelArea;
+    juce::Rectangle<int> deckArea;
 
     juce::ComponentBoundsConstrainer constrainer;
     juce::String versionText;

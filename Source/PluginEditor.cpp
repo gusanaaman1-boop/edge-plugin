@@ -58,7 +58,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     //  --- header --------------------------------------------------------------
     presetTitle.setText ("PRESET", juce::dontSendNotification);
     presetTitle.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-    presetTitle.setColour (juce::Label::textColourId, colour::textDim);
+    presetTitle.setColour (juce::Label::textColourId, colour::textOnLight.withAlpha (0.65f));
     addAndMakeVisible (presetTitle);
 
     refreshPresetBox();
@@ -84,6 +84,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
 
     biteKnob.attach (*this, state, param::bite, "BITE", colour::low);
     biteKnob.slider.getProperties().set ("valueInside", false);
+    biteKnob.caption.setColour (juce::Label::textColourId, colour::textOnLight.withAlpha (0.75f));
 
     bypassButton.getProperties().set ("accent", (int) colour::low.getARGB());
     bypassButton.getProperties().set ("lamp", true);
@@ -277,8 +278,6 @@ void EdgeAudioProcessorEditor::positionInspector()
 {
     const auto size = inspector.preferredSize();
 
-    //  Anchored to the selected handle when there is one, and to the FOLLOW
-    //  knob otherwise. Above the anchor, notch pointing down at it.
     juce::Point<int> anchor;
 
     if (selected == SelectedControl::follow)
@@ -292,17 +291,70 @@ void EdgeAudioProcessorEditor::positionInspector()
                + curve.testHandlePosition (g).toInt();
     }
 
-    auto bounds = juce::Rectangle<int> (anchor.x - size.x / 2, anchor.y - size.y - 10,
-                                        size.x, size.y);
+    //  Four candidates around the anchor - upper-left, upper-right,
+    //  lower-left, lower-right - scored by what they would cover. The hard
+    //  rules (handle, mode selector, readout, graph edge) disqualify; the
+    //  response-path length inside breaks ties.
+    const auto graphInset = curve.getBounds().reduced (metric::margin);
+    const auto handleRect = juce::Rectangle<int> (anchor.x - 18, anchor.y - 18, 36, 36);
+    const auto modeRect = lpButton.getBounds().getUnion (freeButton.getBounds()).expanded (4);
+    const auto readoutRect = curve.readoutBounds().translated (curve.getX(), curve.getY());
 
-    //  Keep it inside the window; if there is no room above, sit below.
-    if (bounds.getY() < metric::headerHeight + 4)
-        bounds.setY (anchor.y + 14);
+    const juce::Point<int> offsets[] = { { -size.x - 14, -size.y - 14 },
+                                         { 14,           -size.y - 14 },
+                                         { -size.x - 14, 14 },
+                                         { 14,           14 } };
 
-    bounds = bounds.constrainedWithin (getLocalBounds().reduced (4));
+    juce::Rectangle<int> best;
+    float bestScore = 1.0e9f;
+
+    for (const auto& o : offsets)
+    {
+        const juce::Rectangle<int> cand (anchor.x + o.x, anchor.y + o.y, size.x, size.y);
+
+        if (! graphInset.contains (cand))                 continue;   // clipping: 0 px
+        if (cand.intersects (handleRect))                 continue;   // handle: 0 px
+        if (cand.intersects (modeRect))                   continue;   // selector: 0 px
+        if (cand.intersects (readoutRect))                continue;   // readout: 0 px
+
+        const float score = curve.responseLengthInside (
+            (cand - curve.getPosition()).toFloat().expanded (22.0f));
+
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = cand;
+        }
+    }
+
+    //  All four failed: dock in a graph corner - but the dock obeys the same
+    //  hard rules, or a handle near a corner ends up underneath it.
+    if (best.isEmpty())
+    {
+        const juce::Rectangle<int> docks[] = {
+            { graphInset.getRight() - size.x, graphInset.getBottom() - size.y, size.x, size.y },
+            { graphInset.getX(),              readoutRect.getY() - size.y - 6, size.x, size.y },
+            { graphInset.getRight() - size.x, graphInset.getY(),               size.x, size.y },
+            { graphInset.getX(),              graphInset.getY(),               size.x, size.y },
+        };
+
+        for (const auto& dock : docks)
+        {
+            if (! graphInset.contains (dock))        continue;
+            if (dock.intersects (handleRect))        continue;
+            if (dock.intersects (modeRect))          continue;
+            if (dock.intersects (readoutRect))       continue;
+
+            best = dock;
+            break;
+        }
+
+        if (best.isEmpty())
+            best = docks[0];        // last resort, still inside the graph
+    }
 
     inspector.setAnchor (anchor);
-    inspector.setBounds (bounds);
+    inspector.setBounds (best);
 }
 
 bool EdgeAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
@@ -332,21 +384,50 @@ void EdgeAudioProcessorEditor::timerCallback()
 
 void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (colour::chassis);
+    //  v0.13: a light titanium chassis with the dark instrument set into it.
+    //  The flat all-charcoal build made every surface the same value.
+    g.setGradientFill ({ colour::shellHilite, 0.0f, 0.0f,
+                         colour::shellLight, 0.0f, (float) getHeight() * 0.25f, false });
+    g.fillRect (getLocalBounds());
+    g.setColour (colour::shellShadow.withAlpha (0.5f));
+    g.drawHorizontalLine (metric::headerHeight - 1, 0.0f, (float) getWidth());
 
-    //  Wordmark, centred in the header. 22 px semibold; the tracking is the
-    //  explicit spaces, so no font machinery is needed.
-    g.setColour (colour::text);
+    //  Cards: graph shadow y 5 at 20 %, deck shadow y 3 at 16 %, then the deck
+    //  surface itself (the graph paints its own).
+    auto shadow = [&g] (juce::Rectangle<float> b, float dy, float alpha)
+    {
+        juce::Path path;
+        path.addRoundedRectangle (b.translated (0.0f, dy), metric::radiusLarge);
+        g.setColour (juce::Colours::black.withAlpha (alpha));
+        g.fillPath (path);
+    };
+
+    shadow (curve.getBounds().toFloat(), 5.0f, 0.20f);
+
+    if (! deckArea.isEmpty())
+    {
+        shadow (deckArea.toFloat(), 3.0f, 0.16f);
+        g.setColour (colour::deck);
+        g.fillRoundedRectangle (deckArea.toFloat(), metric::radiusLarge);
+        g.setColour (colour::shellShadow.withAlpha (0.6f));
+        g.drawRoundedRectangle (deckArea.toFloat().reduced (0.5f), metric::radiusLarge, 1.0f);
+    }
+
+    //  Wordmark, centred in the header, DARK on the light shell.
+    g.setColour (colour::textOnLight);
     g.setFont (juce::FontOptions (font::wordmark).withStyle ("Bold"));
     g.drawText ("E D G E", getLocalBounds().removeFromTop (metric::headerHeight),
                 juce::Justification::centred, false);
 
-    //  The build, bottom right, dim.
-    g.setColour (colour::textDim.withAlpha (0.55f));
+   #if JUCE_DEBUG
+    //  The build identity is a development aid. Release builds keep it in the
+    //  log and the manual, not painted on the product.
+    g.setColour (colour::textOnLight.withAlpha (0.45f));
     g.setFont (juce::FontOptions (font::tiny));
     g.drawText (versionText,
                 getLocalBounds().removeFromBottom (14).withTrimmedRight (22).withTrimmedLeft (12),
                 juce::Justification::centredRight, false);
+   #endif
 
     //  EDGE's own label, and the CLEAN / CUT endpoints beside the knob.
     if (! edgeKnob.getBounds().isEmpty())
@@ -399,6 +480,7 @@ void EdgeAudioProcessorEditor::resized()
     auto deck = r.removeFromBottom (metric::deckHeight + metric::margin)
                  .withTrimmedBottom (metric::margin)
                  .withTrimmedLeft (metric::margin).withTrimmedRight (metric::margin);
+    deckArea = deck;
 
     {
         auto quarters = deck;

@@ -737,6 +737,12 @@ namespace edge
         for (int c = 0; c < chans; ++c)
             dryBuffer.copyFrom (c, 0, buffer, c, 0, n);
 
+        //  The analyzer shows what ENTERS the plug-in. It used to be fed at
+        //  the end of this function - the output - so a deep cut erased the
+        //  very signal the user was shaping. Pre-filter, from the dry copy,
+        //  before anything touches the buffer.
+        pushAnalyzer (dryBuffer, n);
+
         float* channelPtrs[maxChannels] = { buffer.getWritePointer (0),
                                             chans > 1 ? buffer.getWritePointer (1) : nullptr };
 
@@ -829,7 +835,7 @@ namespace edge
         }
 
 
-        pushAnalyzer (buffer, n);
+
     }
 
 }
