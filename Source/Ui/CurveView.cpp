@@ -18,6 +18,12 @@ namespace edge::ui
         constexpr float kRise = 0.55f;
         constexpr float kFall = 0.12f;
         constexpr float kFloorDb = -96.0f;
+
+        //  Display gating for the analyzer - NOT an audio gate. Content fades
+        //  out below -66 dBFS and is not drawn at all at -84, which removes the
+        //  writhing low-level hedge without touching anything audible.
+        constexpr float kSpectrumFadeDb = -66.0f;
+        constexpr float kSpectrumGateDb = -84.0f;
     }
 
     CurveView::CurveView (EdgeAudioProcessor& p) : processor (p)
@@ -28,6 +34,8 @@ namespace edge::ui
         scratch.assign ((size_t) fftSize * 2, 0.0f);
         window.resize ((size_t) fftSize);
         bandDb.assign ((size_t) numBands, kFloorDb);
+        frameDb.assign ((size_t) numBands, kFloorDb);
+        spectrumPoints.reserve ((size_t) numBands);
 
         for (int i = 0; i < fftSize; ++i)
             window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi
@@ -49,7 +57,10 @@ namespace edge::ui
         auto r = getLocalBounds().toFloat().reduced (4.0f);
         axisGutter = r.removeFromBottom (15.0f);
         plot = r;
-        curvesDirty = true;
+
+        //  Both path families are in component coordinates, so both die here.
+        responseDirty = true;
+        spectrumDirty = true;
     }
 
     float CurveView::xForHz (float hz) const noexcept
@@ -97,10 +108,10 @@ namespace edge::ui
         }
     }
 
-    void CurveView::updateSpectrum()
+    bool CurveView::updateSpectrumData()
     {
         if (! haveSpectrum)
-            return;
+            return false;
 
         //  Unwrap the ring into the FFT workspace, oldest first.
         for (int i = 0; i < fftSize; ++i)
@@ -127,49 +138,76 @@ namespace edge::ui
             const int k0 = juce::jlimit (1, fftSize / 2 - 1, (int) (f0 / binHz));
             const int k1 = juce::jlimit (k0, fftSize / 2 - 1, (int) (f1 / binHz));
 
-            float peak = 0.0f;
+            //  Aggregate POWER across the band's bins, not the loudest bin.
+            //  Peak-picking meant one noisy bin set the whole band, which is
+            //  most of the low-level visual noise this display had.
+            float power = 0.0f;
             for (int k = k0; k <= k1; ++k)
-                peak = juce::jmax (peak, scratch[(size_t) k]);
+                power += scratch[(size_t) k] * scratch[(size_t) k];
 
-            const float db = juce::Decibels::gainToDecibels (peak * norm, kFloorDb);
-            auto& slot = bandDb[(size_t) b];
-            slot += (db > slot ? kRise : kFall) * (db - slot);
+            const float amplitude = std::sqrt (power / (float) (k1 - k0 + 1));
+            frameDb[(size_t) b] = juce::Decibels::gainToDecibels (amplitude * norm, kFloorDb);
         }
+
+        //  Restrained smoothing ACROSS adjacent display bands, then the
+        //  fast-rise / slow-fall smoothing in time. Order matters: smoothing
+        //  the already-slewed values would smear attacks sideways.
+        for (int b = 0; b < numBands; ++b)
+        {
+            const float left   = frameDb[(size_t) juce::jmax (0, b - 1)];
+            const float centre = frameDb[(size_t) b];
+            const float right  = frameDb[(size_t) juce::jmin (numBands - 1, b + 1)];
+            const float smooth = 0.25f * left + 0.5f * centre + 0.25f * right;
+
+            auto& slot = bandDb[(size_t) b];
+            slot += (smooth > slot ? kRise : kFall) * (smooth - slot);
+        }
+
+        return true;
     }
 
     void CurveView::timerCallback()
     {
         pullAudio();
-        updateSpectrum();
 
-        auto& engine = processor.getEngine();
-        const auto s = engine.getDisplayShape();
-        const auto t = engine.getTargetShape();
+        if (updateSpectrumData())
+            spectrumDirty = true;
 
-        //  Cheap change detector: rebuilding four 300-point paths 30 times a
-        //  second when nothing moved is most of the plug-in's idle CPU.
-        const float h = s.lowHz + s.highHz * 3.0f + s.lowDepthDb * 7.0f
-                      + s.highDepthDb * 11.0f + s.lowCurve01 * 13.0f
-                      + s.highCurve01 * 17.0f + s.lowRes01 * 19.0f
-                      + s.highRes01 * 23.0f + s.outputDb * 29.0f
-                      + s.lowShoulderDb * 37.0f + s.highShoulderDb * 41.0f
-                      + t.lowHz * 43.0f + t.highHz * 47.0f + t.lowDepthDb * 53.0f
-                      + engine.getColourTrimDb() * 59.0f;
+        //  One coherent snapshot per tick. The revision moves exactly when the
+        //  geometry moved - the engine decides, not a hash of a subset here.
+        const auto fresh = processor.getEngine().getDisplaySnapshot();
+        const bool geometryMoved = fresh.revision != snap.revision;
+        snap = fresh;
 
-        if (std::abs (h - lastShapeHash) > 1.0e-6f)
+        if (geometryMoved)
+            responseDirty = true;
+
+        if (responseDirty)
+            updateResponsePaths();
+
+        if (spectrumDirty)
+            updateSpectrumPath();
+
+        //  60 Hz while something is happening - a drag, host automation, the
+        //  follower working - and 30 Hz once it has been quiet for a moment.
+        const auto now = juce::Time::getMillisecondCounter();
+        if (geometryMoved || dragging != Grab::none)
+            lastChangeMs = now;
+
+        const int wantHz = (dragging != Grab::none || now - lastChangeMs < 400) ? 60 : 30;
+        if (wantHz != refreshHz)
         {
-            lastShapeHash = h;
-            curvesDirty = true;
+            refreshHz = wantHz;
+            startTimerHz (refreshHz);
         }
 
         repaint();
     }
 
-    void CurveView::buildCurves()
+    void CurveView::updateResponsePaths()
     {
-        auto& engine = processor.getEngine();
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
-        const double colourDb = (double) engine.getColourTrimDb();
+        const double colourDb = (double) snap.colourTrimDb;
         const int points = juce::jmax (64, (int) plot.getWidth());
 
         auto build = [&] (juce::Path& path, const EdgeShape& shape, bool withColour)
@@ -187,13 +225,13 @@ namespace edge::ui
             }
         };
 
-        build (currentPath, engine.getDisplayShape(), true);
-        build (targetPath,  engine.getTargetShape(),  false);
+        build (currentPath, snap.currentCentre, true);
+        build (targetPath,  snap.target,        false);
 
-        if (engine.isSpreadActive())
+        if (snap.spreadActive)
         {
-            build (leftPath,  engine.getDisplayShape (0), true);
-            build (rightPath, engine.getDisplayShape (1), true);
+            build (leftPath,  snap.currentLeft,  true);
+            build (rightPath, snap.currentRight, true);
         }
         else
         {
@@ -201,47 +239,76 @@ namespace edge::ui
             rightPath.clear();
         }
 
-        //  Spectrum. Drawn from the smoothed bands, not from raw bins.
-        spectrumPath.clear();
+        responseDirty = false;
+    }
+
+    void CurveView::updateSpectrumPath()
+    {
+        //  Drawn from the smoothed bands, not from raw bins - and on its own
+        //  clock: a new FFT frame rebuilds this and nothing else.
+        spectrumPoints.clear();
+
         if (haveSpectrum)
         {
             for (int b = 0; b < numBands; ++b)
             {
+                const float db = bandDb[(size_t) b];
+
+                //  Nothing at or below the gate; a fade up to full between the
+                //  gate and the fade threshold.
+                const float alpha = juce::jlimit (0.0f, 1.0f,
+                                                  (db - kSpectrumGateDb)
+                                                      / (kSpectrumFadeDb - kSpectrumGateDb));
+
                 const float f = metric::displayMinHz
                     * std::pow (metric::displayMaxHz / metric::displayMinHz,
                                 (float) b / (float) (numBands - 1));
-                const float x = xForHz (f);
-                const float y = yForDb (juce::jmax (metric::displayBottomDb - 4.0f, bandDb[(size_t) b]));
 
-                if (b == 0) spectrumPath.startNewSubPath (x, y);
-                else        spectrumPath.lineTo (x, y);
+                spectrumPoints.push_back (
+                    { xForHz (f),
+                      yForDb (juce::jmax (metric::displayBottomDb - 4.0f, db)),
+                      alpha });
             }
         }
 
-        curvesDirty = false;
+        spectrumDirty = false;
     }
 
     // -------------------------------------------------------------------------
 
     juce::Point<float> CurveView::handlePosition (Grab which) const noexcept
     {
-        //  The handles are TARGET handles: they sit on the ghost curve, which
-        //  is what dragging them edits. With EDGE at 100 % the two curves
-        //  coincide and the handle sits on the bright line as well.
-        auto t = processor.getEngine().getTargetShape();
-        const float hz = which == Grab::low  ? t.lowHz
-                       : which == Grab::high ? t.highHz
-                                             : t.midHz;
+        //  X comes from the PARAMETER - the single source of truth - so a drag
+        //  moves the handle the same frame the gesture happens, before the
+        //  audio thread has resolved anything. In FREE mode the band has
+        //  travelled, and the handle travels with it.
+        auto* fp = freqParam (which);
+        float hz = fp->convertFrom0to1 (fp->getValue());
+
+        if (std::abs (snap.freeTravelOctaves) > 1.0e-4f)
+            hz *= std::exp2 (snap.freeTravelOctaves);
+
+        hz = juce::jlimit (metric::displayMinHz, metric::displayMaxHz, hz);
+
+        //  Y sits on the ghost (target) curve, which is what dragging edits.
+        //  An EDGE handle sits on the response of the EDGES, with the bell
+        //  taken out: leaving it in meant that touching MID's gain slid the
+        //  LOW and HIGH handles - and their labels - around the display. The
+        //  MID handle keeps the bell, because the bell is what it is showing.
+        auto t = snap.target;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
-        //  An EDGE handle sits on the response of the EDGES, with the bell
-        //  taken out. Leaving it in meant that touching MID's gain slid the LOW
-        //  and HIGH handles - and their labels - up and down the display, which
-        //  reads as the whole layout moving when one unrelated control is
-        //  turned. The MID handle keeps the bell, because the bell is what it
-        //  is showing.
         if (which != Grab::mid)
             t.midGainDb = 0.0f;
+        else
+        {
+            //  While MID itself is being dragged, its gain read from the
+            //  snapshot lags the gesture by one audio chunk. The handle is the
+            //  gesture, so it uses the parameter.
+            auto* gp = processor.getState().getParameter (param::midGain);
+            t.midGainDb = gp->convertFrom0to1 (gp->getValue());
+            t.midHz = hz;
+        }
 
         return { xForHz (hz), yForDb ((float) magnitudeDb (t, sr, hz)) };
     }
@@ -263,12 +330,10 @@ namespace edge::ui
     //  looked like. It is not dimmed now, it is absent.
     bool CurveView::isHandleLive (Grab which) const noexcept
     {
-        const int mode = (int) std::lround (
-            processor.getState().getParameter (param::mode)->convertFrom0to1 (
-                processor.getState().getParameter (param::mode)->getValue()));
-
-        if (which == Grab::low)  return mode != (int) Mode::lowPass;
-        if (which == Grab::high) return mode != (int) Mode::highPass;
+        //  From the snapshot, so the hit test and the drawing agree by
+        //  construction - they read the same field of the same struct.
+        if (which == Grab::low)  return snap.mode != (int) Mode::lowPass;
+        if (which == Grab::high) return snap.mode != (int) Mode::highPass;
 
         return true;      // the bell is never switched off, nor is the band
     }
@@ -353,24 +418,50 @@ namespace edge::ui
         if (hovered != Grab::none) { hovered = Grab::none; repaint(); }
     }
 
+    void CurveView::testBeginDrag (Grab g, juce::Point<float> at)
+    {
+        dragging = g;
+        beginDragInternal (at);
+    }
+
+    void CurveView::testDragTo (juce::Point<float> at)
+    {
+        dragInternal (at);
+    }
+
+    void CurveView::testEndDrag()
+    {
+        endDragInternal();
+    }
+
     void CurveView::mouseDown (const juce::MouseEvent& e)
     {
         dragging = grabAt (e.position);
         if (dragging == Grab::none)
             return;
 
-        //  Touching a handle points the shared knob row at it. This is the
-        //  whole navigation model: there is one set of knobs, and the thing you
-        //  just touched is what they are driving.
+        beginDragInternal (e.position);
+    }
+
+    void CurveView::beginDragInternal (juce::Point<float> at)
+    {
+        //  Touching a handle points the inspector at it. This is the whole
+        //  navigation model: one set of knobs, and the thing you just touched
+        //  is what they are driving. The SELECTION is reported before the
+        //  parameter gesture begins, so the inspector is already showing the
+        //  right band while the drag runs.
         if (dragging != Grab::band)
         {
             setSelected (dragging);
-            if (onHandleSelected)
-                onHandleSelected (dragging);
+
+            if (onSelectionChanged)
+                onSelectionChanged (dragging == Grab::low  ? SelectedControl::low
+                                  : dragging == Grab::high ? SelectedControl::high
+                                                           : SelectedControl::mid);
         }
 
-        dragStartY = e.position.y;
-        dragStartX = e.position.x;
+        dragStartY = at.y;
+        dragStartX = at.x;
 
         auto* lowF  = processor.getState().getParameter (param::lowFreq);
         auto* highF = processor.getState().getParameter (param::highFreq);
@@ -393,6 +484,11 @@ namespace edge::ui
 
     void CurveView::mouseDrag (const juce::MouseEvent& e)
     {
+        dragInternal (e.position);
+    }
+
+    void CurveView::dragInternal (juce::Point<float> at)
+    {
         if (dragging == Grab::none)
             return;
 
@@ -401,7 +497,7 @@ namespace edge::ui
         //  would squash it in the bass and stretch it at the top.
         if (dragging == Grab::band)
         {
-            const float octaves = std::log2 (hzForX (e.position.x) / hzForX (dragStartX));
+            const float octaves = std::log2 (hzForX (at.x) / hzForX (dragStartX));
 
             auto* lowF  = processor.getState().getParameter (param::lowFreq);
             auto* highF = processor.getState().getParameter (param::highFreq);
@@ -424,11 +520,12 @@ namespace edge::ui
                 dragStartLowHz * std::exp2 (limited)));
             highF->setValueNotifyingHost (highF->convertTo0to1 (
                 dragStartHighHz * std::exp2 (limited)));
+            repaint();
             return;
         }
 
         if (auto* fp = freqParam (dragging))
-            fp->setValueNotifyingHost (fp->convertTo0to1 (hzForX (e.position.x)));
+            fp->setValueNotifyingHost (fp->convertTo0to1 (hzForX (at.x)));
 
         if (auto* dp = depthParam (dragging))
         {
@@ -438,21 +535,31 @@ namespace edge::ui
                 //  under the cursor instead of drifting away from it.
                 const float perPixel = (metric::displayTopDb - metric::displayBottomDb)
                                      / juce::jmax (1.0f, plot.getHeight());
-                const float want = dragStartDepth - (e.position.y - dragStartY) * perPixel;
+                const float want = dragStartDepth - (at.y - dragStartY) * perPixel;
                 dp->setValueNotifyingHost (dp->convertTo0to1 (
                     juce::jlimit (-kMidMaxGainDb, kMidMaxGainDb, want)));
             }
             else
             {
-                const float delta = (e.position.y - dragStartY)
+                const float delta = (at.y - dragStartY)
                                   / juce::jmax (1.0f, plot.getHeight()) * 100.0f;
                 dp->setValueNotifyingHost (dp->convertTo0to1 (
                     juce::jlimit (0.0f, 100.0f, dragStartDepth + delta)));
             }
         }
+
+        //  The handles are drawn from the parameters just written, so this
+        //  repaint shows the gesture in the SAME frame - the response curve
+        //  follows one audio chunk later through the snapshot.
+        repaint();
     }
 
     void CurveView::mouseUp (const juce::MouseEvent&)
+    {
+        endDragInternal();
+    }
+
+    void CurveView::endDragInternal()
     {
         if (dragging == Grab::none)
             return;
@@ -496,8 +603,11 @@ namespace edge::ui
         auto frame = getLocalBounds().toFloat().reduced (1.0f);
         paintWell (g, frame, 8.0f);
 
-        if (curvesDirty)
-            buildCurves();
+        //  Nothing is rebuilt in paint: the timer owns invalidation, paint
+        //  only draws what is cached. (First paint before the first tick still
+        //  needs paths.)
+        if (responseDirty)
+            updateResponsePaths();
 
         // --- grid ------------------------------------------------------------
         g.setFont (juce::FontOptions (9.5f));
@@ -526,16 +636,29 @@ namespace edge::ui
                         juce::Justification::left, false);
         }
 
-        auto& engine = processor.getEngine();
-        const auto shape = engine.getDisplayShape();
+        const auto& shape = snap.currentCentre;
 
-        // --- spectrum, behind everything -------------------------------------
-        if (! spectrumPath.isEmpty())
+        // --- spectrum: above the grid, below every response curve -------------
+        //  Per-segment opacity: full above -66 dBFS, fading to nothing at -84,
+        //  and no line at all below that. No fill under it - the analyzer is a
+        //  reading, not a shape.
+        if (spectrumPoints.size() > 1)
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.toNearestInt());
-            g.setColour (colour::spectrum.withAlpha (0.34f));
-            g.strokePath (spectrumPath, { 1.0f, juce::PathStrokeType::curved });
+
+            for (size_t i = 1; i < spectrumPoints.size(); ++i)
+            {
+                const auto& a = spectrumPoints[i - 1];
+                const auto& b = spectrumPoints[i];
+                const float alpha = 0.5f * (a.alpha + b.alpha);
+
+                if (alpha <= 0.01f)
+                    continue;
+
+                g.setColour (colour::spectrum.withAlpha (0.34f * alpha));
+                g.drawLine (a.x, a.y, b.x, b.y, 1.0f);
+            }
         }
 
         // --- target (ghost) --------------------------------------------------
@@ -614,7 +737,7 @@ namespace edge::ui
         }
 
         // --- handles ----------------------------------------------------------
-        const auto target = engine.getTargetShape();
+        const auto& target = snap.target;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
         auto drawHandle = [&] (Grab which, juce::Colour accentIn, const juce::String& name)
@@ -644,7 +767,7 @@ namespace edge::ui
             //  a short tick on the solid curve at the same frequency says which
             //  one the handle is going to become.
             {
-                auto live = processor.getEngine().getDisplayShape();
+                auto live = snap.currentCentre;
                 const float hz = which == Grab::low  ? target.lowHz
                                : which == Grab::high ? target.highHz
                                                      : target.midHz;
@@ -653,7 +776,7 @@ namespace edge::ui
                     live.midGainDb = 0.0f;
 
                 const float liveY = yForDb ((float) (magnitudeDb (live, sr, hz)
-                                                     + engine.getColourTrimDb()));
+                                                     + snap.colourTrimDb));
 
                 if (std::abs (liveY - pos.y) > 6.0f)
                 {

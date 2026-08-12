@@ -6,77 +6,134 @@
 
 namespace edge::ui
 {
-    void ShapePanel::Slot::create (juce::Component& parent)
+    void ShapePanel::Knob::init (juce::Component& parent,
+                                 juce::AudioProcessorValueTreeState& apvts,
+                                 const char* id, const juce::String& text,
+                                 juce::Colour accent)
     {
+        paramID = id;
+
         slider.getProperties().set ("ticks", true);
+        slider.getProperties().set ("accent", (int) accent.getARGB());
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                     juce::MathConstants<float>::pi * 2.75f, true);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, metric::pillRow);
         parent.addAndMakeVisible (slider);
 
+        caption.setText (text, juce::dontSendNotification);
         caption.setJustificationType (juce::Justification::centred);
         caption.setColour (juce::Label::textColourId, colour::textDim);
         caption.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
         parent.addAndMakeVisible (caption);
-    }
 
-    void ShapePanel::Slot::point (juce::AudioProcessorValueTreeState& apvts, const char* id,
-                                  const juce::String& text, juce::Colour accent)
-    {
-        //  Destroy the old attachment FIRST. Two attachments alive on one
-        //  slider both write to it, and the second one to fire wins - so the
-        //  knob would jump back to the previous band's value on any move.
-        attachment.reset();
-
-        const bool used = id != nullptr;
-        slider.setVisible (used);
-        caption.setVisible (used);
-
-        if (! used)
-            return;
-
-        slider.getProperties().set ("accent", (int) accent.getARGB());
-        caption.setText (text, juce::dontSendNotification);
-
+        //  Built once, for the life of the editor. APVTS stays the single
+        //  source of truth; the attachment is only the wire.
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            apvts, id, slider);
+            apvts, paramID, slider);
 
-        if (auto* p = apvts.getParameter (id))
+        if (auto* p = apvts.getParameter (paramID))
             slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
     }
 
     //  The same rhythm the main strip uses - knob, pill, caption - so the two
     //  halves of the plug-in line up with each other.
-    void ShapePanel::Slot::setBounds (juce::Rectangle<int> r)
+    void ShapePanel::Knob::setBounds (juce::Rectangle<int> r)
     {
         caption.setBounds (r.removeFromBottom (metric::captionRow));
         r.removeFromBottom (metric::rowGap);
         slider.setBounds (r);
     }
 
+    void ShapePanel::BandPanel::resized()
+    {
+        auto r = getLocalBounds();
+
+        //  Sized from the HEIGHT so these knobs match the main strip's, and
+        //  centred so a three-knob panel does not leave a hole on the right.
+        const int forHeight = r.getHeight() - metric::pillRow - metric::rowGap
+                                            - metric::captionRow;
+        const int knob = juce::jlimit (46, 78,
+                                       juce::jmin (forHeight, r.getWidth() / 6));
+        constexpr int gap = 14;
+
+        const int used = (int) knobs.size();
+        const int rowHeight = knob + metric::pillRow + metric::rowGap + metric::captionRow;
+
+        auto row = r.withSizeKeepingCentre (knob * used + gap * juce::jmax (0, used - 1),
+                                            juce::jmin (r.getHeight(), rowHeight));
+
+        for (auto& k : knobs)
+        {
+            k->setBounds (row.removeFromLeft (knob));
+            row.removeFromLeft (gap);
+        }
+    }
+
     ShapePanel::ShapePanel (juce::AudioProcessorValueTreeState& s) : state (s)
     {
-        for (auto& slot : slots)
-            slot.create (*this);
+        //  All four panels and every attachment exist from here on. Selection
+        //  is pure visibility.
+        struct Entry { const char* id; const char* caption; };
 
-        struct { juce::TextButton* button; Band band; juce::Colour accent; } tabs[] = {
-            { &lowButton,    Band::low,    colour::low },
-            { &midButton,    Band::mid,    colour::textBright },
-            { &highButton,   Band::high,   colour::high },
-            { &followButton, Band::follow, colour::text },
+        auto buildPanel = [this] (SelectedControl which,
+                                  std::initializer_list<Entry> entries, juce::Colour accent)
+        {
+            auto& panel = panelFor (which);
+
+            for (const auto& e : entries)
+            {
+                auto k = std::make_unique<Knob>();
+                k->init (panel, state, e.id, e.caption, accent);
+                panel.knobs.push_back (std::move (k));
+            }
+
+            addChildComponent (panel);
         };
 
-        for (auto& t : tabs)
+        buildPanel (SelectedControl::low,
+                    { { param::lowFreq, "FREQ" }, { param::lowDepth, "DEPTH" },
+                      { param::lowCurve, "CURVE" }, { param::lowShoulder, "SHOULDER" },
+                      { param::lowReso, "RESO" } },
+                    colour::low);
+
+        buildPanel (SelectedControl::high,
+                    { { param::highFreq, "FREQ" }, { param::highDepth, "DEPTH" },
+                      { param::highCurve, "CURVE" }, { param::highShoulder, "SHOULDER" },
+                      { param::highReso, "RESO" } },
+                    colour::high);
+
+        //  The MID band is neither edge, so it is drawn in the neutral colour:
+        //  a third accent would stop "orange means low, cyan means high" from
+        //  being true. The follower likewise.
+        buildPanel (SelectedControl::mid,
+                    { { param::midFreq, "FREQ" }, { param::midGain, "GAIN" },
+                      { param::midReso, "RESO" } },
+                    colour::textBright);
+
+        buildPanel (SelectedControl::follow,
+                    { { param::followSens, "SENS" }, { param::followAttack, "ATTACK" },
+                      { param::followRelease, "RELEASE" } },
+                    colour::text);
+
+        struct Tab { juce::TextButton* button; SelectedControl which; juce::Colour accent; };
+        const Tab tabs[] = {
+            { &lowButton,    SelectedControl::low,    colour::low },
+            { &midButton,    SelectedControl::mid,    colour::textBright },
+            { &highButton,   SelectedControl::high,   colour::high },
+            { &followButton, SelectedControl::follow, colour::text },
+        };
+
+        for (const auto& t : tabs)
         {
             t.button->setClickingTogglesState (false);
             t.button->getProperties().set ("accent", (int) t.accent.getARGB());
 
-            const auto b = t.band;
-            t.button->onClick = [this, b]
+            const auto which = t.which;
+            t.button->onClick = [this, which]
             {
-                setBand (b);
-                if (onBandChanged)
-                    onBandChanged (b);
+                setSelected (which);
+                if (onSelectionChanged)
+                    onSelectionChanged (which);
             };
 
             addAndMakeVisible (*t.button);
@@ -86,78 +143,39 @@ namespace edge::ui
         linkButton.onClick = [this] { if (onLinkChanged) onLinkChanged(); };
         addAndMakeVisible (linkButton);
 
-        rebuildRow();
+        setSelected (SelectedControl::low);
+        panelFor (SelectedControl::low).setVisible (true);
     }
 
-    void ShapePanel::setBand (Band b)
+    void ShapePanel::setSelected (SelectedControl which)
     {
-        if (b == band)
-            return;
+        //  Visibility only. Nothing is destroyed, nothing is allocated, and a
+        //  selection change in the middle of a drag cannot touch the gesture.
+        selected = which;
 
-        band = b;
-        rebuildRow();
-        resized();
-        repaint();
-    }
+        for (int i = 0; i < kNumSelectable; ++i)
+            panels[(size_t) i].setVisible (i == (int) which);
 
-    void ShapePanel::rebuildRow()
-    {
-        //  Five slots, and each band fills as many as it has. LOW and HIGH take
-        //  the frequency with them, which they never had before - there was
-        //  nowhere to put it, and it had to be dragged on the display.
-        struct Entry { const char* id; const char* caption; };
-        Entry row[numSlots] = {};
-        juce::Colour accent = colour::text;
-
-        switch (band)
-        {
-            case Band::low:
-                row[0] = { param::lowFreq,     "FREQ" };
-                row[1] = { param::lowDepth,    "DEPTH" };
-                row[2] = { param::lowCurve,    "CURVE" };
-                row[3] = { param::lowShoulder, "SHOULDER" };
-                row[4] = { param::lowReso,     "RESO" };
-                accent = colour::low;
-                break;
-
-            case Band::high:
-                row[0] = { param::highFreq,     "FREQ" };
-                row[1] = { param::highDepth,    "DEPTH" };
-                row[2] = { param::highCurve,    "CURVE" };
-                row[3] = { param::highShoulder, "SHOULDER" };
-                row[4] = { param::highReso,     "RESO" };
-                accent = colour::high;
-                break;
-
-            //  The MID band is neither edge, so it is drawn in the neutral
-            //  colour: a third accent would stop "orange means low, cyan means
-            //  high" from being true.
-            case Band::mid:
-                row[0] = { param::midFreq, "FREQ" };
-                row[1] = { param::midGain, "GAIN" };
-                row[2] = { param::midReso, "RESO" };
-                accent = colour::textBright;
-                break;
-
-            case Band::follow:
-                row[0] = { param::followSens,    "SENS" };
-                row[1] = { param::followAttack,  "ATTACK" };
-                row[2] = { param::followRelease, "RELEASE" };
-                accent = colour::text;
-                break;
-        }
-
-        for (int i = 0; i < numSlots; ++i)
-            slots[i].point (state, row[i].id, row[i].caption, accent);
-
-        lowButton.setToggleState    (band == Band::low,    juce::dontSendNotification);
-        midButton.setToggleState    (band == Band::mid,    juce::dontSendNotification);
-        highButton.setToggleState   (band == Band::high,   juce::dontSendNotification);
-        followButton.setToggleState (band == Band::follow, juce::dontSendNotification);
+        lowButton.setToggleState    (which == SelectedControl::low,    juce::dontSendNotification);
+        midButton.setToggleState    (which == SelectedControl::mid,    juce::dontSendNotification);
+        highButton.setToggleState   (which == SelectedControl::high,   juce::dontSendNotification);
+        followButton.setToggleState (which == SelectedControl::follow, juce::dontSendNotification);
 
         //  LINK couples the two edge frequencies. It means nothing on MID or on
         //  the follower, so it is not offered there.
-        linkButton.setVisible (band == Band::low || band == Band::high);
+        linkButton.setVisible (which == SelectedControl::low || which == SelectedControl::high);
+
+        repaint();
+    }
+
+    juce::Slider* ShapePanel::sliderFor (const juce::String& paramID) noexcept
+    {
+        for (auto& panel : panels)
+            for (auto& k : panel.knobs)
+                if (k->paramID == paramID)
+                    return &k->slider;
+
+        return nullptr;
     }
 
     void ShapePanel::paint (juce::Graphics& g)
@@ -185,37 +203,8 @@ namespace edge::ui
 
         r.removeFromTop (6);
 
-        //  --- the shared row ----------------------------------------------------
-        //  Centred on the panel rather than left-packed, so switching from a
-        //  five-knob band to a three-knob one does not leave a hole on the right.
-        int used = 0;
-        for (auto& slot : slots)
-            if (slot.slider.isVisible())
-                ++used;
-
-        //  Sized from the HEIGHT, not the width. The row is five knobs wide at
-        //  most and the panel is far wider than that, so a width-derived size
-        //  produced knobs floating in the middle of a tall empty box - which is
-        //  exactly what it looked like. This makes them the same size as the
-        //  ones in the main strip, which is the point of a shared rhythm.
-        const int forHeight = r.getHeight() - metric::pillRow - metric::rowGap
-                                            - metric::captionRow;
-        const int knob = juce::jlimit (46, 78,
-                                       juce::jmin (forHeight,
-                                                   r.getWidth() / (numSlots + 1)));
-        constexpr int gap = 14;
-
-        const int rowHeight = knob + metric::pillRow + metric::rowGap + metric::captionRow;
-        auto row = r.withSizeKeepingCentre (knob * used + gap * juce::jmax (0, used - 1),
-                                            juce::jmin (r.getHeight(), rowHeight));
-
-        for (auto& slot : slots)
-        {
-            if (! slot.slider.isVisible())
-                continue;
-
-            slot.setBounds (row.removeFromLeft (knob));
-            row.removeFromLeft (gap);
-        }
+        //  All four panels share the same rectangle; only one is visible.
+        for (auto& panel : panels)
+            panel.setBounds (r);
     }
 }

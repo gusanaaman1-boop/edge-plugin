@@ -58,11 +58,55 @@ EDGE host-contract suite
   [PASS] a repository build carries a real git description          v0.9
   [PASS] the log records the exact build                            written to EDGE.log
 
-== 8. editor ==
+== 8. display invalidation ==
+  [PASS] MID gain change redraws the response, no other touch       path changed
+  [PASS] MID freq change redraws the response, no other touch       path changed
+  [PASS] MID changes leave LOW/HIGH handle x alone                  dLow 0.0000 px, dHigh 0.0000 px
+  [PASS] MID reso change redraws the response                       path changed
+
+== 9. control matrix ==
+  [PASS] low.freq -> 340.0                                          response moved
+  [PASS] low.depth -> 90.0                                          response moved
+  [PASS] low.curve -> 80.0                                          response moved
+  [PASS] low.shoulder -> 60.0                                       response moved
+  [PASS] low.reso -> 70.0                                           response moved
+  [PASS] high.freq -> 3400.0                                        response moved
+  [PASS] high.depth -> 95.0                                         response moved
+  [PASS] high.curve -> 85.0                                         response moved
+  [PASS] high.shoulder -> 50.0                                      response moved
+  [PASS] high.reso -> 65.0                                          response moved
+  [PASS] mid.freq -> 900.0                                          response moved
+  [PASS] mid.gain -> 14.0                                           response moved
+  [PASS] mid.gain -> -12.0                                          response moved
+  [PASS] mid.reso -> 85.0                                           response moved
+  [PASS] edge -> 85.0                                               response moved
+  [PASS] follow -> -60.0                                            response moved
+  [PASS] spread -> 70.0                                             response static
+  [PASS] mode -> 0.0                                                response moved
+  [PASS] bite -> 95.0                                               response moved
+  [PASS] character -> 1.0                                           response moved
+  [PASS] output -> 6.0                                              response moved
+  [PASS] bypass -> 1.0                                              response static
+  [PASS] target path exists                                         yes
+  [PASS] SPREAD 0 reports inactive (channels null)                  inactive
+
+== 10. gestures and selection ==
+  [PASS] touching MID selects the MID inspector before the gesture  selected
+  [PASS] MID horizontal drag lowers mid.freq                        519.4 Hz
+  [PASS] horizontal drag leaves mid.gain alone                      5.00 dB
+  [PASS] MID handle x tracks the drag within the same frame         0.000 px
+  [PASS] MID drag up increases gain (peak)                          15.8 dB
+  [PASS] MID drag down goes negative (notch)                        -16.6 dB
+  [PASS] refresh is 60 Hz while dragging                            16 ms interval
+  [PASS] refresh drops to 30 Hz when idle                           33 ms interval
+  [PASS] handle x within 1 px of its parameter frequency            0.000 px  0.000 px  0.000 px  
+  [PASS] panel selection switches without destroying sliders        attachments alive
+
+== 11. editor ==
   [PASS] 20 editor open/close cycles with audio running             no crash, no leak
   [PASS] every size x scale lays out and paints                     12 of 12
   [PASS] no control is clipped by its parent                        0
   [PASS] no two controls share pixels                               0
   [PASS] no control is laid out with zero size                      0
 
-49 checks, 0 failed
+87 checks, 0 failed

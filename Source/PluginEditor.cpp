@@ -181,26 +181,14 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
 
     //  One selection, two places to change it. Touching a handle repoints the
     //  knob row; picking a band in the row highlights the handle.
-    shape.onBandChanged = [this] (Band b)
-    {
-        curve.setSelected (b == Band::low  ? CurveView::Grab::low
-                         : b == Band::high ? CurveView::Grab::high
-                         : b == Band::mid  ? CurveView::Grab::mid
-                                           : CurveView::Grab::none);
-    };
+    //  ONE selection, owned here. Both views report changes up; this is the
+    //  only place that writes it back down, so they can never disagree.
+    shape.onSelectionChanged = [this] (SelectedControl c) { applySelection (c, false); };
+    curve.onSelectionChanged = [this] (SelectedControl c) { applySelection (c, true); };
 
-    curve.onHandleSelected = [this] (CurveView::Grab g)
-    {
-        //  Grabbing a handle with SHAPE closed is a request to edit that band,
-        //  so the panel opens rather than silently repointing knobs nobody can
-        //  see.
-        if (! shape.isVisible())
-            setShapeOpen (true);
-
-        shape.setBand (g == CurveView::Grab::low  ? Band::low
-                     : g == CurveView::Grab::high ? Band::high
-                                                  : Band::mid);
-    };
+    //  Clicking the main FOLLOW knob selects FOLLOW in the inspector - the
+    //  detector's setup lives there and this is how you reach it.
+    followKnob.slider.onDragStart = [this] { applySelection (SelectedControl::follow, false); };
 
     //  Show the git description when it differs from the plain version - that
     //  is a build between releases, and the difference is exactly what matters
@@ -333,6 +321,23 @@ int EdgeAudioProcessorEditor::controlStripHeight() const noexcept
 {
     const int usable = getHeight() - (shape.isVisible() ? metric::shapeHeight : 0);
     return juce::jlimit (150, 210, usable / 3);
+}
+
+//  The single write path for the selection. `fromGraph` decides the chosen
+//  behaviour for a closed panel: a graph gesture OPENS it - grabbing a handle
+//  is a request to edit that band, and silently repointing knobs nobody can
+//  see helps nobody.
+void EdgeAudioProcessorEditor::applySelection (edge::ui::SelectedControl c, bool fromGraph)
+{
+    if (fromGraph && ! shape.isVisible())
+        setShapeOpen (true);
+
+    shape.setSelected (c);
+
+    curve.setSelected (c == SelectedControl::low  ? CurveView::Grab::low
+                     : c == SelectedControl::high ? CurveView::Grab::high
+                     : c == SelectedControl::mid  ? CurveView::Grab::mid
+                                                  : CurveView::Grab::none);
 }
 
 void EdgeAudioProcessorEditor::paint (juce::Graphics& g)

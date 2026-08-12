@@ -19,6 +19,8 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -54,6 +56,49 @@ namespace edge
     };
 
     double magnitudeDb (const EdgeShape& shape, double sampleRate, double freqHz) noexcept;
+
+    //  Everything the display needs, as ONE coherent value.
+    //
+    //  The previous scheme published ~40 independent relaxed atomics and let
+    //  the editor decide what had changed by hashing a subset of them - which
+    //  is how a MID drag could leave a stale curve on screen until an unrelated
+    //  control was touched. Now the audio thread publishes this struct as a
+    //  unit, bumps `revision` only when the content actually changed, and the
+    //  editor's whole question is "is your revision mine?".
+    struct DisplaySnapshot
+    {
+        //  --- geometry: everything a response path is built from --------------
+        //  `revision` advances only when THIS region changes, so the editor
+        //  rebuilds its paths exactly when a curve moved and never because a
+        //  meter ticked.
+        EdgeShape target;          // EDGE at 100 % - the ghost curve, the handles
+        EdgeShape currentCentre;   // now, without SPREAD - the solid curve
+        EdgeShape currentLeft;     // now, per channel - the faint traces
+        EdgeShape currentRight;
+
+        float colourTrimDb = 0.0f;
+        float resonanceTrimDb = 0.0f;
+        float outputDb = 0.0f;
+        int   mode = (int) Mode::band;
+        bool  spreadActive = false;
+
+        //  --- live meters: published coherently, excluded from revision -------
+        float liveEdge01 = 0.0f;         // EDGE's resolved position after FOLLOW
+        float followEnv01 = 0.0f;
+        float freeTravelOctaves = 0.0f;
+        float colourEngage01 = 0.0f;
+        float colourGain = 1.0f;
+        float colourDrivePercent = 0.0f;
+
+        //  MUST stay the last member.
+        std::uint64_t revision = 0;
+
+        //  memcmp needs the padding deterministic: value-initialise, always.
+        static constexpr std::size_t geometryBytes() noexcept
+        {
+            return offsetof (DisplaySnapshot, liveEdge01);
+        }
+    };
 
     //  Depth control (0..100 %) -> dB of attenuation. Piecewise linear in dB
     //  through the perceptual table, so the labelled values land exactly where
@@ -144,51 +189,32 @@ namespace edge
         int getOversamplingFactor() const noexcept { return colour.getOversamplingFactor(); }
         void setOversamplingFactor (int f) noexcept { colour.setOversamplingFactor (f); }
 
-        //  --- lock-free display state ----------------------------------------
-        //
-        //  Written on the audio thread, read on the message thread. Each field
-        //  is a plain float; a torn read costs one stale frame of a curve.
+        //  --- display -----------------------------------------------------------
 
-        //  The shape the main curve is drawn from: the CENTRE, with SPREAD's
-        //  per-channel offset left out.
-        //
-        //  It used to return channel 0, which is the LEFT channel - so with
-        //  SPREAD up, the solid curve sat up to half an octave away from the
-        //  handles, and a MID bell would visibly notch somewhere its own handle
-        //  was not. The handles are centre-aligned targets; the curve they
-        //  belong to has to be as well, and the two channels get their own
-        //  faint traces.
-        EdgeShape getDisplayShape() const noexcept;
+        //  The one read path for everything the editor draws. Coherent: either
+        //  the whole snapshot from before a publication, or the whole snapshot
+        //  from after it, never a mixture.
+        DisplaySnapshot getDisplaySnapshot() const noexcept;
 
-        //  The same, for one channel - so the editor can draw the two faint
-        //  L/R traces when SPREAD is doing something.
-        EdgeShape getDisplayShape (int channel) const noexcept;
-
-        //  The TARGET shape: what EDGE at 100 % would produce. Drawn as the
-        //  ghost curve.
-        EdgeShape getTargetShape() const noexcept;
-
-        //  EDGE's resolved position after FOLLOW, 0..1. This is what the big
-        //  knob's ring shows moving when the follower is working.
-        float getLiveEdge01() const noexcept { return dispLiveEdge.load (std::memory_order_relaxed); }
-        float getFollowEnvelope01() const noexcept { return dispFollowEnv.load (std::memory_order_relaxed); }
-        bool  isSpreadActive() const noexcept { return dispSpreadActive.load (std::memory_order_relaxed); }
-
-        //  How far FOLLOW has moved the band's centre, in octaves. Only ever
-        //  non-zero in FREE mode; the editor draws nothing special for it
-        //  because the resolved shape already carries the moved corners.
-        float getFreeTravelOctaves() const noexcept { return dispFreeTravel.load (std::memory_order_relaxed); }
-
-        //  Is the colour engine actually producing anything - what the WARM
-        //  lamp reads, rather than "BITE > 0".
-        bool  isColourEngaged() const noexcept { return dispColourEngage.load (std::memory_order_relaxed) > 0.001f; }
-
-        float getColourDrivePercent() const noexcept { return lastColourDrive.load (std::memory_order_relaxed); }
-        float getResonanceTrimDb() const noexcept { return lastResTrimDb.load (std::memory_order_relaxed); }
-        float getColourTrimDb() const noexcept
+        //  Convenience views over the same snapshot, kept for the measurement
+        //  suite. They are IMPLEMENTED on getDisplaySnapshot(), so there is
+        //  still exactly one source.
+        EdgeShape getDisplayShape() const noexcept    { return getDisplaySnapshot().currentCentre; }
+        EdgeShape getDisplayShape (int channel) const noexcept
         {
-            return juce::Decibels::gainToDecibels (colour.getLevelTrimGain());
+            const auto s = getDisplaySnapshot();
+            return channel == 0 ? s.currentLeft : s.currentRight;
         }
+        EdgeShape getTargetShape() const noexcept     { return getDisplaySnapshot().target; }
+
+        float getLiveEdge01() const noexcept          { return getDisplaySnapshot().liveEdge01; }
+        float getFollowEnvelope01() const noexcept    { return getDisplaySnapshot().followEnv01; }
+        bool  isSpreadActive() const noexcept         { return getDisplaySnapshot().spreadActive; }
+        float getFreeTravelOctaves() const noexcept   { return getDisplaySnapshot().freeTravelOctaves; }
+        bool  isColourEngaged() const noexcept        { return getDisplaySnapshot().colourEngage01 > 0.001f; }
+        float getColourDrivePercent() const noexcept  { return getDisplaySnapshot().colourDrivePercent; }
+        float getResonanceTrimDb() const noexcept     { return getDisplaySnapshot().resonanceTrimDb; }
+        float getColourTrimDb() const noexcept        { return getDisplaySnapshot().colourTrimDb; }
 
         //  --- analyzer feed ---------------------------------------------------
         //
@@ -260,31 +286,35 @@ namespace edge
         juce::AbstractFifo analyzerFifo { kAnalyzerFifoSize };
         std::vector<float> analyzerBuffer;
 
-        std::atomic<float> lastColourDrive { 0.0f };
-        std::atomic<float> lastResTrimDb { 0.0f };
-        std::atomic<float> dispLiveEdge { 0.0f };
-        std::atomic<float> dispFollowEnv { 0.0f };
-        std::atomic<bool>  dispSpreadActive { false };
-        std::atomic<float> dispOutputDb { 0.0f };
-        std::atomic<float> dispColourEngage { 0.0f }, dispColourGain { 1.0f };
-        std::atomic<float> dispFreeTravel { 0.0f };
+        //  --- display publication ---------------------------------------------
+        //
+        //  A seqlock. The audio thread is the only writer: it bumps `snapSeq`
+        //  to odd, copies the struct, bumps back to even. The message thread
+        //  copies the struct between two equal even reads of the sequence, so
+        //  it can never observe half of one publication and half of another.
+        //  No lock, no allocation, and the writer never waits.
+        //
+        //  `snapToSettings` also publishes, from the message thread - but only
+        //  inside prepareToPlay, when the host is not calling processBlock.
+        void publishSnapshot() noexcept;
 
-        //  One published shape per channel, plus the target.
-        struct DisplayShape
+        DisplaySnapshot snapSlot;
+        std::atomic<std::uint64_t> snapSeq { 0 };
+
+        //  Writer-side state: what was last published (for change detection)
+        //  and the pieces assembled between applyChunkShape and the publish.
+        DisplaySnapshot snapPending;
+        std::uint64_t snapRevision = 0;
+        int   lastMode = (int) Mode::band;
+        float lastFollowEnv = 0.0f;
+
+        struct SnapWork
         {
-            std::atomic<float> lowHz { kLowFreqMin }, lowDepthDb { 0.0f };
-            std::atomic<float> lowCurve { 0.5f }, lowRes { 0.0f }, lowShoulderDb { 0.0f };
-            std::atomic<float> highHz { kHighFreqMax }, highDepthDb { 0.0f };
-            std::atomic<float> highCurve { 0.5f }, highRes { 0.0f }, highShoulderDb { 0.0f };
-            std::atomic<float> midHz { 1000.0f }, midGainDb { 0.0f }, midReso { 0.4f };
-
-            void store (const Resolved& r) noexcept;
-            void load (EdgeShape& s) const noexcept;
+            Resolved centre {}, left {}, right {}, target {};
+            float liveEdge01 = 0.0f;
+            bool spreadActive = false;
         };
-
-        DisplayShape dispChannel[maxChannels];
-        DisplayShape dispCentre;
-        DisplayShape dispTarget;
+        SnapWork snapWork;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EdgeEngine)
     };

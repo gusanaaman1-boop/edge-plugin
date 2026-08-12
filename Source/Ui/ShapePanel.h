@@ -1,18 +1,18 @@
-// SHAPE: one set of knobs, pointed at whichever band you have selected.
+// SHAPE: a contextual inspector. One row of knobs on screen, four prebuilt
+// panels behind it.
 //
-// It used to be sixteen knobs in four labelled blocks - LOW TARGET, HIGH
-// TARGET, MID, FOLLOW - all on screen at once. Nobody needs to see DEPTH for
-// the low edge and DEPTH for the high edge at the same time; they need to see
-// DEPTH for the edge they are working on.
-//
-// So there is ONE row now. Clicking LOW, MID, HIGH or FOLLOW - here, or on the
-// handle on the display itself - repoints that row. Fewer than half the pixels,
-// and the panel no longer competes with the curve for attention.
+// The selection - LOW, HIGH, MID or FOLLOW - decides which panel is visible.
+// Every panel's sliders and their APVTS attachments are built ONCE, in the
+// constructor, and switching selection only flips visibility. The previous
+// version destroyed and recreated attachments on every switch, which meant a
+// selection change during a gesture reallocated inside the gesture.
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -20,23 +20,26 @@
 
 namespace edge::ui
 {
-    //  Which set of parameters the shared row is currently driving.
-    enum class Band { low = 0, mid, high, follow };
+    //  The one selection shared by the graph and the inspector. The editor owns
+    //  the current value; both views are told about changes and neither keeps
+    //  its own copy of any parameter.
+    enum class SelectedControl { low = 0, high, mid, follow };
+    inline constexpr int kNumSelectable = 4;
 
     class ShapePanel : public juce::Component
     {
     public:
-        ShapePanel (juce::AudioProcessorValueTreeState&);
+        explicit ShapePanel (juce::AudioProcessorValueTreeState&);
 
         void paint (juce::Graphics&) override;
         void resized() override;
 
-        void setBand (Band);
-        Band getBand() const noexcept { return band; }
+        void setSelected (SelectedControl);
+        SelectedControl getSelected() const noexcept { return selected; }
 
-        //  Fired when the user picks a band HERE, so the display can highlight
-        //  the same handle.
-        std::function<void (Band)> onBandChanged;
+        //  Fired when the user picks a band HERE, so the editor can tell the
+        //  display to highlight the same handle.
+        std::function<void (SelectedControl)> onSelectionChanged;
 
         //  UI-only gesture linking, exactly as before: it is NOT a parameter,
         //  so a host automating one frequency never finds the plug-in writing
@@ -44,41 +47,43 @@ namespace edge::ui
         bool isLinkEnabled() const noexcept { return linkButton.getToggleState(); }
         std::function<void()> onLinkChanged;
 
-        //  The height this panel needs. One row instead of four blocks, so the
-        //  display gets the difference back.
         static constexpr int preferredHeight = 156;
 
+        //  Test support: the slider attached to `paramID`, or null if no panel
+        //  owns that parameter. The control matrix uses this to assert that a
+        //  host write actually reaches the knob on screen.
+        juce::Slider* sliderFor (const juce::String& paramID) noexcept;
+
     private:
-        //  A slot in the shared row. It owns no parameter of its own - point()
-        //  re-aims it, which is the whole idea.
-        struct Slot
+        struct Knob
         {
             juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag,
                                   juce::Slider::TextBoxBelow };
             juce::Label caption;
+            juce::String paramID;
             std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 
-            void create (juce::Component& parent);
-
-            //  A null id empties the slot: the row is five wide and MID only
-            //  uses three of it.
-            void point (juce::AudioProcessorValueTreeState&, const char* id,
-                        const juce::String& text, juce::Colour accent);
-
+            void init (juce::Component& parent, juce::AudioProcessorValueTreeState&,
+                       const char* id, const juce::String& text, juce::Colour accent);
             void setBounds (juce::Rectangle<int>);
         };
 
-        static constexpr int numSlots = 5;
+        //  One band's whole row. Built once; shown or hidden, never rebuilt.
+        struct BandPanel : public juce::Component
+        {
+            std::vector<std::unique_ptr<Knob>> knobs;
+            void resized() override;
+        };
 
         juce::AudioProcessorValueTreeState& state;
-        Band band = Band::low;
+        SelectedControl selected = SelectedControl::low;
 
-        Slot slots[numSlots];
+        std::array<BandPanel, (size_t) kNumSelectable> panels;
         juce::TextButton lowButton { "LOW" }, midButton { "MID" },
                          highButton { "HIGH" }, followButton { "FOLLOW" };
         juce::ToggleButton linkButton { "LINK" };
 
-        void rebuildRow();
+        BandPanel& panelFor (SelectedControl c) noexcept { return panels[(size_t) c]; }
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShapePanel)
     };

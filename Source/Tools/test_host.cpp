@@ -30,6 +30,8 @@
 #include "../Core/Presets.h"
 #include "../Core/StateMigration.h"
 #include "../PluginEditor.h"
+#include "../Ui/CurveView.h"
+#include "../Ui/ShapePanel.h"
 #include "../PluginProcessor.h"
 
 namespace
@@ -1008,11 +1010,405 @@ namespace
     }
 
     // =========================================================================
-    //  8. The editor
+    //  Display test rig: a processor, an editor, and a pump that runs audio
+    //  and the message loop together the way a host does.
+    // =========================================================================
+    struct DisplayRig
+    {
+        EdgeAudioProcessor processor;
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        edge::ui::CurveView* curve = nullptr;
+        juce::MidiBuffer midi;
+        int noiseIndex = 0;
+
+        DisplayRig()
+        {
+            processor.prepareToPlay (48000.0, 512);
+            editor.reset (processor.createEditor());
+            editor->setSize (900, 560);
+
+            auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (editor.get());
+            curve = &ed->getCurveView();
+        }
+
+        ~DisplayRig()
+        {
+            editor.reset();
+        }
+
+        //  Audio first, then the message thread - the order a host interleaves
+        //  them. Enough blocks to complete every 20 ms smoother, enough pumped
+        //  milliseconds for at least two display timer ticks.
+        void settle (float noiseAmplitude = 0.1f, int blocks = 6, int pumpMs = 80)
+        {
+            juce::AudioBuffer<float> b (2, 512);
+
+            for (int k = 0; k < blocks; ++k)
+            {
+                for (int c = 0; c < 2; ++c)
+                {
+                    auto* d = b.getWritePointer (c);
+                    for (int i = 0; i < 512; ++i)
+                        d[i] = noiseAmplitude * sampleAt (c, noiseIndex + i);
+                }
+                noiseIndex += 512;
+
+                processor.processBlock (b, midi);
+            }
+
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (pumpMs);
+        }
+
+        void set (const char* id, float value)
+        {
+            setParam (processor, id, value);
+        }
+
+        juce::String responsePath() const  { return curve->testResponsePath().toString(); }
+        juce::String targetPath() const    { return curve->testTargetPath().toString(); }
+    };
+
+    // =========================================================================
+    //  8. The display matches the state  (the MID stale-display defect)
+    // =========================================================================
+    void testDisplayInvalidation()
+    {
+        section ("8. display invalidation");
+
+        DisplayRig rig;
+
+        //  A busy but MID-neutral starting state, EDGE well open.
+        rig.set (edge::param::mode, (float) (int) edge::Mode::band);
+        rig.set (edge::param::edge, 62.0f);
+        rig.set (edge::param::lowFreq, 200.0f);
+        rig.set (edge::param::highFreq, 6000.0f);
+        rig.set (edge::param::midFreq, 2000.0f);
+        rig.set (edge::param::midGain, 0.0f);
+        rig.settle();
+
+        const auto before = rig.responsePath();
+        const auto beforeLowX  = rig.curve->testHandlePosition (edge::ui::CurveView::Grab::low).x;
+        const auto beforeHighX = rig.curve->testHandlePosition (edge::ui::CurveView::Grab::high).x;
+
+        //  THE recorded defect: MID down, then MID left, no other touch.
+        //  On v0.9 the response path did not move until HIGH was touched,
+        //  because the change detector was an additive float hash with no MID
+        //  terms in it.
+        rig.set (edge::param::midGain, -14.0f);      // MID down
+        rig.settle();
+        const auto afterDown = rig.responsePath();
+
+        check (afterDown != before,
+               "MID gain change redraws the response, no other touch",
+               afterDown != before ? "path changed" : "PATH STALE");
+
+        rig.set (edge::param::midFreq, 700.0f);      // MID left
+        rig.settle();
+        const auto afterLeft = rig.responsePath();
+
+        check (afterLeft != afterDown,
+               "MID freq change redraws the response, no other touch",
+               afterLeft != afterDown ? "path changed" : "PATH STALE");
+
+        //  And the change must not have moved the EDGE handles.
+        const auto lowX  = rig.curve->testHandlePosition (edge::ui::CurveView::Grab::low).x;
+        const auto highX = rig.curve->testHandlePosition (edge::ui::CurveView::Grab::high).x;
+
+        check (std::abs (lowX - beforeLowX) < 0.01f && std::abs (highX - beforeHighX) < 0.01f,
+               "MID changes leave LOW/HIGH handle x alone",
+               "dLow " + juce::String (std::abs (lowX - beforeLowX), 4)
+                 + " px, dHigh " + juce::String (std::abs (highX - beforeHighX), 4) + " px");
+
+        //  MID resonance is display-relevant too, and was also missing from
+        //  the hash.
+        rig.set (edge::param::midReso, 90.0f);
+        rig.settle();
+        check (rig.responsePath() != afterLeft,
+               "MID reso change redraws the response",
+               rig.responsePath() != afterLeft ? "path changed" : "PATH STALE");
+    }
+
+    // =========================================================================
+    //  9. Control matrix: every public parameter against the display
+    // =========================================================================
+    void testControlMatrix()
+    {
+        section ("9. control matrix");
+
+        using Grab = edge::ui::CurveView::Grab;
+
+        DisplayRig rig;
+        auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
+        ed->setShapeOpenForTest (true);
+        auto& panel = ed->getShapePanel();
+
+        //  A busy base state in which every control is audible: EDGE open,
+        //  both depths partial (so Curve/Reso/Shoulder all matter), MID gain
+        //  non-zero (so its freq and reso matter), FOLLOW engaged with signal.
+        rig.set (edge::param::mode,      (float) (int) edge::Mode::band);
+        rig.set (edge::param::edge,       62.0f);
+        rig.set (edge::param::lowFreq,   220.0f);
+        rig.set (edge::param::lowDepth,   64.0f);
+        rig.set (edge::param::lowCurve,   60.0f);
+        rig.set (edge::param::lowShoulder, 20.0f);
+        rig.set (edge::param::lowReso,    25.0f);
+        rig.set (edge::param::highFreq, 5200.0f);
+        rig.set (edge::param::highDepth,  70.0f);
+        rig.set (edge::param::highCurve,  60.0f);
+        rig.set (edge::param::highShoulder, 15.0f);
+        rig.set (edge::param::highReso,   20.0f);
+        rig.set (edge::param::midFreq,  1400.0f);
+        rig.set (edge::param::midGain,     6.0f);
+        rig.set (edge::param::midReso,    50.0f);
+        rig.set (edge::param::follow,     45.0f);
+        rig.set (edge::param::followSens, -14.0f);
+        rig.set (edge::param::spread,      0.0f);
+        rig.set (edge::param::bite,       45.0f);
+        rig.set (edge::param::output,      0.0f);
+        rig.settle (0.25f, 12, 120);
+
+        struct Case
+        {
+            const char* id;
+            float newValue;
+            bool responseMustChange;
+            Grab unrelatedA, unrelatedB;      // handles whose x must not move
+        };
+
+        //  Every public parameter. `none` in an unrelated slot means skip it.
+        const Case cases[] = {
+            { edge::param::lowFreq,      340.0f, true,  Grab::high, Grab::mid },
+            { edge::param::lowDepth,      90.0f, true,  Grab::high, Grab::mid },
+            { edge::param::lowCurve,      80.0f, true,  Grab::high, Grab::mid },
+            { edge::param::lowShoulder,   60.0f, true,  Grab::high, Grab::mid },
+            { edge::param::lowReso,       70.0f, true,  Grab::high, Grab::mid },
+            { edge::param::highFreq,   3400.0f, true,  Grab::low,  Grab::mid },
+            { edge::param::highDepth,     95.0f, true,  Grab::low,  Grab::mid },
+            { edge::param::highCurve,     85.0f, true,  Grab::low,  Grab::mid },
+            { edge::param::highShoulder,  50.0f, true,  Grab::low,  Grab::mid },
+            { edge::param::highReso,      65.0f, true,  Grab::low,  Grab::mid },
+            { edge::param::midFreq,     900.0f, true,  Grab::low,  Grab::high },
+            { edge::param::midGain,      14.0f, true,  Grab::low,  Grab::high },   // positive bell
+            { edge::param::midGain,     -12.0f, true,  Grab::low,  Grab::high },   // negative notch
+            { edge::param::midReso,      85.0f, true,  Grab::low,  Grab::high },
+            { edge::param::edge,         85.0f, true,  Grab::none, Grab::none },
+            { edge::param::follow,      -60.0f, true,  Grab::none, Grab::none },
+            { edge::param::spread,       70.0f, false, Grab::mid,  Grab::none },   // centre stays; L/R appear
+            { edge::param::mode, (float) (int) edge::Mode::lowPass,
+                                                 true,  Grab::none, Grab::none },
+            { edge::param::bite,         95.0f, true,  Grab::low,  Grab::high },   // colour trim moves the curve
+            { edge::param::character, (float) (int) edge::Character::iron,
+                                                 true,  Grab::low,  Grab::high },
+            { edge::param::output,        6.0f, true,  Grab::low,  Grab::high },
+            { edge::param::bypass,        1.0f, false, Grab::low,  Grab::high },   // a lamp, not a curve
+        };
+
+        for (const auto& c : cases)
+        {
+            const auto pathBefore = rig.responsePath();
+            const float ax = c.unrelatedA == Grab::none ? 0.0f
+                             : rig.curve->testHandlePosition (c.unrelatedA).x;
+            const float bx = c.unrelatedB == Grab::none ? 0.0f
+                             : rig.curve->testHandlePosition (c.unrelatedB).x;
+
+            //  What must NOT move: every parameter on the other side. Exact.
+            const bool isLow  = juce::String (c.id).startsWith ("low.");
+            const bool isHigh = juce::String (c.id).startsWith ("high.");
+            float otherBefore[5] = {};
+            const char* const lowIds[]  = { edge::param::lowFreq, edge::param::lowDepth,
+                                            edge::param::lowCurve, edge::param::lowShoulder,
+                                            edge::param::lowReso };
+            const char* const highIds[] = { edge::param::highFreq, edge::param::highDepth,
+                                            edge::param::highCurve, edge::param::highShoulder,
+                                            edge::param::highReso };
+            if (isLow)  for (int i = 0; i < 5; ++i) otherBefore[i] = getParam (rig.processor, highIds[i]);
+            if (isHigh) for (int i = 0; i < 5; ++i) otherBefore[i] = getParam (rig.processor, lowIds[i]);
+
+            rig.set (c.id, c.newValue);
+            rig.settle (0.25f, 12, 120);
+
+            const auto pathAfter = rig.responsePath();
+            const bool changed = pathAfter != pathBefore;
+
+            juce::String detail = changed ? "response moved" : "response static";
+            bool ok = c.responseMustChange ? changed : ! changed;
+
+            //  Unrelated handle x drift, sub-1/100-pixel.
+            if (ok && c.unrelatedA != Grab::none)
+            {
+                const float dA = std::abs (rig.curve->testHandlePosition (c.unrelatedA).x - ax);
+                if (dA >= 0.01f) { ok = false; detail << "  unrelated A moved " << juce::String (dA, 3) << " px"; }
+            }
+            if (ok && c.unrelatedB != Grab::none)
+            {
+                const float dB = std::abs (rig.curve->testHandlePosition (c.unrelatedB).x - bx);
+                if (dB >= 0.01f) { ok = false; detail << "  unrelated B moved " << juce::String (dB, 3) << " px"; }
+            }
+
+            //  Cross-edge parameter isolation, exact zero.
+            if (ok && (isLow || isHigh))
+            {
+                const auto* ids = isLow ? highIds : lowIds;
+                for (int i = 0; i < 5; ++i)
+                    if (getParam (rig.processor, ids[i]) != otherBefore[i])
+                    { ok = false; detail << "  cross-edge write to " << ids[i]; break; }
+            }
+
+            //  The inspector's slider must report the value the host wrote.
+            if (ok)
+            {
+                if (auto* slider = panel.sliderFor (c.id))
+                {
+                    const double got = slider->getValue();
+                    if (std::abs (got - (double) c.newValue) > 0.05)
+                    { ok = false; detail << "  inspector shows " << juce::String (got, 2); }
+                }
+            }
+
+            check (ok, (juce::String (c.id) + " -> " + juce::String (c.newValue, 1)).toRawUTF8(),
+                   detail);
+
+            //  FOLLOW leaves the response moving with the test signal for as
+            //  long as it stays engaged, which would turn every later "must
+            //  not change" case into a false failure. Its own case is done -
+            //  disengage it.
+            if (juce::String (c.id) == edge::param::follow)
+            {
+                rig.set (edge::param::follow, 0.0f);
+                rig.settle (0.25f, 12, 120);
+            }
+        }
+
+        //  SPREAD 70 must have produced the L/R traces; SPREAD 0 must null.
+        {
+            check (! rig.curve->testTargetPath().isEmpty(), "target path exists", "yes");
+
+            rig.set (edge::param::spread, 0.0f);
+            rig.settle();
+            const auto s = rig.processor.getEngine().getDisplaySnapshot();
+            check (! s.spreadActive, "SPREAD 0 reports inactive (channels null)",
+                   s.spreadActive ? "STILL ACTIVE" : "inactive");
+        }
+    }
+
+    // =========================================================================
+    //  10. Gesture timing and the selection contract
+    // =========================================================================
+    void testGestures()
+    {
+        section ("10. gestures and selection");
+
+        using Grab = edge::ui::CurveView::Grab;
+        using SelectedControl = edge::ui::SelectedControl;
+
+        DisplayRig rig;
+        auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
+        auto& panel = ed->getShapePanel();
+
+        rig.set (edge::param::mode, (float) (int) edge::Mode::band);
+        rig.set (edge::param::edge, 60.0f);
+        rig.set (edge::param::midGain, 5.0f);
+        rig.set (edge::param::midFreq, 1000.0f);
+        rig.settle();
+
+        //  --- MID drag mapping: horizontal = freq, vertical = gain -------------
+        const auto midPos = rig.curve->testHandlePosition (Grab::mid);
+
+        rig.curve->testBeginDrag (Grab::mid, midPos);
+
+        //  Selecting by touch: the inspector must already be on MID.
+        check (panel.getSelected() == SelectedControl::mid,
+               "touching MID selects the MID inspector before the gesture",
+               panel.getSelected() == SelectedControl::mid ? "selected" : "NOT selected");
+
+        //  Horizontal, 80 px left: frequency must fall, gain must not move.
+        const float gainBefore = getParam (rig.processor, edge::param::midGain);
+        rig.curve->testDragTo ({ midPos.x - 80.0f, midPos.y });
+
+        const float hzAfterLeft = getParam (rig.processor, edge::param::midFreq);
+        check (hzAfterLeft < 1000.0f, "MID horizontal drag lowers mid.freq",
+               juce::String (hzAfterLeft, 1) + " Hz");
+        check (getParam (rig.processor, edge::param::midGain) == gainBefore,
+               "horizontal drag leaves mid.gain alone",
+               juce::String (getParam (rig.processor, edge::param::midGain), 2) + " dB");
+
+        //  SAME FRAME: the handle must already sit at the new frequency,
+        //  before any audio has been processed.
+        {
+            const float wantX = rig.curve->testXForHz (hzAfterLeft);
+            const float gotX  = rig.curve->testHandlePosition (Grab::mid).x;
+            check (std::abs (gotX - wantX) < 1.0f,
+                   "MID handle x tracks the drag within the same frame",
+                   juce::String (std::abs (gotX - wantX), 3) + " px");
+        }
+
+        //  Vertical, up: gain must rise (a positive bell); down past centre:
+        //  negative (a notch).
+        rig.curve->testDragTo ({ midPos.x - 80.0f, midPos.y - 60.0f });
+        const float gainUp = getParam (rig.processor, edge::param::midGain);
+        check (gainUp > gainBefore, "MID drag up increases gain (peak)",
+               juce::String (gainUp, 1) + " dB");
+
+        rig.curve->testDragTo ({ midPos.x - 80.0f, midPos.y + 120.0f });
+        const float gainDown = getParam (rig.processor, edge::param::midGain);
+        check (gainDown < 0.0f, "MID drag down goes negative (notch)",
+               juce::String (gainDown, 1) + " dB");
+
+        //  --- refresh rate ------------------------------------------------------
+        //  While the drag is live the display must run at 60 Hz - a 16.7 ms
+        //  interval, inside the 33 ms interaction budget.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (80);
+        check (rig.curve->testRefreshIntervalMs() <= 17,
+               "refresh is 60 Hz while dragging",
+               juce::String (rig.curve->testRefreshIntervalMs()) + " ms interval");
+
+        rig.curve->testEndDrag();
+
+        //  And it settles back to 30 Hz once everything has been quiet.
+        rig.settle (0.0f, 2, 700);
+        check (rig.curve->testRefreshIntervalMs() >= 30,
+               "refresh drops to 30 Hz when idle",
+               juce::String (rig.curve->testRefreshIntervalMs()) + " ms interval");
+
+        //  --- handle x accuracy --------------------------------------------------
+        {
+            rig.settle();
+            juce::String detail;
+            bool ok = true;
+
+            const struct { Grab g; const char* id; } handles[] = {
+                { Grab::low,  edge::param::lowFreq },
+                { Grab::high, edge::param::highFreq },
+                { Grab::mid,  edge::param::midFreq },
+            };
+
+            for (const auto& h : handles)
+            {
+                const float hz = getParam (rig.processor, h.id);
+                const float err = std::abs (rig.curve->testHandlePosition (h.g).x
+                                            - rig.curve->testXForHz (hz));
+                detail << juce::String (err, 3) << " px  ";
+                ok = ok && err < 1.0f;
+            }
+
+            check (ok, "handle x within 1 px of its parameter frequency", detail);
+        }
+
+        //  --- selection from the panel side --------------------------------------
+        panel.setSelected (SelectedControl::high);
+        check (panel.getSelected() == SelectedControl::high
+                 && panel.sliderFor (edge::param::highFreq) != nullptr
+                 && panel.sliderFor (edge::param::highFreq)->isShowing() == false,
+               "panel selection switches without destroying sliders",
+               "attachments alive");
+    }
+
+    // =========================================================================
+    //  11. The editor
     // =========================================================================
     void testEditor()
     {
-        section ("8. editor");
+        section ("11. editor");
 
         EdgeAudioProcessor p;
         applyBusySettings (p);
@@ -1136,6 +1532,9 @@ int main()
     testState();
     testPresets();
     testIdentity();
+    testDisplayInvalidation();
+    testControlMatrix();
+    testGestures();
     testEditor();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

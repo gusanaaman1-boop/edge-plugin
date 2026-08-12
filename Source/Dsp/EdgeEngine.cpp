@@ -1,5 +1,7 @@
 #include <cmath>
 #include <complex>
+#include <cstddef>
+#include <cstring>
 
 #include "EdgeEngine.h"
 
@@ -277,32 +279,6 @@ namespace edge
 
     // -------------------------------------------------------------------------
 
-    void EdgeEngine::DisplayShape::store (const Resolved& r) noexcept
-    {
-        constexpr auto o = std::memory_order_relaxed;
-        midHz.store (r.midHz, o);            midGainDb.store (r.midGainDb, o);
-        midReso.store (r.midReso01, o);
-        lowHz.store (r.lowHz, o);            lowDepthDb.store (r.lowDepthDb, o);
-        lowCurve.store (r.lowCurve01, o);    lowRes.store (r.lowRes01, o);
-        lowShoulderDb.store (r.lowShoulderDb, o);
-        highHz.store (r.highHz, o);          highDepthDb.store (r.highDepthDb, o);
-        highCurve.store (r.highCurve01, o);  highRes.store (r.highRes01, o);
-        highShoulderDb.store (r.highShoulderDb, o);
-    }
-
-    void EdgeEngine::DisplayShape::load (EdgeShape& s) const noexcept
-    {
-        constexpr auto o = std::memory_order_relaxed;
-        s.midHz = midHz.load (o);              s.midGainDb = midGainDb.load (o);
-        s.midReso01 = midReso.load (o);
-        s.lowHz = lowHz.load (o);              s.lowDepthDb = lowDepthDb.load (o);
-        s.lowCurve01 = lowCurve.load (o);      s.lowRes01 = lowRes.load (o);
-        s.lowShoulderDb = lowShoulderDb.load (o);
-        s.highHz = highHz.load (o);            s.highDepthDb = highDepthDb.load (o);
-        s.highCurve01 = highCurve.load (o);    s.highRes01 = highRes.load (o);
-        s.highShoulderDb = highShoulderDb.load (o);
-    }
-
     void EdgeEngine::prepare (double sampleRate, int maxBlockSize, int numChannels)
     {
         rate = sampleRate;
@@ -398,6 +374,7 @@ namespace edge
 
         pendingOutputDb = s.outputDb;
         pendingCharacter = juce::jlimit (0, ColorStage::numCharacters - 1, s.character);
+        lastMode = s.mode;
         bypassFade.setTargetValue (s.bypass ? 1.0f : 0.0f);
     }
 
@@ -543,18 +520,21 @@ namespace edge
             highEdge.setShape (c, rate, r.highHz, r.highDepthDb, r.highCurve01,
                                r.highRes01, r.highShoulderDb, chunkLength);
 
-            dispChannel[c].store (r);
+            (c == 0 ? snapWork.left : snapWork.right) = r;
         }
+
+        if (channels < 2)
+            snapWork.right = snapWork.left;
 
         //  The centre: what the plug-in is doing now, without SPREAD's
         //  per-channel offset. This is what the main curve and every handle are
         //  drawn from, so they cannot disagree.
-        dispCentre.store (resolveFor (liveEdge01, freeTravelOctaves));
+        snapWork.centre = resolveFor (liveEdge01, freeTravelOctaves);
 
         //  The ghost curve: what EDGE at 100 % would do, without spread but
         //  WITH FREE's travel - the band's target is where it has travelled to,
         //  not where it started.
-        dispTarget.store (resolveFor (1.0f, freeTravelOctaves));
+        snapWork.target = resolveFor (1.0f, freeTravelOctaves);
 
         //  Hidden colour, from the FILTER's activity and BITE. Channel 0's
         //  activity: SPREAD moves frequencies, not gains, so both channels have
@@ -572,8 +552,7 @@ namespace edge
         colourDrive.setTargetValue (colourDrivePercent (bite.getCurrentValue(), activity,
                                                         pendingCharacter));
 
-        const auto shape0 = getDisplayShape (0);
-        colour.setSpectrum (shape0.lowHz, shape0.highHz);
+        colour.setSpectrum (snapWork.left.lowHz, snapWork.left.highHz);
         colour.setCharacter (pendingCharacter);
 
         //  Static make-up for Resonance only. Self-gating: at Depth 0 section 0
@@ -581,10 +560,8 @@ namespace edge
         resonanceTrimDb = -kResonanceTrimDb
                         * juce::jmax (lowEdge.resonanceMakeup (0), highEdge.resonanceMakeup (0));
 
-        lastResTrimDb.store (resonanceTrimDb, std::memory_order_relaxed);
-        dispLiveEdge.store (liveEdge01, std::memory_order_relaxed);
-        dispSpreadActive.store (std::abs (spread) > 1.0e-4f, std::memory_order_relaxed);
-        dispOutputDb.store (pendingOutputDb, std::memory_order_relaxed);
+        snapWork.liveEdge01 = liveEdge01;
+        snapWork.spreadActive = std::abs (spread) > 1.0e-4f;
     }
 
     void EdgeEngine::updateOutputTarget() noexcept
@@ -592,8 +569,81 @@ namespace edge
         outputGain.setTargetValue (juce::Decibels::decibelsToGain (pendingOutputDb + resonanceTrimDb)
                                        * colour.getLevelTrimGain());
 
-        dispColourEngage.store (colour.getEngageFactor(), std::memory_order_relaxed);
-        dispColourGain.store (colour.getMeasuredGain(), std::memory_order_relaxed);
+        //  This is the last per-chunk update, so the snapshot goes out here:
+        //  everything applyChunkShape resolved plus everything the colour stage
+        //  just settled, as one publication.
+        publishSnapshot();
+    }
+
+    void EdgeEngine::publishSnapshot() noexcept
+    {
+        DisplaySnapshot next {};
+
+        auto fill = [this] (EdgeShape& shape, const Resolved& r)
+        {
+            shape.lowHz = r.lowHz;   shape.lowDepthDb = r.lowDepthDb;
+            shape.lowCurve01 = r.lowCurve01;  shape.lowRes01 = r.lowRes01;
+            shape.lowShoulderDb = r.lowShoulderDb;
+            shape.highHz = r.highHz; shape.highDepthDb = r.highDepthDb;
+            shape.highCurve01 = r.highCurve01; shape.highRes01 = r.highRes01;
+            shape.highShoulderDb = r.highShoulderDb;
+            shape.midHz = r.midHz;   shape.midGainDb = r.midGainDb;
+            shape.midReso01 = r.midReso01;
+            shape.outputDb = pendingOutputDb;
+            shape.colourEngage = colour.getEngageFactor();
+            shape.colourGain = colour.getMeasuredGain();
+        };
+
+        fill (next.target,        snapWork.target);
+        fill (next.currentCentre, snapWork.centre);
+        fill (next.currentLeft,   snapWork.left);
+        fill (next.currentRight,  snapWork.right);
+
+        next.liveEdge01         = snapWork.liveEdge01;
+        next.followEnv01        = lastFollowEnv;
+        next.freeTravelOctaves  = freeTravelOctaves;
+        next.colourEngage01     = colour.getEngageFactor();
+        next.colourGain         = colour.getMeasuredGain();
+        next.colourTrimDb       = juce::Decibels::gainToDecibels (colour.getLevelTrimGain());
+        next.colourDrivePercent = colourDrive.getCurrentValue();
+        next.resonanceTrimDb    = resonanceTrimDb;
+        next.outputDb           = pendingOutputDb;
+        next.mode               = lastMode;
+        next.spreadActive       = snapWork.spreadActive;
+
+        //  Bump the revision only when the CONTENT moved. `next` and
+        //  `snapPending` are both value-initialised, so their padding is zeroed
+        //  and memcmp over everything before `revision` is deterministic.
+        if (std::memcmp (&next, &snapPending, DisplaySnapshot::geometryBytes()) != 0)
+        {
+            ++snapRevision;
+            snapPending = next;
+        }
+
+        next.revision = snapRevision;
+
+        //  Seqlock write: odd while the slot is inconsistent, even when done.
+        snapSeq.fetch_add (1, std::memory_order_acq_rel);
+        snapSlot = next;
+        snapSeq.fetch_add (1, std::memory_order_release);
+    }
+
+    DisplaySnapshot EdgeEngine::getDisplaySnapshot() const noexcept
+    {
+        //  Seqlock read: copy between two equal EVEN sequence reads. The writer
+        //  never waits; the reader retries in the rare frame it collides.
+        for (;;)
+        {
+            const auto s0 = snapSeq.load (std::memory_order_acquire);
+            if ((s0 & 1) != 0)
+                continue;
+
+            DisplaySnapshot copy = snapSlot;
+            std::atomic_thread_fence (std::memory_order_acquire);
+
+            if (snapSeq.load (std::memory_order_relaxed) == s0)
+                return copy;
+        }
     }
 
     void EdgeEngine::pushAnalyzer (const juce::AudioBuffer<float>& buffer, int n) noexcept
@@ -721,8 +771,7 @@ namespace edge
 
             freeTravelOctaves = amount * freeMix * env * kFreeTravelOctaves;
 
-            dispFollowEnv.store (env, std::memory_order_relaxed);
-            dispFreeTravel.store (freeTravelOctaves, std::memory_order_relaxed);
+            lastFollowEnv = env;
 
             applyChunkShape (chunk, liveEdge);
             colour.setDrive (colourDrive.skip (chunk));
@@ -779,38 +828,8 @@ namespace edge
             pos += chunk;
         }
 
-        lastColourDrive.store (colourDrive.getCurrentValue(), std::memory_order_relaxed);
 
         pushAnalyzer (buffer, n);
     }
 
-    EdgeShape EdgeEngine::getDisplayShape (int channel) const noexcept
-    {
-        EdgeShape s;
-        dispChannel[juce::jlimit (0, maxChannels - 1, channel)].load (s);
-        s.outputDb     = dispOutputDb.load (std::memory_order_relaxed);
-        s.colourEngage = dispColourEngage.load (std::memory_order_relaxed);
-        s.colourGain   = dispColourGain.load (std::memory_order_relaxed);
-        return s;
-    }
-
-    EdgeShape EdgeEngine::getDisplayShape() const noexcept
-    {
-        EdgeShape s;
-        dispCentre.load (s);
-        s.outputDb     = dispOutputDb.load (std::memory_order_relaxed);
-        s.colourEngage = dispColourEngage.load (std::memory_order_relaxed);
-        s.colourGain   = dispColourGain.load (std::memory_order_relaxed);
-        return s;
-    }
-
-    EdgeShape EdgeEngine::getTargetShape() const noexcept
-    {
-        EdgeShape s;
-        dispTarget.load (s);
-        s.outputDb = dispOutputDb.load (std::memory_order_relaxed);
-        //  The ghost curve is the FILTER's target, so it deliberately carries
-        //  no colour contribution.
-        return s;
-    }
 }

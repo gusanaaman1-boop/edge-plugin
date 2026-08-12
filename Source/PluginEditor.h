@@ -19,6 +19,12 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    //  Test support: the display suite drives the real view and the real panel,
+    //  not copies of them.
+    edge::ui::CurveView& getCurveView() noexcept { return curve; }
+    edge::ui::ShapePanel& getShapePanel() noexcept { return shape; }
+    void setShapeOpenForTest (bool open) { setShapeOpen (open); }
+
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -40,6 +46,7 @@ private:
 
     void timerCallback() override;
     void setShapeOpen (bool shouldBeOpen);
+    void applySelection (edge::ui::SelectedControl, bool fromGraph);
     void applyLink (bool lowMoved);
     void installLinkCoupling();
     int  controlStripHeight() const noexcept;
