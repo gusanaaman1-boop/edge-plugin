@@ -12,6 +12,98 @@ namespace edge::ui
         return juce::String (hz, 1) + " Hz";
     }
 
+    juce::Path edgeCutPanel (juce::Rectangle<float> b, float radius, float cutW, float cutH)
+    {
+        //  Rounded on three corners; the top-right is the cut: in along the
+        //  top, then a straight fall to the right edge. The fall's angle is
+        //  the motif - the same 14:10 run/fall the wordmark's tail uses.
+        juce::Path p;
+        p.startNewSubPath (b.getX() + radius, b.getY());
+        p.lineTo (b.getRight() - cutW, b.getY());
+        p.lineTo (b.getRight(), b.getY() + cutH);
+        p.lineTo (b.getRight(), b.getBottom() - radius);
+        p.addArc (b.getRight() - radius * 2.0f, b.getBottom() - radius * 2.0f,
+                  radius * 2.0f, radius * 2.0f, juce::MathConstants<float>::halfPi,
+                  juce::MathConstants<float>::pi);
+        p.lineTo (b.getX() + radius, b.getBottom());
+        p.addArc (b.getX(), b.getBottom() - radius * 2.0f,
+                  radius * 2.0f, radius * 2.0f, juce::MathConstants<float>::pi,
+                  juce::MathConstants<float>::pi * 1.5f);
+        p.lineTo (b.getX(), b.getY() + radius);
+        p.addArc (b.getX(), b.getY(), radius * 2.0f, radius * 2.0f,
+                  juce::MathConstants<float>::pi * 1.5f, juce::MathConstants<float>::twoPi);
+        p.closeSubPath();
+        return p;
+    }
+
+    void drawWordmark (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour ink)
+    {
+        //  Stroked geometric capitals: cap height 16, stroke 3, letter width
+        //  11, gap 7 - all from the 8 px grid's halves. The final E's middle
+        //  arm runs on 12 px flat and falls 9 px: the EDGE CUT, growing out of
+        //  the name itself.
+        const float capH = 16.0f, w = 11.0f, gap = 7.0f, stroke = 3.0f;
+        const float tailRun = 12.0f, tailFall = 9.0f;
+
+        const float totalW = 4.0f * w + 3.0f * gap + tailRun + 4.0f;
+        const float x0 = area.getCentreX() - totalW * 0.5f;
+        const float y0 = area.getCentreY() - capH * 0.5f;
+
+        juce::Path m;
+
+        auto letterE = [&] (float x, bool withTail)
+        {
+            m.startNewSubPath (x, y0);
+            m.lineTo (x, y0 + capH);                        // spine
+            m.startNewSubPath (x, y0);
+            m.lineTo (x + w, y0);                           // top arm
+            m.startNewSubPath (x, y0 + capH);
+            m.lineTo (x + w, y0 + capH);                    // bottom arm
+            m.startNewSubPath (x, y0 + capH * 0.5f);
+
+            if (withTail)
+            {
+                //  The middle arm becomes the motif: flat, then the fall.
+                m.lineTo (x + w + tailRun, y0 + capH * 0.5f);
+                m.lineTo (x + w + tailRun + tailFall * 0.8f, y0 + capH * 0.5f + tailFall);
+            }
+            else
+            {
+                m.lineTo (x + w * 0.78f, y0 + capH * 0.5f);
+            }
+        };
+
+        auto letterD = [&] (float x)
+        {
+            m.startNewSubPath (x, y0);
+            m.lineTo (x, y0 + capH);
+            m.startNewSubPath (x, y0);
+            m.lineTo (x + w * 0.5f, y0);
+            m.addArc (x - w * 0.1f, y0, w * 1.2f, capH,
+                      0.0f, juce::MathConstants<float>::pi, false);
+            m.lineTo (x, y0 + capH);
+        };
+
+        auto letterG = [&] (float x)
+        {
+            //  An open arc with the bar driving into the centre.
+            m.addArc (x, y0, w * 1.15f, capH,
+                      juce::MathConstants<float>::pi * 0.45f,
+                      juce::MathConstants<float>::pi * 1.97f, true);
+            m.startNewSubPath (x + w * 1.15f, y0 + capH * 0.58f);
+            m.lineTo (x + w * 0.55f, y0 + capH * 0.58f);
+        };
+
+        letterE (x0, false);
+        letterD (x0 + w + gap);
+        letterG (x0 + 2.0f * (w + gap));
+        letterE (x0 + 3.0f * (w + gap), true);
+
+        g.setColour (ink);
+        g.strokePath (m, { stroke, juce::PathStrokeType::curved,
+                           juce::PathStrokeType::rounded });
+    }
+
     void paintShell (juce::Graphics& g, juce::Rectangle<float> b)
     {
         g.setGradientFill ({ colour::shellTop, b.getX(), b.getY(),

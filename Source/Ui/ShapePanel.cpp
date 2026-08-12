@@ -295,18 +295,21 @@ namespace edge::ui
         auto body = getLocalBounds().toFloat();
 
         //  One fixed card: shadow y 6 at 28 %, surface at 94 %, NEUTRAL border
-        //  in every context - only the label carries the context colour.
+        //  in every context - only the label carries the context colour. The
+        //  top-right corner is the EDGE CUT: motif place three of three.
+        auto card = edgeCutPanel (body, 14.0f, 20.0f, 14.0f);
+
         {
-            juce::Path shadow;
-            shadow.addRoundedRectangle (body.translated (0.0f, 6.0f), 14.0f);
+            juce::Path sh (card);
+            sh.applyTransform (juce::AffineTransform::translation (0.0f, 6.0f));
             g.setColour (juce::Colours::black.withAlpha (0.28f));
-            g.fillPath (shadow);
+            g.fillPath (sh);
         }
 
         g.setColour (colour::raised.withAlpha (0.94f));
-        g.fillRoundedRectangle (body, 14.0f);
+        g.fillPath (card);
         g.setColour (colour::text.withAlpha (0.24f));
-        g.drawRoundedRectangle (body.reduced (0.5f), 14.0f, 1.0f);
+        g.strokePath (card, juce::PathStrokeType (1.0f));
 
         //  The context label, upper-left, 11 px semibold, context-coloured.
         g.setColour (headerColour);

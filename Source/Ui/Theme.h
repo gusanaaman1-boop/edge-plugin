@@ -98,6 +98,20 @@ namespace edge::ui
 
     juce::String formatHz (float hz);
 
+    //  --- the EDGE CUT motif ---------------------------------------------------
+    //  One signature construction, used in EXACTLY three places: the wordmark's
+    //  tail, the inspector card and the macro deck. A panel whose top-right
+    //  corner is not rounded but CUT - a flat run breaking into a fall, the
+    //  product's own response shape. Everything else in the interface stays
+    //  rectangular; one motif, not a theme park.
+    juce::Path edgeCutPanel (juce::Rectangle<float> bounds, float radius,
+                             float cutW, float cutH);
+
+    //  The wordmark, drawn from Paths - no font, no image asset. Four stroked
+    //  geometric capitals whose final E extends its middle arm into the same
+    //  flat-then-fall cut the panels carry.
+    void drawWordmark (juce::Graphics&, juce::Rectangle<float> area, juce::Colour ink);
+
     void paintShell (juce::Graphics&, juce::Rectangle<float> bounds);
     void paintWell (juce::Graphics&, juce::Rectangle<float> bounds, float corner);
 

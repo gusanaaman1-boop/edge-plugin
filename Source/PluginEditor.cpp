@@ -161,6 +161,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
                 hpButton.setToggleState   (m == (int) Mode::highPass, juce::dontSendNotification);
                 freeButton.setToggleState (m == (int) Mode::freeBand, juce::dontSendNotification);
                 curve.setFreeMode (m == (int) Mode::freeBand);
+                repaint (0, 0, getWidth(), metric::headerHeight);
 
                 //  A mode that removed the selected edge moves the selection to
                 //  the edge that still exists - the inspector must never sit on
@@ -342,8 +343,21 @@ void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
     g.setGradientFill ({ colour::shellHilite, 0.0f, 0.0f,
                          colour::shellLight, 0.0f, (float) getHeight() * 0.25f, false });
     g.fillRect (getLocalBounds());
-    g.setColour (colour::shellShadow.withAlpha (0.5f));
-    g.drawHorizontalLine (metric::headerHeight - 1, 0.0f, (float) getWidth());
+
+    //  Direction E, and all of it: ONE hairline responds to state. It takes
+    //  the active filter function's colour - cyan in LP, amber in HP - and
+    //  stays neutral in the two-edge modes. The rest of the shell is calm.
+    {
+        auto* modeParam = edgeProcessor.getState().getParameter (param::mode);
+        const int m = (int) std::lround (modeParam->convertFrom0to1 (modeParam->getValue()));
+        const auto tint = m == (int) Mode::lowPass  ? colour::high
+                        : m == (int) Mode::highPass ? colour::low
+                                                    : colour::shellShadow;
+
+        g.setColour (tint.withAlpha (m == (int) Mode::lowPass
+                                      || m == (int) Mode::highPass ? 0.75f : 0.5f));
+        g.drawHorizontalLine (metric::headerHeight - 1, 0.0f, (float) getWidth());
+    }
 
     //  Cards: graph shadow y 5 at 20 %, deck shadow y 3 at 16 %, then the deck
     //  surface itself (the graph paints its own).
@@ -359,18 +373,27 @@ void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
 
     if (! deckArea.isEmpty())
     {
-        shadow (deckArea.toFloat(), 3.0f, 0.16f);
+        //  The deck carries the EDGE CUT on its top-right corner - motif
+        //  place two of three.
+        auto card = edgeCutPanel (deckArea.toFloat(), metric::radiusLarge, 26.0f, 19.0f);
+
+        {
+            juce::Path sh (card);
+            sh.applyTransform (juce::AffineTransform::translation (0.0f, 3.0f));
+            g.setColour (juce::Colours::black.withAlpha (0.16f));
+            g.fillPath (sh);
+        }
+
         g.setColour (colour::deck);
-        g.fillRoundedRectangle (deckArea.toFloat(), metric::radiusLarge);
+        g.fillPath (card);
         g.setColour (colour::shellShadow.withAlpha (0.6f));
-        g.drawRoundedRectangle (deckArea.toFloat().reduced (0.5f), metric::radiusLarge, 1.0f);
+        g.strokePath (card, juce::PathStrokeType (1.0f));
     }
 
-    //  Wordmark, centred in the header, DARK on the light shell.
-    g.setColour (colour::textOnLight);
-    g.setFont (juce::FontOptions (font::wordmark).withStyle ("Bold"));
-    g.drawText ("E D G E", getLocalBounds().removeFromTop (metric::headerHeight),
-                juce::Justification::centred, false);
+    //  The wordmark: four stroked capitals whose last E falls into the cut.
+    //  Drawn from Paths - no font, no asset. Motif place one of three.
+    drawWordmark (g, getLocalBounds().removeFromTop (metric::headerHeight).toFloat(),
+                  colour::textOnLight);
 
    #if JUCE_DEBUG
     //  The build identity is a development aid. Release builds keep it in the
