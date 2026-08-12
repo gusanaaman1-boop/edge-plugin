@@ -1,11 +1,14 @@
-// SHAPE: a contextual inspector. One row of knobs on screen, four prebuilt
-// panels behind it.
+// The floating inspector.
 //
-// The selection - LOW, HIGH, MID or FOLLOW - decides which panel is visible.
-// Every panel's sliders and their APVTS attachments are built ONCE, in the
-// constructor, and switching selection only flips visibility. The previous
-// version destroyed and recreated attachments on every switch, which meant a
-// selection change during a gesture reallocated inside the gesture.
+// There is exactly one, and it has no tabs: the selection decides its context.
+// Touch a handle on the graph and it opens beside it with that band's
+// controls; touch the FOLLOW knob and it shows the detector. Click empty
+// graph space or press Escape and it goes away.
+//
+// Every context's sliders and APVTS attachments are built ONCE, in the
+// constructor. Switching context flips child visibility and nothing else -
+// the acceptance test counts attachment constructions across a hundred
+// switches and expects zero.
 
 #pragma once
 
@@ -20,9 +23,9 @@
 
 namespace edge::ui
 {
-    //  The one selection shared by the graph and the inspector. The editor owns
-    //  the current value; both views are told about changes and neither keeps
-    //  its own copy of any parameter.
+    //  The one selection shared by the graph and the inspector. The editor
+    //  owns the current value; both views are told about changes and neither
+    //  keeps its own copy of any parameter.
     enum class SelectedControl { low = 0, high, mid, follow };
     inline constexpr int kNumSelectable = 4;
 
@@ -34,32 +37,29 @@ namespace edge::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
-        void setSelected (SelectedControl);
+        //  Context + semantic header. In LP the high edge IS the low-pass, and
+        //  the header must say "LP" - the internal name never reaches the user.
+        void setContext (SelectedControl, const juce::String& headerText);
         SelectedControl getSelected() const noexcept { return selected; }
 
-        //  Fired when the user picks a band HERE, so the editor can tell the
-        //  display to highlight the same handle.
-        std::function<void (SelectedControl)> onSelectionChanged;
+        //  The size this context wants, from the v0.12 spec.
+        juce::Point<int> preferredSize() const noexcept;
 
-        //  UI-only gesture linking, exactly as before: it is NOT a parameter,
-        //  so a host automating one frequency never finds the plug-in writing
-        //  the other one back at it.
-        bool isLinkEnabled() const noexcept { return linkButton.getToggleState(); }
-        std::function<void()> onLinkChanged;
+        //  Where the notch points, in the PARENT's coordinates. The editor
+        //  positions the panel; the panel draws its pointer toward this.
+        void setAnchor (juce::Point<int> parentPos) noexcept { anchor = parentPos; }
+        juce::Point<int> getAnchor() const noexcept { return anchor; }
 
-        static constexpr int preferredHeight = 156;
-
-        //  Test support: the slider attached to `paramID`, or null if no panel
-        //  owns that parameter. The control matrix uses this to assert that a
-        //  host write actually reaches the knob on screen.
+        //  Test support -------------------------------------------------------
         juce::Slider* sliderFor (const juce::String& paramID) noexcept;
+        static int attachmentConstructions() noexcept { return attachmentCount; }
 
     private:
         struct Knob
         {
             juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag,
-                                  juce::Slider::TextBoxBelow };
-            juce::Label caption;
+                                  juce::Slider::NoTextBox };
+            juce::Label caption, value;
             juce::String paramID;
             std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 
@@ -68,8 +68,7 @@ namespace edge::ui
             void setBounds (juce::Rectangle<int>);
         };
 
-        //  One band's whole row. Built once; shown or hidden, never rebuilt.
-        struct BandPanel : public juce::Component
+        struct ContextPanel : public juce::Component
         {
             std::vector<std::unique_ptr<Knob>> knobs;
             void resized() override;
@@ -77,13 +76,15 @@ namespace edge::ui
 
         juce::AudioProcessorValueTreeState& state;
         SelectedControl selected = SelectedControl::low;
+        juce::String header;
+        juce::Colour headerColour = colour::text;
+        juce::Point<int> anchor;
 
-        std::array<BandPanel, (size_t) kNumSelectable> panels;
-        juce::TextButton lowButton { "LOW" }, midButton { "MID" },
-                         highButton { "HIGH" }, followButton { "FOLLOW" };
-        juce::ToggleButton linkButton { "LINK" };
+        std::array<ContextPanel, (size_t) kNumSelectable> panels;
 
-        BandPanel& panelFor (SelectedControl c) noexcept { return panels[(size_t) c]; }
+        static int attachmentCount;
+
+        ContextPanel& panelFor (SelectedControl c) noexcept { return panels[(size_t) c]; }
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShapePanel)
     };

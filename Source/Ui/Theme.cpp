@@ -121,48 +121,47 @@ namespace edge::ui
                                  float pos, float startAngle, float endAngle,
                                  juce::Slider& s)
     {
+        //  The v0.12 knob: 4 px active arc over a 3 px background arc, a
+        //  2 x 12 px pointer inset 11 px from the rim, the value centred
+        //  inside, and nothing else - no tick ring, no gloss, no texture.
         const auto& props = s.getProperties();
-        const auto accent = juce::Colour ((juce::uint32) (int) props
-                                              .getWithDefault ("accent", (int) colour::low.getARGB()));
-        const bool hasSecond = props.contains ("accent2");
-        const auto accent2 = hasSecond
-            ? juce::Colour ((juce::uint32) (int) props["accent2"]) : accent;
+        auto accent = juce::Colour ((juce::uint32) (int) props
+                                        .getWithDefault ("accent", (int) colour::low.getARGB()));
         const bool bipolar = (bool) props.getWithDefault ("bipolar", false);
-        const bool ticks   = (bool) props.getWithDefault ("ticks", false);
 
-        auto bounds = juce::Rectangle<int> (x, y, w, h).toFloat().reduced (3.0f);
-        const float outer = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+        //  States: hover lifts the arc +10 % luminance over 120 ms (JUCE
+        //  repaints per frame; the step is small enough to read as a fade);
+        //  drag adds a 2 px halo at 18 %.
+        const bool hover = s.isMouseOverOrDragging();
+        const bool down  = s.isMouseButtonDown();
+        if (hover)
+            accent = accent.withMultipliedBrightness (1.10f);
+
+        auto bounds = juce::Rectangle<int> (x, y, w, h).toFloat().reduced (4.0f);
+        const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const auto centre = bounds.getCentre();
-
-        //  Tick ring, outside everything.
-        if (ticks)
-        {
-            g.setColour (colour::textDim.withAlpha (0.45f));
-            for (int i = 0; i <= 20; ++i)
-            {
-                const float a = startAngle + (endAngle - startAngle) * (float) i / 20.0f;
-                const float r0 = outer - 0.5f, r1 = outer - 3.0f;
-                g.drawLine (centre.x + r0 * std::sin (a), centre.y - r0 * std::cos (a),
-                            centre.x + r1 * std::sin (a), centre.y - r1 * std::cos (a), 1.0f);
-            }
-        }
-
-        const float arcR = outer - (ticks ? 7.0f : 2.0f);
-        const float thickness = juce::jmax (2.5f, arcR * 0.13f);
-        const float bodyR = arcR - thickness * 1.6f;
+        const float arcR = radius - 2.0f;
         const float angle = startAngle + pos * (endAngle - startAngle);
 
-        //  Track.
+        if (down)
+        {
+            g.setColour (accent.withAlpha (0.18f));
+            g.drawEllipse (centre.x - radius, centre.y - radius,
+                           radius * 2.0f, radius * 2.0f, 2.0f);
+        }
+
+        //  Background arc, 3 px.
         {
             juce::Path track;
-            track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
+            track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
+                                 startAngle, endAngle, true);
             g.setColour (colour::gridStrong);
-            g.strokePath (track, { thickness, juce::PathStrokeType::curved,
+            g.strokePath (track, { 3.0f, juce::PathStrokeType::curved,
                                    juce::PathStrokeType::rounded });
         }
 
-        //  Value arc. Bipolar controls grow out of 12 o'clock so that "no
-        //  modulation" reads as an empty ring rather than a half-full one.
+        //  Active arc, 4 px. Bipolar controls grow out of 12 o'clock so that
+        //  "no modulation" reads as an empty ring, not a half-full one.
         const float from = bipolar ? (startAngle + endAngle) * 0.5f : startAngle;
 
         if (std::abs (angle - from) > 0.004f)
@@ -170,51 +169,43 @@ namespace edge::ui
             juce::Path value;
             value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f,
                                  juce::jmin (from, angle), juce::jmax (from, angle), true);
-
-            if (hasSecond)
-                g.setGradientFill ({ accent, centre.x - arcR, centre.y,
-                                     accent2, centre.x + arcR, centre.y, false });
-            else
-                g.setColour (accent.withAlpha (0.22f));
-
-            if (! hasSecond)
-            {
-                g.strokePath (value, { thickness * 2.4f, juce::PathStrokeType::curved,
-                                       juce::PathStrokeType::rounded });
-                g.setColour (accent);
-            }
-
-            g.strokePath (value, { thickness, juce::PathStrokeType::curved,
+            g.setColour (accent);
+            g.strokePath (value, { 4.0f, juce::PathStrokeType::curved,
                                    juce::PathStrokeType::rounded });
         }
 
-        //  Body: a dark disc with a rim, lifted at the top.
-        {
-            juce::ColourGradient body (colour::shellTop, centre.x, centre.y - bodyR,
-                                       juce::Colour (0xff0b0c0d), centre.x, centre.y + bodyR, false);
-            g.setGradientFill (body);
-            g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+        //  Body: one flat raised disc with a hairline rim. No gradient chrome.
+        const float bodyR = arcR - 6.0f;
+        g.setColour (colour::raised);
+        g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+        g.setColour (colour::panelEdge);
+        g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
 
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.2f);
-            g.setColour (colour::panelHilite.withAlpha (0.30f));
-            g.drawEllipse (centre.x - bodyR + 1.2f, centre.y - bodyR + 1.2f,
-                           bodyR * 2.0f - 2.4f, bodyR * 2.0f - 2.4f, 1.0f);
+        //  Pointer: 2 x 12 px, outer end 11 px inside the knob radius.
+        {
+            const float tipR  = radius - 11.0f;
+            const float rootR = juce::jmax (2.0f, tipR - 12.0f);
+            g.setColour (colour::text);
+            g.drawLine (centre.x + rootR * std::sin (angle), centre.y - rootR * std::cos (angle),
+                        centre.x + tipR  * std::sin (angle), centre.y - tipR  * std::cos (angle),
+                        2.0f);
         }
 
-        //  Pointer: a bright spoke from the middle of the body to its rim.
-        const juce::Point<float> tip { centre.x + (bodyR - 3.0f) * std::sin (angle),
-                                       centre.y - (bodyR - 3.0f) * std::cos (angle) };
-        const juce::Point<float> root { centre.x + bodyR * 0.28f * std::sin (angle),
-                                        centre.y - bodyR * 0.28f * std::cos (angle) };
+        //  The value, centred inside the knob, when asked for. The deck knobs
+        //  use this instead of a text box under the circle.
+        if ((bool) props.getWithDefault ("valueInside", false))
+        {
+            g.setColour (colour::text);
+            g.setFont (juce::FontOptions (font::value));
+            g.drawText (s.getTextFromValue (s.getValue()),
+                        juce::Rectangle<int> ((int) (centre.x - bodyR), (int) centre.y + 4,
+                                              (int) (bodyR * 2.0f), 14),
+                        juce::Justification::centred, false);
+        }
 
-        g.setColour (colour::textBright);
-        g.drawLine ({ root, tip }, juce::jmax (1.5f, bodyR * 0.075f));
-
-        //  "live" is where the control actually IS after modulation, as opposed
-        //  to where the parameter is. FOLLOW moves EDGE without moving its
-        //  automation lane, and a knob that shows only the lane is lying about
-        //  what the filter is doing.
+        //  "live" is where the control actually IS after modulation, drawn on
+        //  the OUTER edge - automation and FOLLOW move this marker only, never
+        //  the pointer, so the lane and the sound are both always visible.
         if (props.contains ("live"))
         {
             const float liveAngle = startAngle
@@ -222,9 +213,8 @@ namespace edge::ui
 
             if (std::abs (liveAngle - angle) > 0.01f)
             {
-                const float r0 = arcR + thickness * 0.75f;
-                const float r1 = arcR - thickness * 0.75f;
-                g.setColour (colour::textBright.withAlpha (0.85f));
+                const float r0 = arcR + 3.0f, r1 = arcR - 3.0f;
+                g.setColour (colour::movement);
                 g.drawLine (centre.x + r0 * std::sin (liveAngle), centre.y - r0 * std::cos (liveAngle),
                             centre.x + r1 * std::sin (liveAngle), centre.y - r1 * std::cos (liveAngle),
                             2.0f);

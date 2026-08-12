@@ -10,7 +10,15 @@ namespace edge::ui
 {
     namespace
     {
-        constexpr float kHandleRadius = 9.0f;
+        //  v0.12 sizes: 9 px unselected handle, 11 px selected + 15 px halo,
+        //  11 px live puck, 7 px hollow target diamond. These are DIAMETERS;
+        //  the grab radius stays larger than the visual.
+        constexpr float kHandleRadius = 4.5f;
+        constexpr float kHandleRadiusSel = 5.5f;
+        constexpr float kHaloRadius = 7.5f;
+        constexpr float kPuckRadius = 5.5f;
+        constexpr float kDiamondRadius = 3.5f;
+        constexpr float kGrabRadius = 11.0f;
 
         //  Display smoothing. Electronic music is dense and percussive; a fast
         //  rise with a slow fall reads as "what is there" rather than as a
@@ -313,6 +321,55 @@ namespace edge::ui
         return { xForHz (hz), yForDb ((float) magnitudeDb (t, sr, hz)) };
     }
 
+    //  Semantic display names. Internally LP's active section is the HIGH
+    //  edge, but the user selected "LP" and every label must say so - the
+    //  internal name never reaches the screen.
+    juce::String CurveView::nameFor (Grab which) const
+    {
+        if (which == Grab::mid)
+            return "MID";
+
+        if (which == Grab::high)
+            return snap.mode == (int) Mode::lowPass ? "LP" : "HIGH";
+
+        return snap.mode == (int) Mode::highPass ? "HP" : "LOW";
+    }
+
+    //  The persistent readout, bottom left: the active identity and where it
+    //  is, always visible. `LP (bullet) 3.2 kHz` in LP, both edges in BAND and
+    //  FREE, plus the MID line whenever the bell is doing something.
+    juce::String CurveView::readoutText() const
+    {
+        auto* lowF  = processor.getState().getParameter (param::lowFreq);
+        auto* highF = processor.getState().getParameter (param::highFreq);
+        auto* midF  = processor.getState().getParameter (param::midFreq);
+        auto* midG  = processor.getState().getParameter (param::midGain);
+
+        const float lowHz  = lowF->convertFrom0to1 (lowF->getValue());
+        const float highHz = highF->convertFrom0to1 (highF->getValue());
+
+        //  One bullet, decoded once - concatenating raw UTF-8 bytes into
+        //  string literals and re-decoding at the end double-encoded it.
+        const auto sep = juce::String::fromUTF8 (" \xe2\x80\xa2 ");
+
+        juce::String text;
+
+        if (snap.mode == (int) Mode::lowPass)
+            text = "LP" + sep + formatHz (highHz);
+        else if (snap.mode == (int) Mode::highPass)
+            text = "HP" + sep + formatHz (lowHz);
+        else
+            text = "LOW" + sep + formatHz (lowHz)
+                 + "   HIGH" + sep + formatHz (highHz);
+
+        const float gain = midG->convertFrom0to1 (midG->getValue());
+        if (std::abs (gain) > 0.05f || selected == Grab::mid)
+            text << "   MID" << sep << formatHz (midF->convertFrom0to1 (midF->getValue()))
+                 << sep << (gain > 0 ? "+" : "") << juce::String (gain, 1) << " dB";
+
+        return text;
+    }
+
     void CurveView::setFreeMode (bool shouldBeFree)
     {
         if (freeMode == shouldBeFree)
@@ -349,7 +406,7 @@ namespace edge::ui
 
     CurveView::Grab CurveView::grabAt (juce::Point<float> p) const noexcept
     {
-        const float r = kHandleRadius * 2.4f;
+        const float r = kGrabRadius;
 
         //  Frequency proximity decides, not distance in pixels: the two handles
         //  can sit on top of each other vertically when both edges are deep.
@@ -363,7 +420,7 @@ namespace edge::ui
         //  so an x-only test would hand every grab in the middle to whichever
         //  edge happened to be nearer.
         const auto midPos = handlePosition (Grab::mid);
-        if (midPos.getDistanceFrom (p) <= kHandleRadius * 1.8f)
+        if (midPos.getDistanceFrom (p) <= kGrabRadius)
             return Grab::mid;
 
         //  An absent handle is not grabbable either, or the invisible one still
@@ -437,8 +494,15 @@ namespace edge::ui
     void CurveView::mouseDown (const juce::MouseEvent& e)
     {
         dragging = grabAt (e.position);
+
+        //  Empty graph space closes the inspector - the second half of the
+        //  selection contract.
         if (dragging == Grab::none)
+        {
+            if (onSelectionCleared)
+                onSelectionCleared();
             return;
+        }
 
         beginDragInternal (e.position);
     }
@@ -601,7 +665,10 @@ namespace edge::ui
     void CurveView::paint (juce::Graphics& g)
     {
         auto frame = getLocalBounds().toFloat().reduced (1.0f);
-        paintWell (g, frame, 8.0f);
+        g.setColour (colour::graph);
+        g.fillRoundedRectangle (frame, metric::radiusLarge);
+        g.setColour (colour::panelEdge.withAlpha (0.8f));
+        g.drawRoundedRectangle (frame.reduced (0.5f), metric::radiusLarge, 1.0f);
 
         //  Nothing is rebuilt in paint: the timer owns invalidation, paint
         //  only draws what is cached. (First paint before the first tick still
@@ -609,17 +676,17 @@ namespace edge::ui
         if (responseDirty)
             updateResponsePaths();
 
-        // --- grid ------------------------------------------------------------
-        g.setFont (juce::FontOptions (9.5f));
+        // --- grid: 1 px at 8-10 %, quieter than everything above it -----------
+        g.setFont (juce::FontOptions (font::axis));
 
         for (float hz : { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f,
                           2000.0f, 5000.0f, 10000.0f, 20000.0f })
         {
             const float x = xForHz (hz);
             const bool decade = hz == 100.0f || hz == 1000.0f || hz == 10000.0f;
-            g.setColour (decade ? colour::gridStrong.withAlpha (0.75f) : colour::grid);
+            g.setColour (colour::text.withAlpha (decade ? 0.10f : 0.08f));
             g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
-            g.setColour (colour::textDim.withAlpha (0.8f));
+            g.setColour (colour::text.withAlpha (0.46f));
             g.drawText (hz >= 1000.0f ? juce::String (juce::roundToInt (hz / 1000.0f)) + "k"
                                       : juce::String (juce::roundToInt (hz)),
                         (int) x - 18, (int) axisGutter.getY(), 36, 12,
@@ -629,9 +696,9 @@ namespace edge::ui
         for (float db : { 12.0f, 6.0f, 0.0f, -6.0f, -12.0f, -18.0f, -24.0f, -30.0f, -36.0f })
         {
             const float y = yForDb (db);
-            g.setColour (db == 0.0f ? colour::gridStrong : colour::grid);
+            g.setColour (colour::text.withAlpha (db == 0.0f ? 0.10f : 0.08f));
             g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight());
-            g.setColour (colour::textDim.withAlpha (0.7f));
+            g.setColour (colour::text.withAlpha (0.46f));
             g.drawText (juce::String ((int) db), (int) plot.getX() + 3, (int) y - 11, 26, 11,
                         juce::Justification::left, false);
         }
@@ -656,7 +723,7 @@ namespace edge::ui
                 if (alpha <= 0.01f)
                     continue;
 
-                g.setColour (colour::spectrum.withAlpha (0.34f * alpha));
+                g.setColour (colour::spectrum.withAlpha (0.22f * alpha));
                 g.drawLine (a.x, a.y, b.x, b.y, 1.0f);
             }
         }
@@ -674,10 +741,10 @@ namespace edge::ui
             g.reduceClipRegion (plot.toNearestInt());
 
             juce::Path dashed;
-            const float dashes[] = { 4.0f, 4.0f };
-            juce::PathStrokeType (1.1f).createDashedStroke (dashed, targetPath, dashes, 2);
+            const float dashes[] = { 5.0f, 4.0f };
+            juce::PathStrokeType (1.25f).createDashedStroke (dashed, targetPath, dashes, 2);
 
-            g.setColour (colour::text.withAlpha (0.45f));
+            g.setColour (colour::text.withAlpha (0.28f));
             g.fillPath (dashed);
         }
 
@@ -686,54 +753,98 @@ namespace edge::ui
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.toNearestInt());
-            g.setColour (colour::low.withAlpha (0.35f));
+            g.setColour (colour::low.withAlpha (0.22f));
             g.strokePath (leftPath, { 1.0f, juce::PathStrokeType::curved });
-            g.setColour (colour::high.withAlpha (0.35f));
+            g.setColour (colour::high.withAlpha (0.22f));
             g.strokePath (rightPath, { 1.0f, juce::PathStrokeType::curved });
         }
 
-        // --- current response -------------------------------------------------
-        {
-            juce::Graphics::ScopedSaveState clip (g);
-            g.reduceClipRegion (plot.toNearestInt());
-
-            juce::Path fill (currentPath);
-            fill.lineTo (plot.getRight(), plot.getBottom());
-            fill.lineTo (plot.getX(), plot.getBottom());
-            fill.closeSubPath();
-
-            juce::Graphics::ScopedSaveState fillClip (g);
-            g.reduceClipRegion (fill);
-
-            //  The tint has to die away quickly below the line. Filling the
-            //  whole well with an orange-to-cyan gradient turns the middle of
-            //  the display - where the curve is flat and the fill is tallest -
-            //  into a slab of olive.
-            juce::ColourGradient tint (colour::low.withAlpha (0.30f), plot.getX(), 0.0f,
-                                       colour::high.withAlpha (0.30f), plot.getRight(), 0.0f, false);
-            g.setGradientFill (tint);
-            g.fillRect (plot);
-
-            juce::ColourGradient fade (juce::Colours::transparentBlack,
-                                       plot.getCentreX(), plot.getY(),
-                                       colour::wellBottom.withAlpha (0.92f),
-                                       plot.getCentreX(), plot.getY() + plot.getHeight() * 0.62f,
-                                       false);
-            g.setGradientFill (fade);
-            g.fillRect (plot);
-        }
-
+        // --- current response: 2.25 px, full opacity, nothing behind it -------
+        //  The area fill and the 6 px glow are gone: the response line is the
+        //  focal point, and decoration under it only diluted that.
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (plot.expanded (0.0f, 6.0f).toNearestInt());
 
-            g.setGradientFill ({ colour::low.withAlpha (0.30f), plot.getX(), 0.0f,
-                                 colour::high.withAlpha (0.30f), plot.getRight(), 0.0f, false });
-            g.strokePath (currentPath, { 6.0f, juce::PathStrokeType::curved });
-
             g.setGradientFill ({ colour::low, plot.getX(), 0.0f,
                                  colour::high, plot.getRight(), 0.0f, false });
-            g.strokePath (currentPath, { 2.2f, juce::PathStrokeType::curved });
+            g.strokePath (currentPath, { 2.25f, juce::PathStrokeType::curved });
+        }
+
+        // --- EDGE PATH ---------------------------------------------------------
+        //  The repair for "EDGE does not visibly travel". The engine has always
+        //  travelled (resolveFor walks the corner geometrically); what was
+        //  missing was an OBJECT at the live corner. The puck rides the
+        //  resolved corner from the same snapshot the audio published, so the
+        //  display can never invent movement the engine is not producing.
+        //
+        //  LP: right boundary -> LP target.  HP: left boundary -> HP target.
+        //  BAND: both. FREE: no rail - the corners deliberately do not travel.
+        if (snap.mode != (int) Mode::freeBand)
+        {
+            const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
+
+            auto drawPath = [&] (bool isHigh)
+            {
+                const float liveHz   = isHigh ? snap.currentCentre.highHz : snap.currentCentre.lowHz;
+                const float targetHz = isHigh ? snap.target.highHz : snap.target.lowHz;
+                const float originX  = isHigh ? plot.getRight() : plot.getX();
+                const auto  accent   = isHigh ? colour::high : colour::low;
+
+                const float liveX   = xForHz (liveHz);
+                const float targetX = xForHz (targetHz);
+
+                //  The rail sits at the live corner's level on the live curve.
+                auto shapeNoMid = snap.currentCentre;
+                shapeNoMid.midGainDb = 0.0f;
+                const float railY = juce::jlimit (plot.getY() + 8.0f, plot.getBottom() - 8.0f,
+                                                  yForDb ((float) (magnitudeDb (shapeNoMid, sr, liveHz)
+                                                                   + snap.colourTrimDb)));
+
+                //  Completed portion (origin -> live) at 62 %, remaining
+                //  (live -> target) at 18 %. No arrowheads: the puck's own
+                //  motion is the direction.
+                g.setColour (accent.withAlpha (0.62f));
+                g.drawLine (originX, railY, liveX, railY, 2.0f);
+                g.setColour (accent.withAlpha (0.18f));
+                g.drawLine (liveX, railY, targetX, railY, 2.0f);
+
+                //  Target: 7 px hollow diamond, stationary while EDGE moves.
+                {
+                    juce::Path diamond;
+                    diamond.addQuadrilateral (targetX, railY - kDiamondRadius,
+                                              targetX + kDiamondRadius, railY,
+                                              targetX, railY + kDiamondRadius,
+                                              targetX - kDiamondRadius, railY);
+                    g.setColour (accent.withAlpha (0.85f));
+                    g.strokePath (diamond, juce::PathStrokeType (1.2f));
+                }
+
+                //  Live position: 11 px filled puck; 15 px halo when its edge
+                //  is the selection.
+                const bool isSelected = (isHigh && selected == Grab::high)
+                                     || (! isHigh && selected == Grab::low);
+                if (isSelected)
+                {
+                    g.setColour (accent.withAlpha (0.22f));
+                    g.fillEllipse (liveX - kHaloRadius, railY - kHaloRadius,
+                                   kHaloRadius * 2.0f, kHaloRadius * 2.0f);
+                }
+
+                g.setColour (accent);
+                g.fillEllipse (liveX - kPuckRadius, railY - kPuckRadius,
+                               kPuckRadius * 2.0f, kPuckRadius * 2.0f);
+            };
+
+            if (snap.mode != (int) Mode::lowPass)  drawPath (false);
+            if (snap.mode != (int) Mode::highPass) drawPath (true);
+
+            //  The badge names the object once, top right, out of the way.
+            g.setColour (colour::text.withAlpha (0.46f));
+            g.setFont (juce::FontOptions (font::axis));
+            g.drawText ("EDGE PATH",
+                        (int) plot.getRight() - 90, (int) plot.getY() + 6, 82, 14,
+                        juce::Justification::centredRight, false);
         }
 
         // --- handles ----------------------------------------------------------
@@ -754,11 +865,11 @@ namespace edge::ui
             //  scale, and an unclamped handle was drawn half outside the
             //  display with its name cut off by the border.
             auto pos = handlePosition (which);
-            pos.y = juce::jlimit (plot.getY() + kHandleRadius + 2.0f,
-                                  plot.getBottom() - kHandleRadius - 2.0f, pos.y);
+            pos.y = juce::jlimit (plot.getY() + kHaloRadius + 2.0f,
+                                  plot.getBottom() - kHaloRadius - 2.0f, pos.y);
             const bool active = (dragging == which) || (dragging == Grab::none && hovered == which);
             const bool isSelected = selected == which;
-            const float r = kHandleRadius * (active ? 1.15f : 1.0f);
+            const float r = isSelected ? kHandleRadiusSel : kHandleRadius;
 
             g.setColour (accent.withAlpha (active ? 0.40f : 0.18f));
             g.drawVerticalLine ((int) pos.x, plot.getY(), plot.getBottom());
@@ -785,28 +896,28 @@ namespace edge::ui
                 }
             }
 
-            if (active)
+            //  Selection halo: 15 px at 22 %.
+            if (isSelected || active)
             {
-                g.setColour (accent.withAlpha (0.20f));
-                g.fillEllipse (pos.x - r * 2.0f, pos.y - r * 2.0f, r * 4.0f, r * 4.0f);
+                g.setColour (accent.withAlpha (0.22f));
+                g.fillEllipse (pos.x - kHaloRadius, pos.y - kHaloRadius,
+                               kHaloRadius * 2.0f, kHaloRadius * 2.0f);
             }
 
-            g.setColour (colour::wellTop);
+            g.setColour (colour::graph);
             g.fillEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f);
 
-            //  The selected handle is the one the knobs below are driving, so
-            //  it is filled rather than merely outlined. One glance answers
-            //  "what am I editing?".
+            //  The selected handle is filled - one glance answers "what am I
+            //  editing?".
             if (isSelected)
             {
-                g.setColour (accent.withAlpha (0.55f));
-                g.fillEllipse (pos.x - r + 3.0f, pos.y - r + 3.0f,
-                               r * 2.0f - 6.0f, r * 2.0f - 6.0f);
+                g.setColour (accent.withAlpha (0.65f));
+                g.fillEllipse (pos.x - r + 2.0f, pos.y - r + 2.0f,
+                               r * 2.0f - 4.0f, r * 2.0f - 4.0f);
             }
 
             g.setColour (accent);
-            g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f,
-                           isSelected ? 3.0f : 2.2f);
+            g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.8f);
 
             //  The name sits above the handle permanently, as in the mockup;
             //  the numbers only appear while it is being touched.
@@ -815,9 +926,9 @@ namespace edge::ui
             //  off the display entirely.
             g.setColour (accent);
             g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 34, 60, 12);
+            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 24, 60, 12);
             if (nameBox.getY() < (int) plot.getY() + 2)
-                nameBox.setY ((int) pos.y + 22);
+                nameBox.setY ((int) pos.y + 14);
 
             g.drawText (name, nameBox, juce::Justification::centred, false);
 
@@ -878,12 +989,35 @@ namespace edge::ui
             }
         }
 
-        drawHandle (Grab::low,  colour::low,  "LOW");
-        drawHandle (Grab::high, colour::high, "HIGH");
+        //  Semantic names: in LP the active handle says "LP", never the
+        //  internal "HIGH". The identity the user selected never disappears.
+        drawHandle (Grab::low,  colour::low,  nameFor (Grab::low));
+        drawHandle (Grab::high, colour::high, nameFor (Grab::high));
 
         //  MID is drawn in the neutral colour: it is neither edge, and a third
-        //  accent would stop the other two from meaning anything.
+        //  accent would stop the other two from meaning anything. Violet is
+        //  movement, not a band.
         drawHandle (Grab::mid, colour::textBright, "MID");
+
+        // --- persistent semantic readout, bottom left --------------------------
+        //  Always visible - the LP identity and its cutoff have a permanent
+        //  home whether or not anything is being touched.
+        {
+            const auto text = readoutText();
+            g.setFont (juce::FontOptions (font::readout));
+
+            const int w = juce::jmax (110, juce::GlyphArrangement::getStringWidthInt (
+                              juce::Font (juce::FontOptions (font::readout)), text) + 22);
+            const auto box = juce::Rectangle<int> ((int) plot.getX() + 8,
+                                                   (int) plot.getBottom() - 30, w, 22);
+
+            g.setColour (colour::raised.withAlpha (0.92f));
+            g.fillRoundedRectangle (box.toFloat(), metric::radiusSmall);
+            g.setColour (colour::text.withAlpha (0.24f));
+            g.drawRoundedRectangle (box.toFloat().reduced (0.5f), metric::radiusSmall, 1.0f);
+            g.setColour (colour::text);
+            g.drawText (text, box.reduced (10, 0), juce::Justification::centredLeft, false);
+        }
 
         juce::ignoreUnused (shape);
     }

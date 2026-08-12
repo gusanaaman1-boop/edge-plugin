@@ -9,6 +9,14 @@
 #include "Ui/ShapePanel.h"
 #include "Ui/Theme.h"
 
+//  The v0.12 layout:
+//
+//      [ header: preset | wordmark | BITE  BYPASS ]           48 px
+//      [ graph, with the MODE segments floating inside ]      the rest
+//      [ deck:  LOW      EDGE      HIGH    FOLLOW->EDGE ]     176 px
+//
+//  One floating inspector, opened by selection, closed by empty space or
+//  Escape. No permanent bottom panel, no tabs.
 class EdgeAudioProcessorEditor : public juce::AudioProcessorEditor,
                                  private juce::Timer
 {
@@ -18,74 +26,68 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
 
-    //  Test support: the display suite drives the real view and the real panel,
-    //  not copies of them.
+    //  Test support: the suite drives the real view and the real inspector.
     edge::ui::CurveView& getCurveView() noexcept { return curve; }
-    edge::ui::ShapePanel& getShapePanel() noexcept { return shape; }
-    void setShapeOpenForTest (bool open) { setShapeOpen (open); }
+    edge::ui::ShapePanel& getShapePanel() noexcept { return inspector; }
+    bool isInspectorVisible() const noexcept { return inspector.isVisible(); }
+    void openInspectorForTest (edge::ui::SelectedControl c) { openInspector (c); }
+    void closeInspectorForTest() { closeInspector(); }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    struct Knob
+    //  A deck knob: label above, value inside the knob itself.
+    struct DeckKnob
     {
         juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag,
-                              juce::Slider::TextBoxBelow };
+                              juce::Slider::NoTextBox };
         juce::Label caption;
         std::unique_ptr<SliderAttachment> attachment;
-        juce::Rectangle<int> markArea;
 
         void attach (juce::Component& parent, juce::AudioProcessorValueTreeState&,
-                     const juce::String& id, const juce::String& text,
-                     juce::Colour accent, bool bipolar);
-        void setBounds (juce::Rectangle<int>);
-        static int heightFor (int knobSize) noexcept;
+                     const juce::String& id, const juce::String& text, juce::Colour accent);
+        void place (juce::Rectangle<int> area, int diameter);
     };
 
     void timerCallback() override;
-    void setShapeOpen (bool shouldBeOpen);
-    void applySelection (edge::ui::SelectedControl, bool fromGraph);
-    void applyLink (bool lowMoved);
-    void installLinkCoupling();
-    int  controlStripHeight() const noexcept;
+    void openInspector (edge::ui::SelectedControl);
+    void closeInspector();
+    void positionInspector();
+    juce::String semanticHeaderFor (edge::ui::SelectedControl) const;
+    void refreshPresetBox();
 
     EdgeAudioProcessor& edgeProcessor;
     edge::ui::Look look;
     edge::ui::CurveView curve;
-    edge::ui::ShapePanel shape;
+    edge::ui::ShapePanel inspector;
 
-    //  The one control the whole product is named after.
-    juce::Slider edgeKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
-    std::unique_ptr<SliderAttachment> edgeAttachment;
+    //  --- header ----------------------------------------------------------
+    juce::Label presetTitle;
+    juce::ComboBox presetBox;
+    juce::TextButton prevPreset { "<" }, nextPreset { ">" };
+    DeckKnob biteKnob;
+    juce::ToggleButton bypassButton { "BYPASS" };
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    juce::TextButton characterButton { "WARM" };
+    std::unique_ptr<juce::ParameterAttachment> characterAttachment;
 
-    Knob followKnob, spreadKnob, biteKnob, outputKnob;
-
+    //  --- MODE, floating inside the graph -----------------------------------
     juce::TextButton lpButton { "LP" }, bandButton { "BAND" },
                      hpButton { "HP" }, freeButton { "FREE" };
     std::unique_ptr<juce::ParameterAttachment> modeAttachment;
 
-    juce::TextButton shapeButton { "SHAPE" };
-    juce::ToggleButton bypassButton { "BYPASS" };
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    //  --- deck --------------------------------------------------------------
+    DeckKnob lowKnob, highKnob, followKnob;
+    juce::Slider edgeKnob { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
+    std::unique_ptr<SliderAttachment> edgeAttachment;
 
-    //  CHARACTER: one two-way switch, next to the lamp it lights.
-    juce::TextButton characterButton { "WARM" };
-    std::unique_ptr<juce::ParameterAttachment> characterAttachment;
-
-    juce::Rectangle<int> warmLampArea;
-    bool warmLit = false;
-
-    //  LINK is an editor gesture, not a parameter.
-    float lastLowFreq = 0.0f, lastHighFreq = 0.0f;
-    bool applyingLink = false;
-    std::unique_ptr<juce::ParameterAttachment> freqWatcherLow, freqWatcherHigh;
+    edge::ui::SelectedControl selected = edge::ui::SelectedControl::low;
+    juce::Rectangle<int> edgeLabelArea;
 
     juce::ComponentBoundsConstrainer constrainer;
-
-    //  Built once in the constructor: the version the user reads and the exact
-    //  build a support e-mail needs are the same string.
     juce::String versionText;
     std::unique_ptr<juce::ResizableCornerComponent> resizer;
 

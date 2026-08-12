@@ -23,7 +23,8 @@ namespace
     struct Shot
     {
         const char* name;
-        bool shapeOpen;
+        int inspector;      // -1 none, else (int) edge::ui::SelectedControl
+        int width, height;
         std::vector<std::pair<const char*, float>> values;
     };
 
@@ -35,57 +36,54 @@ namespace
 
     int render (const juce::File& outputDir)
     {
+        const int W = edge::ui::metric::defaultWidth, H = edge::ui::metric::defaultHeight;
+
+        //  The acceptance list from the v0.12 work order: LP and HP at EDGE 0,
+        //  50 and 100; every inspector context; minimum, reference and maximum
+        //  window sizes.
         const std::vector<Shot> shots =
         {
-            { "01-neutral", false, {} },
+            { "lp-edge-000", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 3200.0f }, { edge::param::edge, 0.0f } } },
+            { "lp-edge-050", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 3200.0f }, { edge::param::edge, 50.0f } } },
+            { "lp-edge-100", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 3200.0f }, { edge::param::edge, 100.0f } } },
 
-            { "02-band-open", false, {
-                { edge::param::edge,      100.0f },
-                { edge::param::lowFreq,   180.0f }, { edge::param::highFreq, 7000.0f },
-                { edge::param::lowCurve,   75.0f }, { edge::param::highCurve,  75.0f },
-                { edge::param::lowReso,    30.0f }, { edge::param::highReso,   22.0f },
-                { edge::param::bite,       45.0f } } },
+            { "hp-edge-000", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::highPass },
+                { edge::param::lowFreq, 300.0f }, { edge::param::edge, 0.0f } } },
+            { "hp-edge-050", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::highPass },
+                { edge::param::lowFreq, 300.0f }, { edge::param::edge, 50.0f } } },
+            { "hp-edge-100", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::highPass },
+                { edge::param::lowFreq, 300.0f }, { edge::param::edge, 100.0f } } },
 
-            { "03-lowpass", false, {
-                { edge::param::mode,      (float) (int) edge::Mode::lowPass },
-                { edge::param::edge,       78.0f },
-                { edge::param::highFreq, 2600.0f }, { edge::param::highCurve, 100.0f },
-                { edge::param::highReso,   55.0f },
-                { edge::param::highShoulder, 40.0f },
-                { edge::param::bite,       60.0f } } },
+            { "inspector-low", (int) edge::ui::SelectedControl::low, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f } } },
+            { "inspector-lp-high", (int) edge::ui::SelectedControl::high, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::lowPass },
+                { edge::param::highFreq, 3200.0f }, { edge::param::edge, 56.0f } } },
+            { "inspector-mid", (int) edge::ui::SelectedControl::mid, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::midGain, 8.0f }, { edge::param::edge, 62.0f } } },
+            { "inspector-follow", (int) edge::ui::SelectedControl::follow, W, H, {
+                { edge::param::follow, 64.0f }, { edge::param::edge, 56.0f } } },
 
-            { "04-follow-spread", false, {
-                { edge::param::edge,       55.0f },
-                { edge::param::follow,     70.0f },
-                { edge::param::spread,     60.0f },
-                { edge::param::lowFreq,   260.0f }, { edge::param::highFreq, 4800.0f },
-                { edge::param::bite,       35.0f } } },
-
-            { "05-free-band", false, {
-                { edge::param::mode,      (float) (int) edge::Mode::freeBand },
-                { edge::param::edge,      100.0f },
-                { edge::param::lowFreq,   700.0f }, { edge::param::highFreq, 2800.0f },
-                { edge::param::follow,     60.0f },
-                { edge::param::character, (float) (int) edge::Character::iron },
-                { edge::param::bite,       70.0f } } },
-
-            { "06-mid-wah", false, {
-                { edge::param::edge,       72.0f },
-                { edge::param::lowFreq,   120.0f }, { edge::param::highFreq, 9000.0f },
-                { edge::param::midFreq,  4000.0f }, { edge::param::midGain,   14.0f },
-                { edge::param::midReso,    75.0f },
-                { edge::param::follow,     55.0f },
-                { edge::param::bite,       40.0f } } },
-
-            { "07-shape-open", true, {
-                { edge::param::edge,       90.0f },
-                { edge::param::lowFreq,   140.0f }, { edge::param::highFreq, 9000.0f },
-                { edge::param::lowShoulder, 55.0f }, { edge::param::highShoulder, 70.0f },
-                { edge::param::lowReso,    40.0f }, { edge::param::highReso,   35.0f },
-                { edge::param::follow,    -45.0f },
-                { edge::param::midFreq,   1800.0f }, { edge::param::midGain, -10.0f },
-                { edge::param::midReso,    55.0f },
-                { edge::param::bite,       50.0f } } },
+            { "size-min", -1, edge::ui::metric::minWidth, edge::ui::metric::minHeight, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f } } },
+            { "size-ref", -1, W, H, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f } } },
+            { "size-max", -1, edge::ui::metric::maxWidth, edge::ui::metric::maxHeight, {
+                { edge::param::mode, (float) (int) edge::Mode::band },
+                { edge::param::edge, 62.0f } } },
         };
 
         outputDir.createDirectory();
@@ -93,7 +91,6 @@ namespace
         for (const auto& shot : shots)
         {
             EdgeAudioProcessor processor;
-            processor.shapeOpen.store (shot.shapeOpen);
             processor.prepareToPlay (48000.0, 512);
 
             for (const auto& v : shot.values)
@@ -135,9 +132,11 @@ namespace
             //  drains the FIFO and transforms it.
             juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
 
-            const int h = edge::ui::metric::defaultHeight
-                        + (shot.shapeOpen ? edge::ui::metric::shapeHeight : 0);
-            editor->setSize (edge::ui::metric::defaultWidth, h);
+            editor->setSize (shot.width, shot.height);
+
+            if (shot.inspector >= 0)
+                if (auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (editor.get()))
+                    ed->openInspectorForTest ((edge::ui::SelectedControl) shot.inspector);
 
             juce::Image image (juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
             {

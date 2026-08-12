@@ -10,27 +10,32 @@ namespace edge::ui
 {
     namespace colour
     {
-        //  Matched to the approved mockup: a near-black shell with a slightly
-        //  lifted top, and a display well that is darker than the chassis.
-        inline const juce::Colour shellTop     { 0xff232427 };
-        inline const juce::Colour shellBottom  { 0xff141517 };
-        inline const juce::Colour chassis      { 0xff1c1d20 };
-        inline const juce::Colour wellTop      { 0xff0d0e10 };
-        inline const juce::Colour wellBottom   { 0xff141518 };
-        inline const juce::Colour panelEdge    { 0xff34363b };
-        inline const juce::Colour panelHilite  { 0xff45484f };
+        //  The v0.12 direction's palette. Three accents with FIXED meanings:
+        //  amber is the low-frequency edge, cyan is the high edge (and so the
+        //  LP cutoff), violet is movement/modulation and NOTHING else - it is
+        //  never a third band colour.
+        inline const juce::Colour chassis      { 0xff17191D };
+        inline const juce::Colour graph        { 0xff0B0D10 };
+        inline const juce::Colour raised       { 0xff15171B };
 
-        inline const juce::Colour grid         { 0xff232529 };
-        inline const juce::Colour gridStrong   { 0xff32353b };
+        inline const juce::Colour shellTop     { 0xff1D2025 };
+        inline const juce::Colour shellBottom  { 0xff131519 };
+        inline const juce::Colour wellTop      { 0xff0B0D10 };
+        inline const juce::Colour wellBottom   { 0xff0E1013 };
+        inline const juce::Colour panelEdge    { 0xff2A2D33 };
+        inline const juce::Colour panelHilite  { 0xff3A3E46 };
+
+        inline const juce::Colour grid         { 0xff1A1D22 };
+        inline const juce::Colour gridStrong   { 0xff23262C };
         inline const juce::Colour spectrum     { 0xff8a8f98 };
 
-        inline const juce::Colour text         { 0xffc8cdd4 };
-        inline const juce::Colour textDim      { 0xff787f89 };
-        inline const juce::Colour textBright   { 0xfff4f7fa };
+        inline const juce::Colour text         { 0xffE7EBF0 };
+        inline const juce::Colour textDim      { 0xff7C8490 };
+        inline const juce::Colour textBright   { 0xffF4F7FA };
 
-        //  The two accents. Nothing else in the plug-in is coloured.
         inline const juce::Colour low          { 0xffF2A03C };
         inline const juce::Colour high         { 0xff31C6E8 };
+        inline const juce::Colour movement     { 0xff9B8CFF };
     }
 
     namespace metric
@@ -38,19 +43,23 @@ namespace edge::ui
         inline constexpr int defaultWidth  = 900;
         inline constexpr int defaultHeight = 560;
         inline constexpr int minWidth      = 720;
+        inline constexpr int minHeight     = 420;
         inline constexpr int maxWidth      = 1800;
+        inline constexpr int maxHeight     = 1400;
 
-        //  Extra height when SHAPE is open. It was 252 when the panel held
-        //  sixteen knobs in four labelled blocks; one shared row needs half
-        //  that, and the display keeps the difference.
-        inline constexpr int shapeHeight   = 156;
+        //  One 8 px base grid, and a radius scale derived from it. The old
+        //  build had 4, 8 and 10 px corners, none derived from anything -
+        //  which is what "the angles are not professional" looks like.
+        inline constexpr int   grid         = 8;
+        inline constexpr float radiusSmall  = 8.0f;    // segments, pills, notches
+        inline constexpr float radiusLarge  = 16.0f;   // graph, deck, inspector
 
-        //  One vertical rhythm for every knob column in the plug-in, so the
-        //  main strip and the SHAPE panel line up with each other instead of
-        //  each inventing its own spacing.
-        inline constexpr int markRow    = 11;   // the "0" above a bipolar knob
-        inline constexpr int pillRow    = 16;   // the value read-out
-        inline constexpr int captionRow = 13;   // the name underneath
+        inline constexpr int headerHeight = 48;
+        inline constexpr int margin       = 12;
+        inline constexpr int deckHeight   = 176;
+
+        inline constexpr int pillRow    = 16;
+        inline constexpr int captionRow = 13;
         inline constexpr int rowGap     = 3;
 
         inline constexpr float displayTopDb    = 15.0f;
@@ -59,14 +68,19 @@ namespace edge::ui
         inline constexpr float displayMaxHz    = 22000.0f;
     }
 
-    //  One type scale. Every size in the plug-in comes from here; the previous
-    //  build had eight different ones and nothing lined up.
+    //  One type scale, from the v0.12 spec. Only control categories and short
+    //  control labels are uppercase; values and preset names never are.
     namespace font
     {
-        inline constexpr float tiny    = 9.0f;    // axis numbers, +/- marks
-        inline constexpr float caption = 10.0f;   // control names
-        inline constexpr float value   = 11.0f;   // read-outs
-        inline constexpr float title   = 11.0f;   // section titles
+        inline constexpr float axis      = 10.0f;   // axis labels, regular
+        inline constexpr float tiny      = 9.0f;
+        inline constexpr float caption   = 10.0f;   // inspector labels, uppercase
+        inline constexpr float knobLabel = 11.0f;   // knob labels, semibold uppercase
+        inline constexpr float modeLabel = 11.0f;   // segmented control
+        inline constexpr float value     = 13.0f;   // knob values
+        inline constexpr float readout   = 12.0f;
+        inline constexpr float title     = 12.0f;   // inspector header
+        inline constexpr float wordmark  = 22.0f;
     }
 
     juce::String formatHz (float hz);

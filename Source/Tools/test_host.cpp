@@ -1139,7 +1139,7 @@ namespace
 
         DisplayRig rig;
         auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
-        ed->setShapeOpenForTest (true);
+        ed->openInspectorForTest (edge::ui::SelectedControl::low);
         auto& panel = ed->getShapePanel();
 
         //  A busy base state in which every control is audible: EDGE open,
@@ -1394,21 +1394,207 @@ namespace
             check (ok, "handle x within 1 px of its parameter frequency", detail);
         }
 
-        //  --- selection from the panel side --------------------------------------
-        panel.setSelected (SelectedControl::high);
-        check (panel.getSelected() == SelectedControl::high
-                 && panel.sliderFor (edge::param::highFreq) != nullptr
-                 && panel.sliderFor (edge::param::highFreq)->isShowing() == false,
-               "panel selection switches without destroying sliders",
-               "attachments alive");
+        //  --- context switching keeps every attachment alive ---------------------
+        //  The acceptance test from the work order: a hundred context switches,
+        //  zero attachment constructions.
+        {
+            const int before = edge::ui::ShapePanel::attachmentConstructions();
+
+            for (int i = 0; i < 100; ++i)
+                ed->openInspectorForTest ((SelectedControl) (i % 4));
+
+            const int made = edge::ui::ShapePanel::attachmentConstructions() - before;
+            check (made == 0, "100 context switches construct 0 attachments",
+                   juce::String (made) + " constructed");
+
+            check (panel.sliderFor (edge::param::highDepth) != nullptr,
+                   "context sliders survive the switching", "alive");
+        }
+
+        //  --- exactly one inspector, and none after close ------------------------
+        {
+            ed->openInspectorForTest (SelectedControl::mid);
+            check (ed->isInspectorVisible(), "exactly one inspector after selection",
+                   ed->isInspectorVisible() ? "visible" : "MISSING");
+
+            ed->closeInspectorForTest();
+            check (! ed->isInspectorVisible(), "zero inspectors after close",
+                   ed->isInspectorVisible() ? "STILL VISIBLE" : "closed");
+        }
     }
 
     // =========================================================================
-    //  11. The editor
+    //  11. EDGE travel: the repaired defect, asserted numerically
+    // =========================================================================
+    void testEdgeTravel()
+    {
+        section ("11. EDGE travel");
+
+        DisplayRig rig;
+
+        auto liveXs = [&rig] (int mode, bool highSide) -> std::array<float, 5>
+        {
+            rig.set (edge::param::mode, (float) mode);
+            rig.set (edge::param::lowFreq, 300.0f);
+            rig.set (edge::param::highFreq, 3200.0f);
+
+            std::array<float, 5> xs {};
+            const float edges[] = { 0.0f, 25.0f, 50.0f, 75.0f, 100.0f };
+
+            for (int i = 0; i < 5; ++i)
+            {
+                rig.set (edge::param::edge, edges[i]);
+                rig.settle (0.0f, 8, 40);
+
+                const auto snap = rig.processor.getEngine().getDisplaySnapshot();
+                xs[(size_t) i] = rig.curve->testXForHz (highSide ? snap.currentCentre.highHz
+                                                                 : snap.currentCentre.lowHz);
+            }
+
+            return xs;
+        };
+
+        //  LP: the live cutoff travels monotonically LEFT from the right
+        //  boundary towards the saved destination.
+        {
+            const auto xs = liveXs ((int) edge::Mode::lowPass, true);
+            bool mono = true;
+            for (int i = 1; i < 5; ++i) mono = mono && xs[(size_t) i] < xs[(size_t) i - 1];
+
+            check (mono, "LP live cutoff x moves monotonically left",
+                   juce::String (xs[0], 1) + " > " + juce::String (xs[2], 1)
+                     + " > " + juce::String (xs[4], 1) + " px");
+        }
+
+        //  HP: monotonically RIGHT from the left boundary.
+        {
+            const auto xs = liveXs ((int) edge::Mode::highPass, false);
+            bool mono = true;
+            for (int i = 1; i < 5; ++i) mono = mono && xs[(size_t) i] > xs[(size_t) i - 1];
+
+            check (mono, "HP live cutoff x moves monotonically right",
+                   juce::String (xs[0], 1) + " < " + juce::String (xs[2], 1)
+                     + " < " + juce::String (xs[4], 1) + " px");
+        }
+
+        //  BAND: both edges travel inward.
+        {
+            const auto lows  = liveXs ((int) edge::Mode::band, false);
+            const auto highs = liveXs ((int) edge::Mode::band, true);
+            bool monoLow = true, monoHigh = true;
+            for (int i = 1; i < 5; ++i)
+            {
+                monoLow  = monoLow  && lows[(size_t) i]  > lows[(size_t) i - 1];
+                monoHigh = monoHigh && highs[(size_t) i] < highs[(size_t) i - 1];
+            }
+
+            check (monoLow,  "BAND low x increases monotonically",
+                   juce::String (lows[0], 1) + " -> " + juce::String (lows[4], 1) + " px");
+            check (monoHigh, "BAND high x decreases monotonically",
+                   juce::String (highs[0], 1) + " -> " + juce::String (highs[4], 1) + " px");
+        }
+
+        //  FREE: the corners must NOT travel - EDGE is purely depth there.
+        {
+            const auto xs = liveXs ((int) edge::Mode::freeBand, true);
+            float drift = 0.0f;
+            for (int i = 1; i < 5; ++i)
+                drift = juce::jmax (drift, std::abs (xs[(size_t) i] - xs[0]));
+
+            check (drift <= 0.25f, "FREE x drift stays within 0.25 px",
+                   juce::String (drift, 3) + " px");
+        }
+
+        //  The target marker must be stationary while EDGE changes.
+        {
+            rig.set (edge::param::mode, (float) (int) edge::Mode::lowPass);
+            rig.set (edge::param::edge, 10.0f);
+            rig.settle (0.0f, 8, 40);
+            const float t0 = rig.curve->testXForHz (
+                rig.processor.getEngine().getDisplaySnapshot().target.highHz);
+
+            rig.set (edge::param::edge, 90.0f);
+            rig.settle (0.0f, 8, 40);
+            const float t1 = rig.curve->testXForHz (
+                rig.processor.getEngine().getDisplaySnapshot().target.highHz);
+
+            check (std::abs (t1 - t0) <= 0.25f, "target marker drift within 0.25 px",
+                   juce::String (std::abs (t1 - t0), 3) + " px");
+        }
+    }
+
+    // =========================================================================
+    //  12. Semantic labels: the LP identity never disappears
+    // =========================================================================
+    void testSemanticLabels()
+    {
+        section ("12. semantic labels");
+
+        using Grab = edge::ui::CurveView::Grab;
+
+        DisplayRig rig;
+
+        //  Cycle LP -> BAND -> HP -> FREE -> LP twenty times. The mode's
+        //  identity and its cutoff must be present in the readout every single
+        //  time - zero dropouts.
+        const int cycle[] = { (int) edge::Mode::lowPass,  (int) edge::Mode::band,
+                              (int) edge::Mode::highPass, (int) edge::Mode::freeBand };
+
+        int missingLabels = 0, missingCutoffs = 0;
+        juce::String firstMiss;
+
+        for (int i = 0; i < 20 * 4; ++i)
+        {
+            const int mode = cycle[i % 4];
+            rig.set (edge::param::mode, (float) mode);
+            rig.settle (0.0f, 3, 40);
+
+            const auto text = rig.curve->readoutText();
+            const juce::String want = mode == (int) edge::Mode::lowPass  ? "LP"
+                                    : mode == (int) edge::Mode::highPass ? "HP"
+                                                                         : "LOW";
+
+            if (! text.startsWith (want))
+            {
+                ++missingLabels;
+                if (firstMiss.isEmpty()) firstMiss = text;
+            }
+
+            if (! text.containsIgnoreCase ("Hz"))
+                ++missingCutoffs;
+        }
+
+        check (missingLabels == 0, "80 mode switches, 0 missing mode labels",
+               juce::String (missingLabels) + " missing" + (firstMiss.isEmpty() ? "" : "  first: " + firstMiss));
+        check (missingCutoffs == 0, "80 mode switches, 0 missing cutoff labels",
+               juce::String (missingCutoffs) + " missing");
+
+        //  The active handle's own name is semantic: "LP", not "HIGH".
+        rig.set (edge::param::mode, (float) (int) edge::Mode::lowPass);
+        rig.settle (0.0f, 3, 40);
+        check (rig.curve->nameFor (Grab::high) == "LP",
+               "in LP the active handle is named LP", rig.curve->nameFor (Grab::high));
+
+        rig.set (edge::param::mode, (float) (int) edge::Mode::highPass);
+        rig.settle (0.0f, 3, 40);
+        check (rig.curve->nameFor (Grab::low) == "HP",
+               "in HP the active handle is named HP", rig.curve->nameFor (Grab::low));
+
+        //  And the inspector's header follows: selecting the active edge in LP
+        //  says LP.
+        auto* ed = dynamic_cast<EdgeAudioProcessorEditor*> (rig.editor.get());
+        rig.set (edge::param::mode, (float) (int) edge::Mode::lowPass);
+        rig.settle (0.0f, 3, 40);
+        ed->openInspectorForTest (edge::ui::SelectedControl::high);
+        check (ed->isInspectorVisible(), "LP inspector opens on the active edge", "visible");
+    }
+
+    // =========================================================================
+    //  13. The editor
     // =========================================================================
     void testEditor()
     {
-        section ("11. editor");
+        section ("13. editor");
 
         EdgeAudioProcessor p;
         applyBusySettings (p);
@@ -1445,15 +1631,11 @@ namespace
         //  which is where a layout that only ever ran at 1x and 2x on a Mac
         //  falls apart.
         {
-            //  The four corners of what the constrainer in PluginEditor.cpp
-            //  allows, plus the default with SHAPE open - the tall layout is a
-            //  different code path, not a taller version of the same one.
+            //  The corners of what the constrainer allows, plus the reference.
             const int sizes[][2] = {
-                { edge::ui::metric::minWidth,     420 },
+                { edge::ui::metric::minWidth,     edge::ui::metric::minHeight },
                 { edge::ui::metric::defaultWidth, edge::ui::metric::defaultHeight },
-                { edge::ui::metric::defaultWidth, edge::ui::metric::defaultHeight
-                                                    + edge::ui::metric::shapeHeight },
-                { edge::ui::metric::maxWidth,     1400 } };
+                { edge::ui::metric::maxWidth,     edge::ui::metric::maxHeight } };
 
             const float scales[] = { 1.0f, 1.5f, 2.0f };
 
@@ -1535,6 +1717,8 @@ int main()
     testDisplayInvalidation();
     testControlMatrix();
     testGestures();
+    testEdgeTravel();
+    testSemanticLabels();
     testEditor();
 
     std::printf ("\n%d checks, %d failed\n", gChecks, gFailures);

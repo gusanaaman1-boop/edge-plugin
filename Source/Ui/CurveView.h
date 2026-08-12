@@ -63,6 +63,13 @@ namespace edge::ui
         void setSelected (Grab);
         std::function<void (SelectedControl)> onSelectionChanged;
 
+        //  Fired on a click in empty graph space: the inspector closes.
+        std::function<void()> onSelectionCleared;
+
+        //  Semantic display naming - "LP", never the internal "HIGH EDGE".
+        juce::String nameFor (Grab) const;
+        juce::String readoutText() const;
+
         //  --- test support ----------------------------------------------------
         //  The display defects this view has shipped were all of the form "the
         //  screen no longer matches the state". These accessors let a test
