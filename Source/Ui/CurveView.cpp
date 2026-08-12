@@ -1014,6 +1014,12 @@ namespace edge::ui
 
             const float endY = juce::jmin (yForDb (-54.0f), plot.getBottom() - 12.0f);
 
+            //  Arrived = no journey. At EDGE ~100 % the route has zero length
+            //  and the diamond just floated under the handle cluster as an
+            //  irrelevant extra control - reported from Cubase while sweeping
+            //  HIGH at full EDGE.
+            const bool journeyDone = snap.liveEdge01 > 0.985f;
+
             auto drawJourney = [&] (bool isHigh)
             {
                 const float liveHz = isHigh ? snap.currentCentre.highHz : snap.currentCentre.lowHz;
@@ -1054,6 +1060,12 @@ namespace edge::ui
                 if (route.size() < 6)
                     return;
 
+                if (journeyDone)
+                {
+                    //  Draw only the puck block below; skip route and diamond.
+                    route.resize (0);
+                }
+
                 //  The live puck's position on the LIVE curve, and its
                 //  exclusion circle - no dot inside the core + 3 px.
                 auto shapeNoMid = snap.currentCentre;
@@ -1068,6 +1080,7 @@ namespace edge::ui
                 //  within the hot zone behind the puck, 2.25 px at 36 % on the
                 //  remaining road. The route starts 8 px outside the puck core
                 //  and its last dot lands on the diamond.
+                if (! route.empty())
                 {
                     juce::Path base;
                     bool started = false;
@@ -1108,6 +1121,7 @@ namespace edge::ui
                 //  Item 6: the destination diamond, 10 px, with a 3 px core at
                 //  42 % - and the final dot ON its nearest corner so the route
                 //  visibly terminates there.
+                if (! route.empty())
                 {
                     const auto endPt = route.back();
                     const float r = 5.0f;

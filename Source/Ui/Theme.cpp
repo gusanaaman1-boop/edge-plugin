@@ -411,13 +411,24 @@ namespace edge::ui
                               : colour::text;
             if (hover)
                 valueInk = valueInk.withMultipliedBrightness (1.08f);
-            g.setColour (valueInk);
+
+            //  Neon digits: a soft halo of the value's own colour under a
+            //  brightened core - the number reads as lit, not printed.
+            const auto text = s.getTextFromValue (s.getValue());
+            const auto box = juce::Rectangle<int> ((int) (centre.x - boxW * 0.5f),
+                                                   (int) (centre.y - valueSize * 0.5f + 2.0f),
+                                                   (int) boxW, (int) valueSize + 4);
             g.setFont (juce::FontOptions (valueSize));
-            g.drawText (s.getTextFromValue (s.getValue()),
-                        juce::Rectangle<int> ((int) (centre.x - boxW * 0.5f),
-                                              (int) (centre.y - valueSize * 0.5f + 2.0f),
-                                              (int) boxW, (int) valueSize + 4),
-                        juce::Justification::centred, false);
+
+            g.setColour (valueInk.withAlpha (0.22f));
+            for (int dx = -1; dx <= 1; ++dx)
+                for (int dy = -1; dy <= 1; ++dy)
+                    if (dx != 0 || dy != 0)
+                        g.drawText (text, box.translated (dx, dy),
+                                    juce::Justification::centred, false);
+
+            g.setColour (valueInk.withMultipliedBrightness (1.18f));
+            g.drawText (text, box, juce::Justification::centred, false);
         }
 
         //  Live marker (the sound) and the violet push arc from the pointer
