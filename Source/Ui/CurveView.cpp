@@ -257,6 +257,31 @@ namespace edge::ui
         repaint();
     }
 
+    //  MODE turns one edge into a literal identity. A handle for it is a
+    //  control that provably does nothing, sitting on the curve at 0.0 dB and
+    //  inviting a drag that changes nothing audible - which is exactly what it
+    //  looked like. It is not dimmed now, it is absent.
+    bool CurveView::isHandleLive (Grab which) const noexcept
+    {
+        const int mode = (int) std::lround (
+            processor.getState().getParameter (param::mode)->convertFrom0to1 (
+                processor.getState().getParameter (param::mode)->getValue()));
+
+        if (which == Grab::low)  return mode != (int) Mode::lowPass;
+        if (which == Grab::high) return mode != (int) Mode::highPass;
+
+        return true;      // the bell is never switched off, nor is the band
+    }
+
+    void CurveView::setSelected (Grab which)
+    {
+        if (which == selected)
+            return;
+
+        selected = which;
+        repaint();
+    }
+
     CurveView::Grab CurveView::grabAt (juce::Point<float> p) const noexcept
     {
         const float r = kHandleRadius * 2.4f;
@@ -276,8 +301,13 @@ namespace edge::ui
         if (midPos.getDistanceFrom (p) <= kHandleRadius * 1.8f)
             return Grab::mid;
 
-        if (juce::jmin (dLow, dHigh) <= r)
-            return dLow <= dHigh ? Grab::low : Grab::high;
+        //  An absent handle is not grabbable either, or the invisible one still
+        //  wins the hit test wherever it happens to sit.
+        const bool lowLive  = isHandleLive (Grab::low);
+        const bool highLive = isHandleLive (Grab::high);
+
+        if (juce::jmin (lowLive ? dLow : 1.0e9f, highLive ? dHigh : 1.0e9f) <= r)
+            return (lowLive && (! highLive || dLow <= dHigh)) ? Grab::low : Grab::high;
 
         //  In FREE the whole band is a target: grabbing between the handles
         //  slides it across the spectrum with its width intact. That is what
@@ -328,6 +358,16 @@ namespace edge::ui
         dragging = grabAt (e.position);
         if (dragging == Grab::none)
             return;
+
+        //  Touching a handle points the shared knob row at it. This is the
+        //  whole navigation model: there is one set of knobs, and the thing you
+        //  just touched is what they are driving.
+        if (dragging != Grab::band)
+        {
+            setSelected (dragging);
+            if (onHandleSelected)
+                onHandleSelected (dragging);
+        }
 
         dragStartY = e.position.y;
         dragStartX = e.position.x;
@@ -470,7 +510,8 @@ namespace edge::ui
             g.setColour (decade ? colour::gridStrong.withAlpha (0.75f) : colour::grid);
             g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
             g.setColour (colour::textDim.withAlpha (0.8f));
-            g.drawText (hz >= 1000.0f ? juce::String (hz / 1000.0f, 0) + "k" : juce::String (hz, 0),
+            g.drawText (hz >= 1000.0f ? juce::String (juce::roundToInt (hz / 1000.0f)) + "k"
+                                      : juce::String (juce::roundToInt (hz)),
                         (int) x - 18, (int) axisGutter.getY(), 36, 12,
                         juce::Justification::centred, false);
         }
@@ -576,24 +617,24 @@ namespace edge::ui
         const auto target = engine.getTargetShape();
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
-        //  An edge that MODE has turned into an identity still has a handle -
-        //  you may want to place it before switching - but it must not look
-        //  like it is doing something.
-        const int mode = (int) std::lround (
-            processor.getState().getParameter (param::mode)->convertFrom0to1 (
-                processor.getState().getParameter (param::mode)->getValue()));
-
         auto drawHandle = [&] (Grab which, juce::Colour accentIn, const juce::String& name)
         {
-            const bool edgeLive = which == Grab::mid
-                                    ? std::abs (processor.getEngine().getTargetShape().midGainDb) > 0.05f
-                                    : which == Grab::low ? mode != (int) Mode::lowPass
-                                                         : mode != (int) Mode::highPass;
-            const auto accent = edgeLive ? accentIn
-                                         : accentIn.withSaturation (0.15f).withAlpha (0.45f);
+            //  MODE has made this edge a wire. Nothing to show and nothing to
+            //  drag - drawing a dimmed handle at 0.0 dB only invited the
+            //  question "why does moving this do nothing?".
+            if (! isHandleLive (which))
+                return;
 
-            const auto pos = handlePosition (which);
+            const auto accent = accentIn;
+
+            //  Clamped into the plot. A +18 dB bell sits above the top of the
+            //  scale, and an unclamped handle was drawn half outside the
+            //  display with its name cut off by the border.
+            auto pos = handlePosition (which);
+            pos.y = juce::jlimit (plot.getY() + kHandleRadius + 2.0f,
+                                  plot.getBottom() - kHandleRadius - 2.0f, pos.y);
             const bool active = (dragging == which) || (dragging == Grab::none && hovered == which);
+            const bool isSelected = selected == which;
             const float r = kHandleRadius * (active ? 1.15f : 1.0f);
 
             g.setColour (accent.withAlpha (active ? 0.40f : 0.18f));
@@ -629,8 +670,20 @@ namespace edge::ui
 
             g.setColour (colour::wellTop);
             g.fillEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f);
+
+            //  The selected handle is the one the knobs below are driving, so
+            //  it is filled rather than merely outlined. One glance answers
+            //  "what am I editing?".
+            if (isSelected)
+            {
+                g.setColour (accent.withAlpha (0.55f));
+                g.fillEllipse (pos.x - r + 3.0f, pos.y - r + 3.0f,
+                               r * 2.0f - 6.0f, r * 2.0f - 6.0f);
+            }
+
             g.setColour (accent);
-            g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 2.2f);
+            g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f,
+                           isSelected ? 3.0f : 2.2f);
 
             //  The name sits above the handle permanently, as in the mockup;
             //  the numbers only appear while it is being touched.
@@ -639,9 +692,9 @@ namespace edge::ui
             //  off the display entirely.
             g.setColour (accent);
             g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 32, 60, 12);
+            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 34, 60, 12);
             if (nameBox.getY() < (int) plot.getY() + 2)
-                nameBox.setY ((int) pos.y + 20);
+                nameBox.setY ((int) pos.y + 22);
 
             g.drawText (name, nameBox, juce::Justification::centred, false);
 
@@ -661,16 +714,21 @@ namespace edge::ui
                        ? juce::String ("CUT")
                        : (depthDb > 0.0f ? "+" : "") + juce::String (depthDb, 1) + " dB");
 
-            g.setFont (juce::FontOptions (10.5f));
-            auto box = juce::Rectangle<int> ((int) pos.x - 62, (int) pos.y - 50, 124, 16);
-            box = box.constrainedWithin (plot.toNearestInt());
+            //  Pinned to the top-left of the plot, not floating over the
+            //  handle. The floating box sat exactly where the name label is and
+            //  covered it, and near the top of the scale it covered the curve
+            //  as well.
+            g.setFont (juce::FontOptions (11.0f));
+            const auto box = juce::Rectangle<int> ((int) plot.getX() + 8,
+                                                   (int) plot.getY() + 8, 150, 18);
 
             g.setColour (colour::wellTop.withAlpha (0.92f));
             g.fillRoundedRectangle (box.toFloat(), 4.0f);
             g.setColour (accent.withAlpha (0.5f));
             g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 4.0f, 1.0f);
             g.setColour (colour::textBright);
-            g.drawText (label, box, juce::Justification::centred, false);
+            g.drawText (name + "   " + label, box.reduced (7, 0),
+                        juce::Justification::centredLeft, false);
         };
 
         //  In FREE the band itself is a control, so it is drawn as one.

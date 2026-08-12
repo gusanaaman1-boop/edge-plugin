@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <functional>
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -52,8 +53,15 @@ namespace edge::ui
         //  cursor and the hit test change on the same frame the button does.
         void setFreeMode (bool shouldBeFree);
 
-    private:
         enum class Grab { none, low, high, mid, band };
+
+        //  Which handle the shared knob row is currently pointed at. Touching a
+        //  handle selects it, and picking a band in the panel highlights it
+        //  here - one selection, two places to change it.
+        void setSelected (Grab);
+        std::function<void (Grab)> onHandleSelected;
+
+    private:
 
         static constexpr int fftOrder = 11;
         static constexpr int fftSize  = 1 << fftOrder;   // 2048
@@ -69,6 +77,11 @@ namespace edge::ui
         float yForDb (float db) const noexcept;
 
         Grab grabAt (juce::Point<float>) const noexcept;
+
+        //  An edge that MODE has turned into an identity has no handle: it is
+        //  not dimmed, it is absent. A handle for a control that provably does
+        //  nothing is worse than no handle.
+        bool isHandleLive (Grab) const noexcept;
         juce::Point<float> handlePosition (Grab) const noexcept;
 
         juce::RangedAudioParameter* freqParam (Grab) const noexcept;
@@ -79,6 +92,7 @@ namespace edge::ui
 
         Grab dragging = Grab::none;
         Grab hovered = Grab::none;
+        Grab selected = Grab::low;
         bool freeMode = false;
         float dragStartDepth = 0.0f;
         float dragStartY = 0.0f;

@@ -119,10 +119,22 @@ Trim, ±24 dB. BYPASS is a bit-exact dry path, not a muted wet one.
 
 Press **SHAPE**. Nothing in here is played; it is set once per sound.
 
+**There is one set of knobs, not four.** Pick **LOW**, **MID**, **HIGH** or
+**FOLLOW** and the row underneath drives that band. Touching a handle on the
+display picks it too — and opens SHAPE if it was closed — so the thing you just
+grabbed is the thing the knobs are controlling. The selected handle is filled
+rather than merely outlined, so one glance answers "what am I editing?".
+
+It used to show sixteen knobs in four labelled blocks. Nobody needs DEPTH for
+the low edge and DEPTH for the high edge on screen at the same time; they need
+DEPTH for the edge they are working on. The panel is now half the height, and
+the display keeps the difference.
+
 ### Frequency
 
 Where that edge is heading. Low 20 Hz – 8 kHz, high 200 Hz – 20 kHz, both
-logarithmic. Drag the handles on the display instead if you prefer.
+logarithmic. Drag the handle on the display instead if you prefer — it is the
+same control.
 
 ### Depth — 0 dB → CUT
 
@@ -200,7 +212,14 @@ which FOLLOW reaches full modulation; it reaches zero 24 dB below that.
 * **The two faint traces** appear when SPREAD is up: the left and right
   channels.
 * **The handles** are TARGET handles. Drag them. A handle grows a tick on the
-  solid curve when the two have pulled apart.
+  solid curve when the two have pulled apart, and the **selected** one — the
+  band SHAPE's knobs are driving — is filled in.
+* **An edge that MODE has turned into an identity has no handle at all.** In LP
+  the low edge is a wire, so there is nothing there to drag. A dimmed handle
+  sitting at 0.0 dB only invited the question "why does moving this do
+  nothing?".
+* **The read-out** appears in the top-left of the plot while you touch a
+  handle, not floating over the handle itself where it used to cover the label.
 * **The analyser** behind everything is the plug-in's output.
 * **The combo** snaps Curve to a named slope.
 

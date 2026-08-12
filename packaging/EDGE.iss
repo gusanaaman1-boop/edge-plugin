@@ -12,7 +12,7 @@
 
 #define AppName    "EDGE"
 #define AppPublisher "Naaman"
-#define AppVersion "0.8.0"
+#define AppVersion "0.9.0"
 #define SrcRoot    "..\build\Edge_artefacts\Release"
 
 [Setup]

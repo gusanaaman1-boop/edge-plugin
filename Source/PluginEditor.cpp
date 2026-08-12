@@ -179,6 +179,29 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     shape.onLinkChanged = [] {};
     installLinkCoupling();
 
+    //  One selection, two places to change it. Touching a handle repoints the
+    //  knob row; picking a band in the row highlights the handle.
+    shape.onBandChanged = [this] (Band b)
+    {
+        curve.setSelected (b == Band::low  ? CurveView::Grab::low
+                         : b == Band::high ? CurveView::Grab::high
+                         : b == Band::mid  ? CurveView::Grab::mid
+                                           : CurveView::Grab::none);
+    };
+
+    curve.onHandleSelected = [this] (CurveView::Grab g)
+    {
+        //  Grabbing a handle with SHAPE closed is a request to edit that band,
+        //  so the panel opens rather than silently repointing knobs nobody can
+        //  see.
+        if (! shape.isVisible())
+            setShapeOpen (true);
+
+        shape.setBand (g == CurveView::Grab::low  ? Band::low
+                     : g == CurveView::Grab::high ? Band::high
+                                                  : Band::mid);
+    };
+
     //  Show the git description when it differs from the plain version - that
     //  is a build between releases, and the difference is exactly what matters
     //  when someone reports a problem.

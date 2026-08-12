@@ -147,7 +147,7 @@ namespace edge
         //  Between two entries Curve is a voicing, not a slope. Printing
         //  12 x poles here would claim "18 dB/oct" for a setting that measures
         //  23.5, so the percentage is shown instead.
-        return juce::String (curvePercent, 0) + " %";
+        return juce::String (juce::roundToInt (curvePercent)) + " %";
     }
 
     //  The inverse. Curve reads out as a slope NAME, so the default parser took

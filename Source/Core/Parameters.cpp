@@ -68,7 +68,10 @@ namespace edge
             return shoulderDbToPercent (t.getFloatValue());
         }
 
-        juce::String percentText (float v, int) { return juce::String (v, 0) + " %"; }
+        //  NOT juce::String (v, 0): JUCE only applies the precision when it is
+        //  ABOVE zero, so 0 falls through to the stream default and prints six
+        //  significant digits - "13.0016 %" where the knob means 13.
+        juce::String percentText (float v, int) { return juce::String (juce::roundToInt (v)) + " %"; }
         juce::String dbText (float v, int)      { return juce::String (v, 1) + " dB"; }
 
         juce::String signedPercentText (float v, int)
@@ -76,14 +79,14 @@ namespace edge
             if (std::abs (v) < 0.5f)
                 return "0";
 
-            return (v > 0.0f ? "+" : "") + juce::String (v, 0) + " %";
+            return (v > 0.0f ? "+" : "") + juce::String (juce::roundToInt (v)) + " %";
         }
 
         juce::String msText (float v, int)
         {
             if (v < 10.0f)  return juce::String (v, 2) + " ms";
             if (v < 100.0f) return juce::String (v, 1) + " ms";
-            return juce::String (v, 0) + " ms";
+            return juce::String (juce::roundToInt (v)) + " ms";
         }
     }
 

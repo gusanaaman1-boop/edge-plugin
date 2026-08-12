@@ -8,7 +8,7 @@ namespace edge::ui
     {
         if (hz >= 10000.0f) return juce::String (hz / 1000.0f, 1) + " kHz";
         if (hz >= 1000.0f)  return juce::String (hz / 1000.0f, 2) + " kHz";
-        if (hz >= 100.0f)   return juce::String (hz, 0) + " Hz";
+        if (hz >= 100.0f)   return juce::String (juce::roundToInt (hz)) + " Hz";
         return juce::String (hz, 1) + " Hz";
     }
 

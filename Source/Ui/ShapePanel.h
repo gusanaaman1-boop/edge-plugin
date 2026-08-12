@@ -1,9 +1,13 @@
-// SHAPE: everything that describes the TARGET, tucked behind a disclosure so
-// the main view stays one gesture wide.
+// SHAPE: one set of knobs, pointed at whichever band you have selected.
 //
-// The main view answers "how far, and how fast". SHAPE answers "into what".
-// Nothing here belongs on the front panel: Depth, Curve, Shoulder and Resonance
-// define where EDGE is travelling to, and you set them once per sound.
+// It used to be sixteen knobs in four labelled blocks - LOW TARGET, HIGH
+// TARGET, MID, FOLLOW - all on screen at once. Nobody needs to see DEPTH for
+// the low edge and DEPTH for the high edge at the same time; they need to see
+// DEPTH for the edge they are working on.
+//
+// So there is ONE row now. Clicking LOW, MID, HIGH or FOLLOW - here, or on the
+// handle on the display itself - repoints that row. Fewer than half the pixels,
+// and the panel no longer competes with the curve for attention.
 
 #pragma once
 
@@ -16,6 +20,9 @@
 
 namespace edge::ui
 {
+    //  Which set of parameters the shared row is currently driving.
+    enum class Band { low = 0, mid, high, follow };
+
     class ShapePanel : public juce::Component
     {
     public:
@@ -24,34 +31,54 @@ namespace edge::ui
         void paint (juce::Graphics&) override;
         void resized() override;
 
+        void setBand (Band);
+        Band getBand() const noexcept { return band; }
+
+        //  Fired when the user picks a band HERE, so the display can highlight
+        //  the same handle.
+        std::function<void (Band)> onBandChanged;
+
         //  UI-only gesture linking, exactly as before: it is NOT a parameter,
         //  so a host automating one frequency never finds the plug-in writing
         //  the other one back at it.
         bool isLinkEnabled() const noexcept { return linkButton.getToggleState(); }
         std::function<void()> onLinkChanged;
 
+        //  The height this panel needs. One row instead of four blocks, so the
+        //  display gets the difference back.
+        static constexpr int preferredHeight = 156;
+
     private:
-        struct Control
+        //  A slot in the shared row. It owns no parameter of its own - point()
+        //  re-aims it, which is the whole idea.
+        struct Slot
         {
             juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag,
                                   juce::Slider::TextBoxBelow };
             juce::Label caption;
             std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 
-            void attach (juce::Component& parent, juce::AudioProcessorValueTreeState&,
-                         const juce::String& id, const juce::String& text, juce::Colour accent);
+            void create (juce::Component& parent);
+
+            //  A null id empties the slot: the row is five wide and MID only
+            //  uses three of it.
+            void point (juce::AudioProcessorValueTreeState&, const char* id,
+                        const juce::String& text, juce::Colour accent);
+
             void setBounds (juce::Rectangle<int>);
         };
 
+        static constexpr int numSlots = 5;
+
         juce::AudioProcessorValueTreeState& state;
+        Band band = Band::low;
 
-        juce::Label lowTitle, highTitle, followTitle, midTitle;
-        Control lowDepth, lowCurve, lowShoulder, lowReso;
-        Control highDepth, highCurve, highShoulder, highReso;
-        Control followSens, followAttack, followRelease;
-        Control midFreq, midGain, midReso;
-
+        Slot slots[numSlots];
+        juce::TextButton lowButton { "LOW" }, midButton { "MID" },
+                         highButton { "HIGH" }, followButton { "FOLLOW" };
         juce::ToggleButton linkButton { "LINK" };
+
+        void rebuildRow();
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShapePanel)
     };
