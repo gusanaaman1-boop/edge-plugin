@@ -96,6 +96,7 @@ namespace edge::ui
         {
             std::vector<std::unique_ptr<Knob>> knobs;
             juce::Rectangle<int> slopeArea;       // reserved for the selector
+            void paint (juce::Graphics&) override;
             void resized() override;
         };
 

@@ -430,6 +430,8 @@ void EdgeAudioProcessorEditor::closeInspector()
 {
     if (inspector.isVisible())
         juce::Desktop::getInstance().getAnimator().fadeOut (&inspector, 70);
+
+    resized();      // refresh the label solver's avoid rects
 }
 
 void EdgeAudioProcessorEditor::positionInspector()
@@ -580,6 +582,16 @@ void EdgeAudioProcessorEditor::resized()
 
     if (inspector.isVisible())
         positionInspector();
+
+    //  The label solver avoids the overlays that live on the graph.
+    {
+        std::vector<juce::Rectangle<int>> avoid;
+        avoid.push_back (lpButton.getBounds().getUnion (freeButton.getBounds())
+                             .expanded (4) - curve.getPosition());
+        if (inspector.isVisible())
+            avoid.push_back (inspector.getBounds().expanded (4) - curve.getPosition());
+        curve.setAvoidRects (std::move (avoid));
+    }
 
     resizer->setBounds (getWidth() - 18, getHeight() - 18, 18, 18);
 }

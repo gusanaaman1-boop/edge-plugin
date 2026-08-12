@@ -14,11 +14,11 @@ namespace edge::ui
         //  Inspector geometry, v0.14: one FIXED strip, centred in the graph.
         constexpr int kPadding = 12;
         constexpr int kGap = 8;
-        constexpr int kMiniKnob = 30;
-        constexpr int kStripH = 88;
+        constexpr int kMiniKnob = 34;
+        constexpr int kStripH = 104;
         constexpr int kStripW = 420;
         constexpr int kStripWMid = 330;
-        constexpr int kSlopeW = 150, kSlopeH = 26;
+        constexpr int kSlopeW = 156, kSlopeH = 28;
     }
 
     // -------------------------------------------------------------------------
@@ -102,7 +102,7 @@ namespace edge::ui
 
             //  Selected text in the graph colour - dark digits on the lit
             //  segment - and secondary text everywhere else.
-            g.setColour (isSelected ? colour::graph : colour::textDim);
+            g.setColour (isSelected ? juce::Colour (0xff080C13) : colour::textDim);
             g.setFont (juce::FontOptions (10.0f).withStyle (isSelected ? "Bold" : "plain"));
             g.drawText (juce::String (kNominalSlopes[i]), seg.toNearestInt(),
                         juce::Justification::centred, false);
@@ -131,6 +131,7 @@ namespace edge::ui
         value.setColour (juce::Label::textColourId, accent == colour::text
                                                         ? colour::midNeutral : accent);
         value.setFont (juce::FontOptions (10.0f));
+        value.getProperties().set ("capsule", true);   // black-glass pill, radius 6
         parent.addAndMakeVisible (value);
 
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -159,8 +160,27 @@ namespace edge::ui
     void ShapePanel::Knob::setBounds (juce::Rectangle<int> r)
     {
         caption.setBounds (r.removeFromTop (10));
-        value.setBounds (r.removeFromBottom (12));
+        value.setBounds (r.removeFromBottom (20).withSizeKeepingCentre (
+                             juce::jmax (52, r.getWidth() - 8), 20));
+        r.removeFromBottom (2);
         slider.setBounds (r.withSizeKeepingCentre (kMiniKnob, juce::jmin (r.getHeight(), kMiniKnob)));
+    }
+
+    void ShapePanel::ContextPanel::paint (juce::Graphics& g)
+    {
+        //  The - / + end marks, 9 px, sitting under the arc endpoints of every
+        //  continuous mini-knob.
+        g.setColour (colour::tertiary);
+        g.setFont (juce::FontOptions (9.0f));
+
+        for (auto& k : knobs)
+        {
+            const auto b = k->slider.getBounds();
+            g.drawText ("-", b.getX() - 2, b.getBottom() - 4, 8, 9,
+                        juce::Justification::centred, false);
+            g.drawText ("+", b.getRight() - 6, b.getBottom() - 4, 8, 9,
+                        juce::Justification::centred, false);
+        }
     }
 
     void ShapePanel::ContextPanel::resized()
@@ -321,12 +341,16 @@ namespace edge::ui
         g.drawLine (body.getX() + 14.0f, body.getY() + 1.0f,
                     body.getRight() - 22.0f, body.getY() + 1.0f, 1.0f);
 
-        //  The context label, upper-left, 11 px semibold, context-coloured.
+        //  Title strip: the context name centred in a 24 px band with a
+        //  1 px separator under it.
         g.setColour (headerColour);
         g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
-        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 6,
-                    (int) body.getWidth() - kPadding * 2, 13,
-                    juce::Justification::centredLeft, false);
+        g.drawText (header, (int) body.getX() + kPadding, (int) body.getY() + 4,
+                    (int) body.getWidth() - kPadding * 2, 18,
+                    juce::Justification::centred, false);
+        g.setColour (colour::text.withAlpha (0.10f));
+        g.drawLine (body.getX() + kPadding, body.getY() + 24.0f,
+                    body.getRight() - kPadding, body.getY() + 24.0f, 1.0f);
 
         //  The slope selector's own caption and unit, drawn by the container
         //  so every context keeps the same label/knob/value rhythm.
@@ -346,7 +370,7 @@ namespace edge::ui
     void ShapePanel::resized()
     {
         auto r = getLocalBounds().reduced (kPadding, 0)
-                                 .withTrimmedTop (20)
+                                 .withTrimmedTop (30)
                                  .withTrimmedBottom (6);
 
         for (auto& panel : panels)

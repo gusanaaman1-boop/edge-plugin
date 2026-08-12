@@ -38,70 +38,80 @@ namespace edge::ui
 
     void drawWordmark (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour ink)
     {
-        //  Stroked geometric capitals: cap height 16, stroke 3, letter width
-        //  11, gap 7 - all from the 8 px grid's halves. The final E's middle
-        //  arm runs on 12 px flat and falls 9 px: the EDGE CUT, growing out of
-        //  the name itself.
-        const float capH = 16.0f, w = 11.0f, gap = 7.0f, stroke = 3.0f;
-        const float tailRun = 12.0f, tailFall = 9.0f;
-
-        const float totalW = 4.0f * w + 3.0f * gap + tailRun + 4.0f;
+        //  v0.17.1: the falling tail is dead - at header scale it read as a
+        //  rendering error. Four independent outlined glyphs, 142 x 28 total,
+        //  cap 25, stroke 2.25, 10 px gaps. The E's arms detach from the
+        //  spine by 2 px (the segmented look), and the FINAL E carries the
+        //  approved 14 x 10 EDGE CUT on its top arm - the one place the motif
+        //  lives in the mark, inside the bounds.
+        const float capH = 25.0f, gw = 28.0f, gap = 10.0f, stroke = 2.25f;
+        const float totalW = 4.0f * gw + 3.0f * gap;
         const float x0 = area.getCentreX() - totalW * 0.5f;
         const float y0 = area.getCentreY() - capH * 0.5f;
 
         juce::Path m;
 
-        auto letterE = [&] (float x, bool withTail)
+        auto letterE = [&] (float x, bool withCut)
         {
             m.startNewSubPath (x, y0);
-            m.lineTo (x, y0 + capH);                        // spine
-            m.startNewSubPath (x, y0);
-            m.lineTo (x + w, y0);                           // top arm
-            m.startNewSubPath (x, y0 + capH);
-            m.lineTo (x + w, y0 + capH);                    // bottom arm
-            m.startNewSubPath (x, y0 + capH * 0.5f);
+            m.lineTo (x, y0 + capH);                              // spine
 
-            if (withTail)
+            const float ax = x + 2.0f + stroke;                   // 2 px break
+
+            if (withCut)
             {
-                //  The middle arm becomes the motif: flat, then the fall.
-                m.lineTo (x + w + tailRun, y0 + capH * 0.5f);
-                m.lineTo (x + w + tailRun + tailFall * 0.8f, y0 + capH * 0.5f + tailFall);
+                //  Top arm ends in the EDGE CUT: 14 px run, 10 px fall.
+                m.startNewSubPath (ax, y0);
+                m.lineTo (x + gw - 14.0f + 10.0f, y0);
+                m.lineTo (x + gw, y0 + 10.0f);
             }
             else
             {
-                m.lineTo (x + w * 0.78f, y0 + capH * 0.5f);
+                m.startNewSubPath (ax, y0);
+                m.lineTo (x + gw, y0);
             }
+
+            m.startNewSubPath (ax, y0 + capH * 0.5f);
+            m.lineTo (x + gw - 4.0f, y0 + capH * 0.5f);
+            m.startNewSubPath (ax, y0 + capH);
+            m.lineTo (x + gw, y0 + capH);
         };
 
         auto letterD = [&] (float x)
         {
             m.startNewSubPath (x, y0);
-            m.lineTo (x, y0 + capH);
-            m.startNewSubPath (x, y0);
-            m.lineTo (x + w * 0.5f, y0);
-            m.addArc (x - w * 0.1f, y0, w * 1.2f, capH,
+            m.lineTo (x, y0 + capH);                              // spine
+
+            //  Continuous rounded outer bowl.
+            m.startNewSubPath (x + 2.0f + stroke, y0);
+            m.lineTo (x + gw * 0.45f, y0);
+            m.addArc (x + gw * 0.45f - (gw * 0.55f), y0, gw * 1.1f, capH,
                       0.0f, juce::MathConstants<float>::pi, false);
-            m.lineTo (x, y0 + capH);
+            m.lineTo (x + 2.0f + stroke, y0 + capH);
         };
 
         auto letterG = [&] (float x)
         {
-            //  An open arc with the bar driving into the centre.
-            m.addArc (x, y0, w * 1.15f, capH,
-                      juce::MathConstants<float>::pi * 0.45f,
-                      juce::MathConstants<float>::pi * 1.97f, true);
-            m.startNewSubPath (x + w * 1.15f, y0 + capH * 0.58f);
-            m.lineTo (x + w * 0.55f, y0 + capH * 0.58f);
+            //  Open right side, with a 7 px inward horizontal terminal.
+            m.addArc (x, y0, gw, capH,
+                      juce::MathConstants<float>::pi * 0.42f,
+                      juce::MathConstants<float>::pi * 2.02f, true);
+            m.startNewSubPath (x + gw, y0 + capH * 0.55f);
+            m.lineTo (x + gw - 7.0f, y0 + capH * 0.55f);
         };
 
         letterE (x0, false);
-        letterD (x0 + w + gap);
-        letterG (x0 + 2.0f * (w + gap));
-        letterE (x0 + 3.0f * (w + gap), true);
+        letterD (x0 + gw + gap);
+        letterG (x0 + 2.0f * (gw + gap));
+        letterE (x0 + 3.0f * (gw + gap), true);
 
+        //  Three strokes: outer light 8 px at 4 %, middle 4 px at 14 %, core.
+        g.setColour (ink.withAlpha (0.04f));
+        g.strokePath (m, { 8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+        g.setColour (ink.withAlpha (0.14f));
+        g.strokePath (m, { 4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
         g.setColour (ink);
-        g.strokePath (m, { stroke, juce::PathStrokeType::curved,
-                           juce::PathStrokeType::rounded });
+        g.strokePath (m, { stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
     }
 
     void paintShell (juce::Graphics& g, juce::Rectangle<float> b)
@@ -181,6 +191,18 @@ namespace edge::ui
 
     void Look::drawLabel (juce::Graphics& g, juce::Label& l)
     {
+        //  Inspector value capsules: black glass at 90 %, radius 6.
+        if ((bool) l.getProperties().getWithDefault ("capsule", false))
+        {
+            g.setColour (juce::Colour (0xff080C13).withAlpha (0.90f));
+            g.fillRoundedRectangle (l.getLocalBounds().toFloat(), 6.0f);
+            g.setColour (l.findColour (juce::Label::textColourId));
+            g.setFont (l.getFont());
+            g.drawText (l.getText(), l.getLocalBounds().reduced (3, 0),
+                        juce::Justification::centred, false);
+            return;
+        }
+
         //  Detect the slider's own text box by its parent rather than by a
         //  property set in createSliderTextBox(): sliders that were constructed
         //  before this look-and-feel was installed - every member of the editor

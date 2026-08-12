@@ -94,6 +94,10 @@ namespace edge::ui
         //  The readable content region - the full-bleed view is the window,
         //  so anything positioned "in the graph" anchors to this instead.
         juce::Rectangle<int> plotBounds() const noexcept { return plot.toNearestInt(); }
+
+        //  Overlay rectangles the label solver must avoid (mode selector,
+        //  the open inspector) - in THIS component's coordinates.
+        void setAvoidRects (std::vector<juce::Rectangle<int>> r) { avoidRects = std::move (r); }
         juce::Point<float> testHandlePosition (Grab g) const noexcept { return handlePosition (g); }
 
         //  Drive a drag without synthesising juce::MouseEvents: the same
@@ -182,6 +186,9 @@ namespace edge::ui
         //  exactly the shipped "drag MID, nothing moves until you touch HIGH"
         //  defect.
         DisplaySnapshot snap;
+
+        std::vector<juce::Rectangle<int>> avoidRects;
+        std::vector<juce::Rectangle<int>> placedLabels;   // per frame, paint only
 
         //  --- EDGE PATH trail --------------------------------------------------
         //  A short decaying history of positions the puck ACTUALLY occupied -

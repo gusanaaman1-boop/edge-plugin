@@ -130,7 +130,7 @@ EDGE host-contract suite
   [PASS] left-only vs right-only within 0.5 dB                      0.00 dB
   [PASS] stereo equal-channel level within 0.5 dB                   -18.00 dBFS
   [PASS] -18 dBFS noise lights at least 70 of 96 bands              96 of 96
-  [PASS] release falls 60 dB within 1.5 s of silence                -32.6 -> -95.1 dB
+  [PASS] release falls 60 dB within 1.5 s of silence                -32.6 -> -95.0 dB
   [PASS] 1.5 s of silence leaves 0 drawn analyzer bands             0 still lit
   [PASS] -84 dBFS noise draws 0 analyzer bands                      0 lit
 

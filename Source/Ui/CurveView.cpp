@@ -1067,7 +1067,13 @@ namespace edge::ui
                     //  destination - the remaining road at 28 %, rising near
                     //  the puck.
                     const float t = (float) i / (float) route.size();
-                    const float alpha = 0.40f + 0.35f * (1.0f - t);
+                    float alpha = 0.40f + 0.35f * (1.0f - t);
+
+                    //  Knee de-clutter: inside the puck's 24 px exclusion
+                    //  circle the route is capped at 16 % so the puck and the
+                    //  live response own the knee.
+                    if (route[i].getDistanceFrom (puck) < 24.0f)
+                        alpha = juce::jmin (alpha, 0.16f);
 
                     g.setColour (accent.withAlpha (juce::jmin (0.75f, alpha)));
                     g.fillEllipse (route[i].x - 1.4f, route[i].y - 1.4f, 2.8f, 2.8f);
@@ -1153,6 +1159,7 @@ namespace edge::ui
         }
 
         // --- handles ----------------------------------------------------------        // --- handles ----------------------------------------------------------
+        placedLabels.clear();
         const auto& target = snap.target;
         const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
 
@@ -1224,18 +1231,60 @@ namespace edge::ui
             g.setColour (accent);
             g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.8f);
 
-            //  The name sits above the handle permanently, as in the mockup;
-            //  the numbers only appear while it is being touched.
-            //  Clamped into the plot: a MID peak near the top of the scale
-            //  puts its handle at the very edge, and an unclamped name is drawn
-            //  off the display entirely.
+            //  Deterministic label placement: four candidates scored against
+            //  everything already on the display. If every candidate collides,
+            //  an UNSELECTED label is suppressed - the selected one never is.
             g.setColour (accent);
             g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-            auto nameBox = juce::Rectangle<int> ((int) pos.x - 30, (int) pos.y - 24, 60, 12);
-            if (nameBox.getY() < (int) plot.getY() + 2)
-                nameBox.setY ((int) pos.y + 14);
 
-            g.drawText (name, nameBox, juce::Justification::centred, false);
+            const juce::Rectangle<int> candidates[4] = {
+                { (int) pos.x - 30, (int) pos.y - 24, 60, 12 },     // above centre
+                { (int) pos.x - 30, (int) pos.y + 14, 60, 12 },     // below centre
+                { (int) pos.x - 64, (int) pos.y - 20, 60, 12 },     // upper left
+                { (int) pos.x + 6,  (int) pos.y - 20, 60, 12 } };   // upper right
+
+            const auto handleRect = juce::Rectangle<int> ((int) pos.x - 8, (int) pos.y - 8,
+                                                          16, 16).expanded (8);
+            const auto inset = plot.toNearestInt().reduced (8);
+
+            juce::Rectangle<int> chosen;
+            float bestScore = 1.0e9f;
+
+            for (const auto& cand : candidates)
+            {
+                if (! inset.contains (cand))                 continue;
+                if (cand.intersects (handleRect))            continue;
+                if (cand.intersects (readoutBounds()))       continue;
+
+                bool hitsLabel = false;
+                for (const auto& placed : placedLabels)
+                    if (cand.intersects (placed.expanded (6)))
+                        hitsLabel = true;
+                if (hitsLabel)                               continue;
+
+                bool hitsAvoid = false;
+                for (const auto& avoid : avoidRects)
+                    if (cand.intersects (avoid))
+                        hitsAvoid = true;
+                if (hitsAvoid)                               continue;
+
+                //  The response curve, expanded 4 px, breaks ties.
+                const float score = responseLengthInside (cand.toFloat().expanded (4.0f));
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    chosen = cand;
+                }
+            }
+
+            if (chosen.isEmpty() && isSelected)
+                chosen = candidates[0];        // the selected label always draws
+
+            if (! chosen.isEmpty())
+            {
+                placedLabels.push_back (chosen);
+                g.drawText (name, chosen, juce::Justification::centred, false);
+            }
 
             if (! active)
                 return;
