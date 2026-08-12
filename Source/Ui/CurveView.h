@@ -90,6 +90,10 @@ namespace edge::ui
         //  Shared by paint and the acceptance test, so the "line opacity at
         //  -18 dBFS" number is asserted against the code that draws it.
         static float spectrumLineAlphaForDb (float db) noexcept;
+
+        //  The readable content region - the full-bleed view is the window,
+        //  so anything positioned "in the graph" anchors to this instead.
+        juce::Rectangle<int> plotBounds() const noexcept { return plot.toNearestInt(); }
         juce::Point<float> testHandlePosition (Grab g) const noexcept { return handlePosition (g); }
 
         //  Drive a drag without synthesising juce::MouseEvents: the same

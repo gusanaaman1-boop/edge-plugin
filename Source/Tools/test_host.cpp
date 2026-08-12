@@ -1828,7 +1828,11 @@ namespace
 
                 auto& panel = ed->getShapePanel();
                 const auto bounds = panel.getBounds();
-                const auto graph = rig.curve->getBounds();
+
+                //  Full-bleed: "the graph" for placement purposes is the
+                //  readable content region, not the window-sized component.
+                const auto graph = rig.curve->plotBounds()
+                                       .translated (rig.curve->getX(), rig.curve->getY());
 
                 //  Centre and inset, from the spec's own formula.
                 worstCentre = juce::jmax (worstCentre,

@@ -22,7 +22,8 @@ void EdgeAudioProcessorEditor::DeckKnob::attach (juce::Component& parent,
     caption.setText (text, juce::dontSendNotification);
     caption.setJustificationType (juce::Justification::centred);
     caption.setColour (juce::Label::textColourId, accent);
-    caption.setFont (juce::FontOptions (font::knobLabel).withStyle ("Bold"));
+    caption.setFont (juce::Font (juce::FontOptions (10.0f).withStyle ("Bold"))
+                         .withExtraKerningFactor (0.08f));
     parent.addAndMakeVisible (caption);
 
     attachment = std::make_unique<SliderAttachment> (state, id, slider);
@@ -33,15 +34,88 @@ void EdgeAudioProcessorEditor::DeckKnob::attach (juce::Component& parent,
 
 void EdgeAudioProcessorEditor::DeckKnob::place (juce::Rectangle<int> area, int diameter)
 {
-    //  Caption and knob as ONE block, centred - not a caption pinned to the
-    //  top of the cell with the knob floating somewhere below it.
-    auto block = area.withSizeKeepingCentre (juce::jmax (diameter, 90), 16 + 4 + diameter);
-    caption.setBounds (block.removeFromTop (16));
-    block.removeFromTop (4);
+    //  Caption and knob as ONE block, centred, sized for the 116 px dock.
+    auto block = area.withSizeKeepingCentre (juce::jmax (diameter, 96), 14 + 2 + diameter);
+    caption.setBounds (block.removeFromTop (14));
+    block.removeFromTop (2);
     slider.setBounds (block.withSizeKeepingCentre (diameter, diameter));
 }
 
 // -----------------------------------------------------------------------------
+
+void EdgeAudioProcessorEditor::HeaderPanel::paint (juce::Graphics& g)
+{
+    auto b = getLocalBounds().toFloat();
+
+    //  Floating titanium glass: #DDE1E5 at 94 %, radius 15, no outer border,
+    //  a 1 px inner highlight, and its shadow onto the graph below.
+    {
+        juce::Path sh;
+        sh.addRoundedRectangle (b.translated (0.0f, 2.0f), 15.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        g.fillPath (sh);
+    }
+
+    g.setColour (juce::Colour (0xffDDE1E5).withAlpha (0.94f));
+    g.fillRoundedRectangle (b, 15.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.38f));
+    g.drawRoundedRectangle (b.reduced (1.0f), 14.0f, 1.0f);
+
+    //  The one reactive element: the hairline along the header's bottom edge
+    //  takes the active filter function's colour.
+    g.setColour (hairline.withAlpha (0.75f));
+    g.drawLine (b.getX() + 15.0f, b.getBottom() - 1.5f,
+                b.getRight() - 15.0f, b.getBottom() - 1.5f, 1.0f);
+
+    drawWordmark (g, b, colour::textOnLight);
+}
+
+void EdgeAudioProcessorEditor::DockPanel::paint (juce::Graphics& g)
+{
+    auto b = getLocalBounds().toFloat();
+
+    //  The dark glass dock: #151A21 at 88 %, radius 20, no border, the EDGE
+    //  CUT on its top-right corner - the motif's approved deck location.
+    auto card = edgeCutPanel (b, 20.0f, 26.0f, 19.0f);
+
+    {
+        juce::Path sh (card);
+        sh.applyTransform (juce::AffineTransform::translation (0.0f, 2.0f));
+        g.setColour (juce::Colours::black.withAlpha (0.34f));
+        g.fillPath (sh);
+    }
+    {
+        juce::Path sh (card);
+        sh.applyTransform (juce::AffineTransform::translation (0.0f, 10.0f));
+        g.setColour (juce::Colours::black.withAlpha (0.24f));
+        g.fillPath (sh);
+    }
+
+    g.setColour (juce::Colour (0xff151A21).withAlpha (0.88f));
+    g.fillPath (card);
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawLine (b.getX() + 20.0f, b.getY() + 1.0f, b.getRight() - 28.0f, b.getY() + 1.0f, 1.0f);
+
+    //  EDGE's label and the CLEAN / CUT endpoints - drawn HERE because the
+    //  dock paints above the editor, and anything the editor painted at these
+    //  coordinates would be underneath the glass.
+    g.setColour (colour::text);
+    g.setFont (juce::Font (juce::FontOptions (10.0f).withStyle ("Bold"))
+                   .withExtraKerningFactor (0.08f));
+    g.drawText ("EDGE", edgeLabel, juce::Justification::centred, false);
+
+    g.setColour (colour::textDim);
+    g.setFont (juce::Font (juce::FontOptions (10.0f)).withExtraKerningFactor (0.06f));
+    g.drawText ("CLEAN", cleanRect, juce::Justification::centredRight, false);
+    g.drawText ("CUT", cutRect, juce::Justification::centredLeft, false);
+
+   #if JUCE_DEBUG
+    g.setColour (colour::textDim.withAlpha (0.5f));
+    g.setFont (juce::FontOptions (font::tiny));
+    g.drawText (versionText, getLocalBounds().reduced (12, 4),
+                juce::Justification::bottomRight, false);
+   #endif
+}
 
 EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     : juce::AudioProcessorEditor (&p), edgeProcessor (p), curve (p),
@@ -51,6 +125,8 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     setWantsKeyboardFocus (true);
 
     addAndMakeVisible (curve);
+    addAndMakeVisible (headerPanel);
+    addAndMakeVisible (dockPanel);
     addChildComponent (inspector);      // hidden until something is selected
 
     auto& state = edgeProcessor.getState();
@@ -161,7 +237,10 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
                 hpButton.setToggleState   (m == (int) Mode::highPass, juce::dontSendNotification);
                 freeButton.setToggleState (m == (int) Mode::freeBand, juce::dontSendNotification);
                 curve.setFreeMode (m == (int) Mode::freeBand);
-                repaint (0, 0, getWidth(), metric::headerHeight);
+                headerPanel.hairline = m == (int) Mode::lowPass  ? colour::high
+                                     : m == (int) Mode::highPass ? colour::low
+                                                                 : colour::shellShadow;
+                headerPanel.repaint();
 
                 //  A mode that removed the selected edge moves the selection to
                 //  the edge that still exists - the inspector must never sit on
@@ -185,9 +264,13 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
                        juce::String::fromUTF8 ("FOLLOW \xe2\x86\x92 EDGE"), colour::movement);
     followKnob.slider.getProperties().set ("bipolar", true);
 
+    for (auto* k : { &lowKnob, &highKnob, &followKnob })
+        k->slider.getProperties().set ("valueSize", 16.0);
+
     edgeKnob.getProperties().set ("accent",  (int) colour::low.getARGB());
     edgeKnob.getProperties().set ("accent2", (int) colour::high.getARGB());
     edgeKnob.getProperties().set ("valueInside", true);
+    edgeKnob.getProperties().set ("valueSize", 24.0);   // the largest number on the UI
     edgeKnob.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                   juce::MathConstants<float>::pi * 2.75f, true);
     addAndMakeVisible (edgeKnob);
@@ -208,6 +291,7 @@ EdgeAudioProcessorEditor::EdgeAudioProcessorEditor (EdgeAudioProcessor& p)
     versionText = juce::String (edge::kGitDescribe) == juce::String ("v") + edge::kVersion
                     ? juce::String ("v") + edge::kVersion
                     : juce::String ("v") + edge::kVersion + "  " + edge::kGitDescribe;
+    dockPanel.versionText = versionText;
 
     constrainer.setSizeLimits (metric::minWidth, metric::minHeight,
                                metric::maxWidth, metric::maxHeight);
@@ -299,7 +383,7 @@ void EdgeAudioProcessorEditor::positionInspector()
     //  no notch, no candidates - the inspector is part of the instrument, not
     //  a tooltip chasing the cursor.
     const auto size = inspector.preferredSize();
-    const auto graph = curve.getBounds();
+    const auto graph = curve.plotBounds().translated (curve.getX(), curve.getY());
 
     inspector.setBounds (graph.getCentreX() - size.x / 2,
                          graph.getBottom() - 18 - size.y,
@@ -338,89 +422,10 @@ void EdgeAudioProcessorEditor::timerCallback()
 
 void EdgeAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    //  v0.13: a light titanium chassis with the dark instrument set into it.
-    //  The flat all-charcoal build made every surface the same value.
-    g.setGradientFill ({ colour::shellHilite, 0.0f, 0.0f,
-                         colour::shellLight, 0.0f, (float) getHeight() * 0.25f, false });
-    g.fillRect (getLocalBounds());
+    //  Full-bleed: the graph view covers the window, the floating panels
+    //  paint their own glass. This fill only shows for the first frame.
+    g.fillAll (colour::graph);
 
-    //  Direction E, and all of it: ONE hairline responds to state. It takes
-    //  the active filter function's colour - cyan in LP, amber in HP - and
-    //  stays neutral in the two-edge modes. The rest of the shell is calm.
-    {
-        auto* modeParam = edgeProcessor.getState().getParameter (param::mode);
-        const int m = (int) std::lround (modeParam->convertFrom0to1 (modeParam->getValue()));
-        const auto tint = m == (int) Mode::lowPass  ? colour::high
-                        : m == (int) Mode::highPass ? colour::low
-                                                    : colour::shellShadow;
-
-        g.setColour (tint.withAlpha (m == (int) Mode::lowPass
-                                      || m == (int) Mode::highPass ? 0.75f : 0.5f));
-        g.drawHorizontalLine (metric::headerHeight - 1, 0.0f, (float) getWidth());
-    }
-
-    //  Cards: graph shadow y 5 at 20 %, deck shadow y 3 at 16 %, then the deck
-    //  surface itself (the graph paints its own).
-    auto shadow = [&g] (juce::Rectangle<float> b, float dy, float alpha)
-    {
-        juce::Path path;
-        path.addRoundedRectangle (b.translated (0.0f, dy), metric::radiusLarge);
-        g.setColour (juce::Colours::black.withAlpha (alpha));
-        g.fillPath (path);
-    };
-
-    shadow (curve.getBounds().toFloat(), 5.0f, 0.20f);
-
-    if (! deckArea.isEmpty())
-    {
-        //  The deck carries the EDGE CUT on its top-right corner - motif
-        //  place two of three.
-        auto card = edgeCutPanel (deckArea.toFloat(), metric::radiusLarge, 26.0f, 19.0f);
-
-        {
-            juce::Path sh (card);
-            sh.applyTransform (juce::AffineTransform::translation (0.0f, 3.0f));
-            g.setColour (juce::Colours::black.withAlpha (0.16f));
-            g.fillPath (sh);
-        }
-
-        g.setColour (colour::deck);
-        g.fillPath (card);
-        g.setColour (colour::shellShadow.withAlpha (0.6f));
-        g.strokePath (card, juce::PathStrokeType (1.0f));
-    }
-
-    //  The wordmark: four stroked capitals whose last E falls into the cut.
-    //  Drawn from Paths - no font, no asset. Motif place one of three.
-    drawWordmark (g, getLocalBounds().removeFromTop (metric::headerHeight).toFloat(),
-                  colour::textOnLight);
-
-   #if JUCE_DEBUG
-    //  The build identity is a development aid. Release builds keep it in the
-    //  log and the manual, not painted on the product.
-    g.setColour (colour::textOnLight.withAlpha (0.45f));
-    g.setFont (juce::FontOptions (font::tiny));
-    g.drawText (versionText,
-                getLocalBounds().removeFromBottom (14).withTrimmedRight (22).withTrimmedLeft (12),
-                juce::Justification::centredRight, false);
-   #endif
-
-    //  EDGE's own label, and the CLEAN / CUT endpoints beside the knob.
-    if (! edgeKnob.getBounds().isEmpty())
-    {
-        const auto e = edgeKnob.getBounds();
-
-        g.setColour (colour::text);
-        g.setFont (juce::FontOptions (font::knobLabel).withStyle ("Bold"));
-        g.drawText ("EDGE", edgeLabelArea, juce::Justification::centred, false);
-
-        g.setColour (colour::textDim);
-        g.setFont (juce::FontOptions (font::caption).withStyle ("Bold"));
-        g.drawText ("CLEAN", e.getX() - 48, e.getBottom() - 18, 44, 12,
-                    juce::Justification::centredRight, false);
-        g.drawText ("CUT", e.getRight() + 4, e.getBottom() - 18, 44, 12,
-                    juce::Justification::centredLeft, false);
-    }
 }
 
 void EdgeAudioProcessorEditor::resized()
@@ -428,11 +433,14 @@ void EdgeAudioProcessorEditor::resized()
     edgeProcessor.editorWidth.store (getWidth());
     edgeProcessor.editorHeight.store (getHeight());
 
-    auto r = getLocalBounds();
+    //  The graph is the window.
+    curve.setBounds (getLocalBounds());
 
-    //  --- header: preset left, wordmark centred (painted), BITE + BYPASS right --
-    auto header = r.removeFromTop (metric::headerHeight);
+    //  --- floating header: x 16, y 12, height 48 --------------------------------
+    headerPanel.setBounds (16, 12, getWidth() - 32, 48);
     {
+        auto header = headerPanel.getBounds();
+
         auto left = header.withTrimmedLeft (metric::margin);
         presetTitle.setBounds (left.removeFromLeft (52).withSizeKeepingCentre (52, 20));
         const int boxW = juce::jmin (190, getWidth() / 5);
@@ -452,42 +460,40 @@ void EdgeAudioProcessorEditor::resized()
         biteKnob.slider.setBounds (bite.withSizeKeepingCentre (36, 36));
     }
 
-    //  --- deck --------------------------------------------------------------------
-    auto deck = r.removeFromBottom (metric::deckHeight + metric::margin)
-                 .withTrimmedBottom (metric::margin)
-                 .withTrimmedLeft (metric::margin).withTrimmedRight (metric::margin);
-    deckArea = deck;
-
+    //  --- floating macro dock: x 24, bottom inset 18, height 116 -----------------
+    dockPanel.setBounds (24, getHeight() - 18 - 116, getWidth() - 48, 116);
     {
-        auto quarters = deck;
-        const int quarter = quarters.getWidth() / 4;
+        auto dock = dockPanel.getBounds().reduced (10, 4);
+        const int quarter = dock.getWidth() / 4;
 
-        auto lowArea    = quarters.removeFromLeft (quarter);
-        auto edgeArea   = quarters.removeFromLeft (quarter);
-        auto highArea   = quarters.removeFromLeft (quarter);
-        auto followArea = quarters;
+        auto lowArea    = dock.removeFromLeft (quarter);
+        auto edgeArea   = dock.removeFromLeft (quarter);
+        auto highArea   = dock.removeFromLeft (quarter);
+        auto followArea = dock;
 
-        lowKnob.place  (lowArea.reduced (8), 82);
-        highKnob.place (highArea.reduced (8), 82);
-        followKnob.place (followArea.reduced (8), 74);
+        lowKnob.place  (lowArea, 64);
+        highKnob.place (highArea, 64);
+        followKnob.place (followArea, 60);
 
-        //  EDGE: 116 px, dominant, endpoints painted either side. Same block
-        //  construction as the others so all four captions sit on one line.
-        auto e = edgeArea.reduced (8).withSizeKeepingCentre (140, 16 + 4 + 116);
-        edgeLabelArea = e.removeFromTop (16);
-        e.removeFromTop (4);
-        edgeKnob.setBounds (e.withSizeKeepingCentre (116, 116));
+        //  EDGE: dominant, its caption row shared with the others.
+        auto e = edgeArea.withSizeKeepingCentre (140, 14 + 2 + 92);
+        edgeLabelArea = e.removeFromTop (14);
+        e.removeFromTop (2);
+        const auto knob = e.withSizeKeepingCentre (92, 92);
+        edgeKnob.setBounds (knob);
+
+        const auto dockPos = dockPanel.getPosition();
+        dockPanel.edgeLabel = edgeLabelArea - dockPos;
+        dockPanel.cleanRect = juce::Rectangle<int> (knob.getX() - 48, knob.getBottom() - 16,
+                                                    44, 12) - dockPos;
+        dockPanel.cutRect = juce::Rectangle<int> (knob.getRight() + 4, knob.getBottom() - 16,
+                                                  44, 12) - dockPos;
     }
 
-    //  --- graph, with MODE floating inside its top --------------------------------
-    auto graphArea = r.withTrimmedLeft (metric::margin).withTrimmedRight (metric::margin)
-                      .withTrimmedTop (metric::margin);
-    curve.setBounds (graphArea);
-
+    //  --- MODE, floating inside the graph content ---------------------------------
     {
         const int segW = 250, segH = 28;
-        auto seg = juce::Rectangle<int> (graphArea.getCentreX() - segW / 2,
-                                         graphArea.getY() + 12, segW, segH);
+        auto seg = juce::Rectangle<int> (getWidth() / 2 - segW / 2, 68 + 8, segW, segH);
         const int w = segW / 4;
         lpButton.setBounds   (seg.removeFromLeft (w));
         bandButton.setBounds (seg.removeFromLeft (w));

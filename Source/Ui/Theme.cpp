@@ -310,11 +310,21 @@ namespace edge::ui
         //  use this instead of a text box under the circle.
         if ((bool) props.getWithDefault ("valueInside", false))
         {
+            //  Candidate C: the value is the knob's content, and the ONE
+            //  number that matters gets real size - EDGE at 24 px, the deck
+            //  at 16. Reserve enough box for "20.00 kHz" and "-100 %".
+            const float valueSize = (float) (double) props.getWithDefault ("valueSize", 13.0);
+
+            //  The box is WIDER than the knob: "20.00 kHz" at 16 px does not
+            //  fit a 64 px body, and the dock behind is flat and dark, so the
+            //  number may overhang the circle rather than be clipped by it.
+            const float boxW = juce::jmax (bodyR * 2.0f + 12.0f, valueSize * 6.0f);
             g.setColour (colour::text);
-            g.setFont (juce::FontOptions (font::value));
+            g.setFont (juce::FontOptions (valueSize));
             g.drawText (s.getTextFromValue (s.getValue()),
-                        juce::Rectangle<int> ((int) (centre.x - bodyR), (int) centre.y + 4,
-                                              (int) (bodyR * 2.0f), 14),
+                        juce::Rectangle<int> ((int) (centre.x - boxW * 0.5f),
+                                              (int) (centre.y - valueSize * 0.5f + 2.0f),
+                                              (int) boxW, (int) valueSize + 4),
                         juce::Justification::centred, false);
         }
 

@@ -60,8 +60,16 @@ namespace edge::ui
 
     void CurveView::resized()
     {
-        auto r = getLocalBounds().toFloat().reduced (4.0f);
-        axisGutter = r.removeFromBottom (15.0f);
+        //  v0.16 full-bleed: the view IS the window. The readable content sits
+        //  inside fixed insets - 24 px sides, 68 px under the floating header,
+        //  136 px above the floating dock - and the surface runs edge to edge.
+        auto r = getLocalBounds().toFloat();
+        r.removeFromTop (68.0f);
+        r.removeFromBottom (136.0f);
+        r.removeFromLeft (24.0f);
+        r.removeFromRight (24.0f);
+
+        axisGutter = r.removeFromBottom (14.0f);
         plot = r;
 
         //  Both path families are in component coordinates, so both die here.
@@ -408,15 +416,38 @@ namespace edge::ui
         //  string literals and re-decoding at the end double-encoded it.
         const auto sep = juce::String::fromUTF8 (" \xe2\x80\xa2 ");
 
+        //  While EDGE is travelling the readout shows the journey itself:
+        //  `LP (bullet) 2.4 kHz -> 1.2 kHz` - where the cutoff IS, then where
+        //  it is going. Arrived (or parked), it shows one number.
+        const auto arrow = juce::String::fromUTF8 (" \xe2\x86\x92 ");
+
+        auto travelling = [&] (float liveHz, float targetHz)
+        {
+            return std::abs (std::log2 (juce::jmax (1.0f, liveHz)
+                                          / juce::jmax (1.0f, targetHz))) > 0.06f;
+        };
+
         juce::String text;
 
         if (snap.mode == (int) Mode::lowPass)
-            text = "LP" + sep + formatHz (highHz);
+        {
+            const float live = snap.currentCentre.highHz;
+            text = "LP" + sep + (travelling (live, highHz)
+                                     ? formatHz (live) + arrow + formatHz (highHz)
+                                     : formatHz (highHz));
+        }
         else if (snap.mode == (int) Mode::highPass)
-            text = "HP" + sep + formatHz (lowHz);
+        {
+            const float live = snap.currentCentre.lowHz;
+            text = "HP" + sep + (travelling (live, lowHz)
+                                     ? formatHz (live) + arrow + formatHz (lowHz)
+                                     : formatHz (lowHz));
+        }
         else
+        {
             text = "LOW" + sep + formatHz (lowHz)
                  + "   HIGH" + sep + formatHz (highHz);
+        }
 
         const float gain = midG->convertFrom0to1 (midG->getValue());
         if (std::abs (gain) > 0.05f || selected == Grab::mid)
@@ -761,16 +792,10 @@ namespace edge::ui
 
     void CurveView::paint (juce::Graphics& g)
     {
-        auto frame = getLocalBounds().toFloat().reduced (1.0f);
+        //  One continuous instrument surface, edge to edge. No frame, no
+        //  border, no card: the floating header and dock live on top of it.
         g.setColour (colour::graph);
-        g.fillRoundedRectangle (frame, metric::radiusLarge);
-
-        //  The seam between chassis and instrument: a 1 px light border
-        //  outside, a 1 px white-at-7 % highlight inside.
-        g.setColour (colour::shellShadow);
-        g.drawRoundedRectangle (frame.reduced (0.5f), metric::radiusLarge, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.07f));
-        g.drawRoundedRectangle (frame.reduced (1.5f), metric::radiusLarge - 1.0f, 1.0f);
+        g.fillRect (getLocalBounds());
 
         //  Nothing is rebuilt in paint: the timer owns invalidation, paint
         //  only draws what is cached. (First paint before the first tick still
@@ -779,7 +804,7 @@ namespace edge::ui
             updateResponsePaths();
 
         // --- grid: 1 px at 8-10 %, quieter than everything above it -----------
-        g.setFont (juce::FontOptions (font::axis));
+        g.setFont (juce::FontOptions (9.0f));
 
         for (float hz : { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f,
                           2000.0f, 5000.0f, 10000.0f, 20000.0f })
@@ -1025,7 +1050,7 @@ namespace edge::ui
 
             //  The badge names the object once, top right, out of the way.
             g.setColour (colour::text.withAlpha (0.46f));
-            g.setFont (juce::FontOptions (font::axis));
+            g.setFont (juce::FontOptions (9.0f));
             g.drawText ("EDGE PATH",
                         (int) plot.getRight() - 90, (int) plot.getY() + 6, 82, 14,
                         juce::Justification::centredRight, false);
@@ -1188,10 +1213,10 @@ namespace edge::ui
         //  home whether or not anything is being touched.
         {
             const auto text = readoutText();
-            g.setFont (juce::FontOptions (font::readout));
+            g.setFont (juce::FontOptions (13.0f));
 
             int w = juce::jmax (110, juce::GlyphArrangement::getStringWidthInt (
-                              juce::Font (juce::FontOptions (font::readout)), text) + 22);
+                              juce::Font (juce::FontOptions (13.0f)), text) + 22);
 
             //  Never under the fixed inspector: truncate at its left edge.
             if (readoutRightLimit > 0)

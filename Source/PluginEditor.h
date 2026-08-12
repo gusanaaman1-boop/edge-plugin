@@ -43,6 +43,23 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
+    //  The two floating layers of the full-bleed construction. They sit above
+    //  the graph in z-order and below every control; each paints its own
+    //  glass and shadows. The header carries the wordmark and the reactive
+    //  hairline; the dock carries the EDGE CUT corner.
+    struct HeaderPanel : public juce::Component
+    {
+        juce::Colour hairline = edge::ui::colour::shellShadow;
+        void paint (juce::Graphics&) override;
+    };
+
+    struct DockPanel : public juce::Component
+    {
+        juce::String versionText;
+        juce::Rectangle<int> edgeLabel, cleanRect, cutRect;   // dock-local
+        void paint (juce::Graphics&) override;
+    };
+
     //  A deck knob: label above, value inside the knob itself.
     struct DeckKnob
     {
@@ -90,7 +107,9 @@ private:
 
     edge::ui::SelectedControl selected = edge::ui::SelectedControl::low;
     juce::Rectangle<int> edgeLabelArea;
-    juce::Rectangle<int> deckArea;
+
+    HeaderPanel headerPanel;
+    DockPanel dockPanel;
 
     juce::ComponentBoundsConstrainer constrainer;
     juce::String versionText;
