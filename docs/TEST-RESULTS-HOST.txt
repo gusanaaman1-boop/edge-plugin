@@ -53,9 +53,9 @@ EDGE host-contract suite
   [PASS] the selected preset survives a save/load                   13 of 13
 
 == 7. build identity ==
-  [PASS] a version is compiled in                                   0.8.0
-  [PASS] a git description is compiled in                           v0.8
-  [PASS] a repository build carries a real git description          v0.8
+  [PASS] a version is compiled in                                   0.9.0
+  [PASS] a git description is compiled in                           v0.9
+  [PASS] a repository build carries a real git description          v0.9
   [PASS] the log records the exact build                            written to EDGE.log
 
 == 8. editor ==
