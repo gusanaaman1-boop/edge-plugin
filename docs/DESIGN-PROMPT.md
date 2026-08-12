@@ -1,89 +1,91 @@
-# EDGE — v0.17 divergence report and correction request
+# EDGE — v0.17.1 verification prompt
 
-Paste everything below the line into the review chat. Attach BOTH: the approved
-mockup image, and the current renders from `outputs/ui/` (hero-lp-follow,
-inspector-low, state-iron, size-min).
+Paste everything below the line into the review chat. Attach: the approved
+mockup, plus `hero-lp-follow`, `inspector-lp-high`, `inspector-follow`,
+`state-iron` and `size-min` from `outputs/ui/`.
 
 ---
 
-## What happened
+## What this is
 
-v0.17 was implemented in one pass as ordered, all 226 automated checks are
-green, the functional lock held (hash `0x7826a61a1db9aa41`, neutral bit-exact,
-latency 0). The owner's verdict on the result:
+The corrective work order (fixes 1–9) has been implemented in full, in the
+mandated sequence, with the checkpoint honoured after steps 1–3. This is the
+verification pass: judge each fix against the approved mockup and return a
+verdict per item — no new design directions, no re-litigation of decided
+questions.
 
-> *"Extremely disappointed. It looks nothing like the mockup I sent, and the
-> display is full of glitches again."*
+The functional lock held throughout: hash `0x7826a61a1db9aa41`, 24 parameters,
+neutral bit-exact (measured 0.000000000000), latency 0, 93 DSP + 133
+host-contract checks green in Release and under ASan+UBSan.
 
-He is right that it diverged. I compared my render against the mockup
-pixel-by-pixel and these are the gaps I can see myself — confirm, correct and
-extend this list, then give ONE corrective work order with exact numbers.
+## What was implemented, per fix
 
-## The divergences I can already name
+**FIX 1 — curved EDGE PATH.** The horizontal rails are deleted. The route is
+sampled from the actual cached target-response path at 1 px arc-length steps;
+dots sit every 9 px of accumulated path distance, every dot's y from the curve.
+LP descends right, HP left, BAND both, FREE none. No dot inside the puck's
+core + 3 px. The dashed target hands over to the dotted journey on the cut
+side — drawing both stacked meant neither was readable.
 
-**1. EDGE PATH follows the wrong geometry — the biggest miss.** In the mockup
-the dotted path rides **along the response curve itself**: from the live puck
-at the knee, the cyan dots run down the target curve's slope to the diamond
-sitting at the *bottom* of the cut. Mine draws a **horizontal rail** at the
-puck's height. The mockup's version is dramatically better — the journey IS
-the curve the sound will take. Spec needed: the dotted path is sampled along
-the TARGET response between the live corner's position and the target corner,
-dots following the curve's y at each x.
+**FIX 2 — destination diamond.** On the target response at −54 dB or 12 px
+above the floor, whichever comes first — the visible end of the cut, a
+distinct object from the frequency handle.
 
-**2. Values are not accent-coloured.** Mockup: `148 Hz` in amber inside the
-LOW knob, `1.20 kHz` in cyan, `+70 %` and `55 %` in violet. Mine renders all
-values ice-white. Spec needed: value colour per control, and which stay
-neutral.
+**FIX 3 — analyzer height.** Root cause found: per-band pink energy for a
+−18 dBFS total is ≈ −38 dBFS per 96th-octave band, and the old y-anchors put
+that at 33 % of graph height. New anchors (0 → 8 %, −18 → 30 %, −36 → 55 %,
+−66 → 94 %) put the same signal at ~45 %. Band values untouched — the tone
+placement and level tests pass unchanged. Steel palette applied exactly
+(#405A70/#263D51/#101B27 fill, #63809A line at 38–46 %).
 
-**3. The EDGE knob's arc is violet in the mockup** — movement colour for the
-travel control — with the LED orbit around it. Mine kept the amber→cyan split
-arc. Also every deck knob in the mockup carries a fine dotted micro-tick ring;
-mine has none.
+**FIX 4 (order §5) — EDGE knob.** Violet base arc #9A7BFF, displacement arc
+#B5A4FF at 5 px between base and live, ice-white base endpoint, violet live
+endpoint, 36-LED orbit on a widened 140 px component. Amber/cyan split: gone.
+Deck micro-orbits: 28/28/24/20 dots, value-lit, never animated. Semantic value
+colours everywhere per the table (amber/cyan/violet/#B29CFF/#C6CCDA/champagne).
 
-**4. The wordmark is wrong.** The mockup's mark is large (~25 px cap),
-outlined/segmented geometric letters with a soft glow, reading instantly as a
-logo. Mine is thin strokes with a falling tail that reads as a scribble at
-small size. Needs a full letterform spec: outline weight, segment breaks,
-spacing, glow (if any), and whether the falling-tail idea survives at all.
+**FIX 5 (order §6) — wordmark.** The falling tail is dead. Four outlined
+glyphs, 142 × 28, cap 25, stroke 2.25, segmented E arms with 2 px spine
+breaks, continuous D bowl, G with a 7 px inward terminal, and the 14 × 10
+EDGE CUT on the final E's top arm — inside the bounds. Three-stroke light
+(8 px / 4 %, 4 px / 14 %, core).
 
-**5. Luminosity is an order of magnitude apart.** The mockup glows: puck halo,
-LP segment glow, arc glows, analyzer with strong presence filling most of the
-graph height. Mine is matte and dim by comparison — I applied the "localized
-light" strokes conservatively. Spec needed: exact glow radii/opacities per
-element, and which elements get none.
+**FIX 6 (order §7) — inspector density.** 420 × 104, centred 24 px title
+strip + 1 px separator, 34 px mini-knobs, −/+ end marks, value capsules
+#080C13 at 90 % radius 6, slope selector 156 × 28 with dB/oct outside the
+segments and selected digits in graph-black.
 
-**6. Density/scale.** Mockup knobs are larger relative to the deck, labels sit
-INSIDE the accent colour, +/− end marks under mini knobs, value capsules under
-the inspector knobs (mine puts plain text). The inspector in the mockup has a
-title bar strip with the context name centred.
+**FIX 7 (order §8) — label solver.** Four candidates per handle scored
+against placed labels (+6), handles (+8), the readout, the mode selector and
+the open inspector (avoid-rects fed from the editor), response curve (+4) as
+tiebreaker. All-fail suppresses an unselected label only. The LP/MID collision
+near 1 kHz is gone.
 
-## The glitches
+**FIX 8 (order §9) — knee priority.** Inside the puck's 24 px exclusion:
+route dots capped 16 %, trail 26 %, FOLLOW halo 28 %; the drawing order is the
+specified stack; no dot inside core + 3 px.
 
-The owner reports "the display is full of glitches" — the ones I can see in my
-own render: the MID and LP handle name labels collide near 1 kHz; the dashed
-target, dotted path, trail dots and the violet ring stack into visual noise
-around the knee; the wordmark tail collides visually with nothing but reads as
-a rendering error. **Ask him for the specific list with a screenshot and mark
-each one**, then include every fix in the work order with an acceptance test.
+## Honest deviations to rule on
 
-## What is fixed and cannot move
+1. **The trail is nearly invisible in still frames** — 180 ms decay barely
+   survives a screenshot. Live it reads. If stills matter for marketing,
+   say whether the decay budget moves (it is a display-only constant).
+2. **Overall luminosity is still below the mockup.** I applied the specified
+   stroke/glow numbers literally; the mockup image glows more than its own
+   numbers. If the numbers should change, give new ones — I will not
+   freelance them again.
+3. **The G and D letterforms** are my geometry from your written spec. If the
+   silhouette isn't right, correct with coordinates, not adjectives.
+4. **BITE endpoint light from `colourEngage01` (0–18 %)** is still not wired.
+   Small, honest gap; say if it makes this round or the next.
 
-The functional lock from the v0.17 order stays exactly as written: no DSP,
-parameter, preset or state changes; hash `0x7826a61a1db9aa41`; engine-driven
-motion only; JUCE code only, no assets; all current tests stay green.
-
-## What I need back
-
-ONE corrective work order, implementation-ready:
+## Verdict format
 
 ```
-FIX n — <element>
-  CURRENT     what my render does (from the screenshots)
-  TARGET      what the mockup does
-  SPEC        exact numbers: geometry, colours, opacities, sizes
-  ACCEPTANCE  what the screenshot/pixel rig can assert
+FIX n — ACCEPT | REJECT
+  if REJECT: the exact numeric correction, one line per change
 ```
 
-Ordered by visual impact. The EDGE PATH curve-following geometry is #1 unless
-you disagree with reasons. Where the mockup and the motion rules conflict
-(glow that implies activity while idle), say which wins and why.
+Plus, if anything in the hero frame still diverges from the mockup in a way
+not covered by fixes 1–9: name it with coordinates and numbers. The next pass
+is polish-only; structural questions are closed.
