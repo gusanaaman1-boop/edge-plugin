@@ -1,0 +1,35 @@
+EDGE - a two-sided musical filter
+by Gussa Naaman
+
+
+Draw the destination. EDGE travels there. Your sound pushes it.
+
+  LOW and HIGH        where the two spectral edges are going
+  EDGE                travels from CLEAN to CUT - one control, both sides
+  FOLLOW to EDGE      lets the signal itself drive that travel
+  SPREAD              moves the channels apart without narrowing either one
+  BITE / WARM / IRON  hidden colour that arrives with the depth
+
+At EDGE 0 it is a bit-exact wire and adds zero latency, so you can leave it on
+a track and forget it is there.
+
+
+WHERE THIS PUTS THINGS
+
+  VST3 plug-in    C:\Program Files\Common Files\VST3\EDGE.vst3
+  Standalone      C:\Program Files\Naaman\EDGE\EDGE.exe
+
+Close your DAW before continuing. Windows cannot replace a plug-in that a
+running host has open, and that is the usual reason an update seems to do
+nothing at all.
+
+Afterwards, in Cubase: Studio menu, VST Plug-in Manager, Update. EDGE appears
+under Naaman, in the Filter category.
+
+To remove it later, use Windows' own Apps list - EDGE uninstalls like any
+other program.
+
+
+This build is not code-signed. Windows SmartScreen may show a blue "Windows
+protected your PC" panel: click "More info", then "Run anyway". The manual,
+MANUAL.md, is installed alongside the plug-in.

@@ -115,6 +115,13 @@ echo
 echo "== macOS: installer =="
 "$ROOT/packaging/make-installer-macos.sh" "$VERSION"
 
+# --- macOS disk image --------------------------------------------------------
+# The one file a Mac user should be handed: the installer, the manual and an
+# uninstaller, in the window that opens when they double-click it.
+echo
+echo "== macOS: disk image =="
+"$ROOT/packaging/make-dmg-macos.sh" "$VERSION"
+
 # --- Windows source ---------------------------------------------------------
 echo
 echo "== Windows: source bundle =="
@@ -127,11 +134,77 @@ git archive HEAD | tar -x -C "$SRC"
 
 cp "$ROOT/packaging/BUILD-ME-FIRST.txt" "$SRC/"
 cp "$ROOT/packaging/INSTALL-EDGE.bat" "$SRC/"
+cp "$ROOT/packaging/MAKE-INSTALLER.bat" "$SRC/"
 cp "$ROOT/packaging/RUN-EDGE-TESTS.bat" "$SRC/"
 cp "$ROOT/packaging/UNINSTALL-EDGE.bat" "$SRC/"
 
+# The four scripts must be at the bundle root, and MAKE-INSTALLER.bat needs the
+# two files it feeds to Inno Setup. git archive carries packaging/ already, but
+# checking beats assuming - the bundle is only ever opened on another machine.
+for f in "INSTALL-EDGE.bat" "MAKE-INSTALLER.bat" "RUN-EDGE-TESTS.bat" \
+         "UNINSTALL-EDGE.bat" "BUILD-ME-FIRST.txt" \
+         "packaging/EDGE.iss" "packaging/INFO-BEFORE.txt" "CMakeLists.txt"; do
+    [ -e "$SRC/$f" ] || { echo "WINDOWS BUNDLE INCOMPLETE: $f"; exit 1; }
+done
+
 ( cd "$DIST/stage-win" && zip -qr "$DIST/EDGE-$VERSION-windows-src.zip" "EDGE-$VERSION-src" )
 rm -rf "$DIST/stage-win"
+
+# --- what is what -------------------------------------------------------------
+# Four files in a folder with no note is a guessing game. This one says who
+# each file is for, in the folder itself, where the guessing would happen.
+cat > "$DIST/README-FIRST.txt" <<TXT
+EDGE $VERSION — what to send, and to whom
+by Gussa Naaman
+
+
+ON A MAC
+--------
+
+  EDGE-$VERSION.dmg            <- send THIS
+
+    Double-click, then double-click the .pkg inside. Choose VST3, Audio
+    Unit and/or Standalone. Universal — Apple Silicon and Intel. The manual
+    and a double-clickable uninstaller are in the same window.
+
+  EDGE-$VERSION.pkg            the bare installer, if you would rather not
+                              send a disk image
+  EDGE-$VERSION-macOS.zip      the raw .vst3 / .component / .app, for
+                              someone who wants to place them by hand
+
+
+ON WINDOWS
+----------
+
+  EDGE-$VERSION-windows-src.zip
+
+    This is the SOURCE. Whoever runs it needs Visual Studio 2022 (free).
+    Extract it, then right-click INSTALL-EDGE.bat and Run as administrator.
+
+    There is no Windows compiler on the Mac these packages were built on, so
+    a ready-made Windows installer cannot be produced here. It can be
+    produced ONCE on any Windows machine:
+
+        extract the ZIP  ->  double-click MAKE-INSTALLER.bat
+
+    That yields a single file — dist\\EDGE-<version>-windows.exe, whose exact
+    name it prints when it finishes — and that file needs NO tools at all on
+    the machines you then send it to.
+
+    Do that once, keep the .exe, and Windows becomes as simple as the Mac.
+
+
+NOT SIGNED
+----------
+
+  Neither platform's package is code-signed.
+
+    macOS    the standalone needs right-click, Open, the first time.
+             Plug-ins inside a DAW are unaffected.
+    Windows  SmartScreen may show a blue panel: More info, then Run anyway.
+
+  docs/SIGNING.md says exactly what certificates cost and what they fix.
+TXT
 
 echo
 echo "== done =="

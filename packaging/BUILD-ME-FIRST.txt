@@ -47,6 +47,29 @@ WHAT YOU NEED, ONCE
   fetch it once, about 500 MB.
 
 ------------------------------------------------------------------------------
+GIVING EDGE TO SOMEONE ELSE
+------------------------------------------------------------------------------
+
+You only need this if you want to hand EDGE to a person who has no developer
+tools and never will.
+
+    MAKE-INSTALLER.bat        (double-click, no administrator needed)
+
+It builds EDGE and packs it into
+
+    dist\EDGE-<version>-windows.exe
+
+which is a normal Windows installer: double-click, tick what you want, done.
+No Visual Studio, no CMake, no git, no source - none of it, on their machine.
+It also lands in Windows' Apps list, so it uninstalls like anything else.
+
+It needs Inno Setup 6 here, once. Free, no account, about 5 MB:
+
+    https://jrsoftware.org/isdl.php
+
+Do this once and keep the .exe. Everyone after that just runs it.
+
+------------------------------------------------------------------------------
 IF SOMETHING GOES WRONG
 ------------------------------------------------------------------------------
 

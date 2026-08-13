@@ -1,19 +1,50 @@
-; EDGE — Windows installer, for Inno Setup 6.
+; EDGE - Windows installer, for Inno Setup 6.
 ;
-;   iscc packaging\EDGE.iss
+; Do not run this by hand. MAKE-INSTALLER.bat builds EDGE and then calls this
+; with the version, the artefact folder and the icon already worked out:
 ;
-; Run INSTALL-EDGE.bat FIRST. This script installs what that produced; it does
-; not build anything itself, so an installer can never ship a binary nobody
-; tested.
+;     MAKE-INSTALLER.bat   ->   dist\EDGE-0.18.0-windows.exe
 ;
-; NOT verified: there is no Windows machine here. Everything below is written
-; to be checked on the first Windows run, and the script fails loudly rather
-; than installing half of itself.
+; It packs what the build produced; it never builds anything itself, so an
+; installer can never ship a binary nobody compiled.
+;
+; NOT verified: there is no Windows machine here. Everything below is written to
+; be checked on the first Windows run, and to fail loudly - at COMPILE time
+; where possible - rather than install half of itself.
 
-#define AppName    "EDGE"
+#ifndef AppVersion
+  #define AppVersion "0.18.0"
+#endif
+
+; Where the built artefacts live. MAKE-INSTALLER.bat passes an absolute path;
+; the default is the layout the Visual Studio generator produces.
+#ifndef SrcRoot
+  #define SrcRoot "..\build-win\Edge_artefacts\Release"
+#endif
+
+#define AppName      "EDGE"
 #define AppPublisher "Naaman"
-#define AppVersion "0.18.0"
-#define SrcRoot    "..\build-win\Edge_artefacts\Release"
+#define AppAuthor    "Gussa Naaman"
+
+; --- compile-time proof that there is something to pack ----------------------
+; The old version of this file checked for the build tree in InitializeSetup -
+; that is, on the END USER'S machine, at install time, where the build tree of
+; course does not exist. Every recipient would have been told "EDGE has not been
+; built yet" and the installer would have refused itself. The check belongs
+; here, when the package is made, and it is a hard error.
+#if !DirExists(SrcRoot + "\VST3\EDGE.vst3")
+  #error The VST3 bundle is missing. Run MAKE-INSTALLER.bat, which builds first.
+#endif
+
+; The bundle FOLDER existing proves nothing - a build that died half way leaves
+; an empty one, and it installs perfectly and then fails to load.
+#if !FileExists(SrcRoot + "\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3")
+  #error The VST3 bundle is empty - the build did not finish. See EDGE-installer-log.txt.
+#endif
+
+#if !FileExists(SrcRoot + "\Standalone\EDGE.exe")
+  #error The standalone was not built. Run MAKE-INSTALLER.bat.
+#endif
 
 [Setup]
 AppId={{8F2C4A61-3D7E-4B92-9C15-EDGE0000A001}
@@ -21,6 +52,10 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
+AppCopyright={#AppAuthor}
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#AppPublisher}
+VersionInfoDescription=EDGE - a two-sided musical filter
 DefaultDirName={autopf}\{#AppPublisher}\{#AppName}
 DefaultGroupName={#AppPublisher}
 DisableProgramGroupPage=yes
@@ -32,12 +67,26 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
+; What the wizard says before anything is chosen. A plug-in installer that opens
+; with "Welcome to the EDGE Setup Wizard" and nothing else leaves the one
+; question a musician actually has - where does this end up - unanswered.
+InfoBeforeFile=INFO-BEFORE.txt
+
+; The mark, if the build produced one. JUCE generates icon.ico from ICON_BIG,
+; and MAKE-INSTALLER.bat only passes it once it exists: Inno refuses to compile
+; against a SetupIconFile that is not there.
+#ifdef EdgeIcon
+SetupIconFile={#EdgeIcon}
+#endif
+UninstallDisplayName={#AppName} {#AppVersion}
+UninstallDisplayIcon={app}\EDGE.exe
+
 ; Writing to Common Files needs elevation. Asking for it up front is honest;
 ; discovering it half way through a copy is not.
 PrivilegesRequired=admin
 
 ; Refuse rather than corrupt: a VST3 folder that is half replaced because the
-; DAW had it open is a plug-in that crashes on next scan.
+; DAW had it open is a plug-in that crashes on the next scan.
 CloseApplications=yes
 RestartApplications=no
 
@@ -63,6 +112,7 @@ Source: "{#SrcRoot}\Standalone\EDGE.exe"; \
     Components: app; \
     Flags: ignoreversion
 
+; The manual goes in whatever was installed, so it is never orphaned.
 Source: "..\docs\MANUAL.md";          DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\PARAMETER-TABLE.md"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -74,38 +124,9 @@ Name: "{group}\{#AppName}"; Filename: "{app}\EDGE.exe"; Components: app
 Type: dirifempty; Name: "{commoncf64}\VST3\EDGE.vst3"
 
 [Code]
-// Fail before copying anything, not after. INSTALL-EDGE.bat produces these;
-// if they are missing the user ran the wrong thing, and saying so is far more
-// use than an installer that succeeds and installs nothing.
-function InitializeSetup(): Boolean;
-var
-  Missing: String;
-begin
-  Missing := '';
-
-  //  The VST3 bundle AND its actual payload - an empty EDGE.vst3 folder is a
-  //  build that failed halfway, and installing it gives Cubase something that
-  //  scans and then fails to load.
-  if not DirExists(ExpandConstant('{src}\..\build-win\Edge_artefacts\Release\VST3\EDGE.vst3')) then
-    Missing := Missing + '  build-win\Edge_artefacts\Release\VST3\EDGE.vst3' + #13#10;
-
-  if not FileExists(ExpandConstant('{src}\..\build-win\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3')) then
-    Missing := Missing + '  ...\EDGE.vst3\Contents\x86_64-win\EDGE.vst3 (the payload)' + #13#10;
-  //  Inno is only ever run after INSTALL-EDGE.bat, which uses the Visual
-  //  Studio generator, so the Release\ level is always present here.
-
-  Result := (Missing = '');
-
-  if not Result then
-    MsgBox('EDGE has not been built yet.' + #13#10#13#10 +
-           'Missing:' + #13#10 + Missing + #13#10 +
-           'Run INSTALL-EDGE.bat first — it builds EDGE and runs its test ' +
-           'suites before anything is installed.',
-           mbCriticalError, MB_OK);
-end;
-
 // Verify, do not assume. An installer that reports success while leaving the
-// plug-in folder empty is the single most expensive kind of silent failure.
+// plug-in folder empty is the single most expensive kind of silent failure -
+// the user rescans, finds nothing, and has no idea which half went wrong.
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Target: String;
@@ -114,11 +135,12 @@ begin
   begin
     if WizardIsComponentSelected('vst3') then
     begin
-      Target := ExpandConstant('{commoncf64}\VST3\EDGE.vst3');
-      if not DirExists(Target) then
-        MsgBox('INSTALL FAILED: ' + Target + ' does not exist afterwards.' + #13#10 +
-               'Nothing was installed for Cubase. Try running this installer ' +
-               'as administrator.', mbCriticalError, MB_OK);
+      Target := ExpandConstant('{commoncf64}\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3');
+      if not FileExists(Target) then
+        MsgBox('INSTALL FAILED: the plug-in is not at' + #13#10 + Target + #13#10#13#10 +
+               'Nothing usable was installed for Cubase. Try running this ' +
+               'installer again as administrator, with your DAW closed.',
+               mbCriticalError, MB_OK);
     end;
   end;
 end;

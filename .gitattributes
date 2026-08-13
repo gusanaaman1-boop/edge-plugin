@@ -1,0 +1,14 @@
+# The Windows delivery is text that Windows itself has to parse, so its line
+# endings are part of the payload, not a formatting preference.
+#
+# cmd.exe reads a .bat one line at a time and is documented to work with CRLF.
+# With LF only it usually copes - and then does not: a goto that lands one byte
+# past its label, or a parenthesised if-block that swallows the line after it.
+# The failure is silent and happens on someone else's machine.
+#
+# "-text" means: never convert these, in either direction. They are stored with
+# CRLF and they leave the repository with CRLF - including through the
+# `git archive` that builds the Windows bundle.
+*.bat            -text
+*.iss            -text
+packaging/*.txt  -text

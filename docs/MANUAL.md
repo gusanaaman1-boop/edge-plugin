@@ -163,8 +163,9 @@ neutral state. No preset ever touches BYPASS.
 
 ## Installing
 
-**macOS** — run `EDGE-<version>.pkg` (VST3 / AU / Standalone, each optional),
-or copy by hand:
+**macOS** — open `EDGE-<version>.dmg` and double-click the `.pkg` inside
+(VST3 / AU / Standalone, each optional). The manual and a double-clickable
+uninstaller are in the same window. Or copy by hand:
 
 | | |
 |---|---|
@@ -186,6 +187,11 @@ have built one of the others it is already there.
 
 `RUN-EDGE-TESTS.bat` is optional: it runs the 226 measurement checks with your
 own compiler. `UNINSTALL-EDGE.bat` removes everything.
+
+To pass EDGE on to someone with no developer tools, run `MAKE-INSTALLER.bat`
+once on a Windows machine — it produces `EDGE-<version>-windows.exe`, an
+ordinary single-file installer that needs nothing on the machines you send it
+to. It uses Inno Setup 6 (free, ~5 MB, <https://jrsoftware.org/isdl.php>).
 
 In Cubase: Studio → VST Plug-in Manager → rescan. EDGE is under **Filter**.
 

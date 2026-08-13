@@ -24,8 +24,8 @@ At EDGE 0 the plug-in is a **bit-exact wire** with **zero latency**.
 | | |
 |---|---|
 | Formats | VST3, Audio Unit, Standalone |
-| macOS | universal binary (Apple Silicon + Intel), ad-hoc signed |
-| Windows | VST3 + Standalone, built from the source bundle: right-click `INSTALL-EDGE.bat` and Run as administrator - it finds CMake inside Visual Studio, uses the shared `%USERPROFILE%\JUCE`, builds, installs and verifies. `RUN-EDGE-TESTS.bat` runs the suites separately. |
+| macOS | universal binary (Apple Silicon + Intel), ad-hoc signed. Delivered as `EDGE-<ver>.dmg` — installer, manual and uninstaller in one image. |
+| Windows | VST3 + Standalone, built from the source bundle: right-click `INSTALL-EDGE.bat` and Run as administrator - it finds CMake inside Visual Studio, uses the shared `%USERPROFILE%\JUCE`, builds, installs and verifies. `RUN-EDGE-TESTS.bat` runs the suites separately. `MAKE-INSTALLER.bat` packs the build into `EDGE-<ver>-windows.exe` (Inno Setup 6) — a redistributable installer that needs no tools on the target machine. |
 | Host target | Cubase 15 (filed under *Filter*); any VST3/AU host |
 | Sample rates | 44.1 / 48 / 88.2 / 96 / 192 kHz — corner identical at all five |
 | Channels | mono or stereo |
