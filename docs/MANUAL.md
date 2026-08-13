@@ -1,6 +1,6 @@
 # EDGE — user manual
 
-*For v0.17. An autofilter with a destination.*
+*For v0.18. An autofilter with a destination.*
 
 ---
 

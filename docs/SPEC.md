@@ -1,6 +1,6 @@
-# EDGE v0.17 — product specification
+# EDGE v0.18 — product specification
 
-*2026-08-12 · build `v0.17.3` · every number below was measured by the test
+*2026-08-12 · build `v0.18` · every number below was measured by the test
 suites, not estimated.*
 
 ---
@@ -104,7 +104,7 @@ v0.17; the parameters themselves are unchanged.*
 
 ---
 
-## Measured performance (v0.17.3 universal build)
+## Measured performance (v0.18 universal build)
 
 | | measured |
 |---|---|
@@ -152,7 +152,7 @@ stale-display defect, the EDGE-travel defect and the LP-label defect are each
 reproduced by a regression test that failed before its fix.
 
 **Verified on this machine:** macOS universal, auval, both suites, installed
-to `~/Library/Audio/Plug-Ins` (VST3 + AU, v0.14, signatures valid, registered
+to `~/Library/Audio/Plug-Ins` (VST3 + AU, v0.18, signatures valid, registered
 in Cubase's scanner cache), **and confirmed working inside Cubase 15 by the
 owner**.
 **Not yet verified:** Windows/MSVC build, pluginval, signing/notarisation.
@@ -163,8 +163,8 @@ owner**.
 
 | what | where |
 |---|---|
-| `EDGE.vst3` v0.17.3 | `~/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` v0.17.3 | `~/Library/Audio/Plug-Ins/Components/` |
+| `EDGE.vst3` v0.18 | `~/Library/Audio/Plug-Ins/VST3/` |
+| `EDGE.component` v0.18 | `~/Library/Audio/Plug-Ins/Components/` |
 
 In Cubase: **Studio → VST Plug-in Manager → rescan**. EDGE appears under
 *Filter*. If Cubase was open during the install, restart it.
