@@ -18,6 +18,8 @@
 
 #include <juce_dsp/juce_dsp.h>
 
+#include <EdgeVersion.h>
+
 #include "../Core/ParameterIds.h"
 #include "../Core/Parameters.h"
 #include "../Core/StateMigration.h"
@@ -2214,10 +2216,21 @@ namespace
         constexpr double kMinRatio = 0.90;
        #endif
 
-        check (open >= kMinRealtime, "CPU with the analyser feeding: real-time factor",
+        //  The absolute throughput bar is a REGRESSION GATE for development
+        //  machines, tuned on this Mac. On a user's computer - a laptop, or a
+        //  machine busy doing something else - missing it proves nothing about
+        //  the plug-in, and a source-bundle build failing here would send a
+        //  false alarm ("some checks FAILED") for a working install. Bundle
+        //  builds report the number and pass; repository builds still gate.
+        const bool gate = edge::kFromGitRepo;
+        check (open >= kMinRealtime || ! gate,
+               gate ? "CPU with the analyser feeding: real-time factor"
+                    : "CPU real-time factor (informational in bundle builds)",
                f (open, 0) + "x realtime (" + f (100.0 / open, 2) + " % of one core, bar "
                    + f (kMinRealtime, 0) + "x)");
 
+        //  The RELATIVE cost of the analyser stays gated everywhere: it
+        //  compares the plug-in against itself, so machine speed cancels.
         check (open >= closed * kMinRatio,
                "analyser costs no more than 10 % of throughput",
                "closed " + f (closed, 0) + "x, open " + f (open, 0) + "x, delta "
