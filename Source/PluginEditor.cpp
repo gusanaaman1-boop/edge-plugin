@@ -76,7 +76,19 @@ void EdgeAudioProcessorEditor::HeaderPanel::paint (juce::Graphics& g)
     g.drawLine (b.getX() + 12.0f, b.getBottom() - 1.0f,
                 b.getRight() - 12.0f, b.getBottom() - 1.0f, 1.0f);
 
-    drawWordmark (g, b, juce::Colour (0xffEEF2FA));
+    //  The wordmark alone. The logo MARK is the same letterform, so placing
+    //  it beside the word read as a fifth glyph and gave EDGE two falling
+    //  E's. The mark's home is the app icon and the plug-in list, where the
+    //  word does not fit; here the word IS the logo.
+    drawWordmark (g, b.withTrimmedBottom (8.0f), juce::Colour (0xffEEF2FA));
+
+    //  The identity line. Small, quiet, and the first thing that tells a new
+    //  user what the plug-in is for.
+    g.setColour (colour::tertiary.withAlpha (0.85f));
+    g.setFont (juce::Font (juce::FontOptions (8.5f)).withExtraKerningFactor (0.18f));
+    g.drawText ("DRAW THE DESTINATION",
+                (int) b.getCentreX() - 120, (int) b.getBottom() - 13, 240, 10,
+                juce::Justification::centred, false);
 }
 
 void EdgeAudioProcessorEditor::DockPanel::paint (juce::Graphics& g)

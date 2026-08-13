@@ -36,6 +36,40 @@ namespace edge::ui
         return p;
     }
 
+    void drawLogoMark (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink,
+                       float stroke, bool tintFall)
+    {
+        //  Proportions locked to the box so the mark is identical at 34 px and
+        //  at 340: spine full height, three arms, and the middle one running
+        //  62 % flat before falling 30 % of the cap height.
+        const float x = b.getX(), y = b.getY();
+        const float h = b.getHeight(), w = b.getWidth();
+        const float gap = stroke * 1.1f;          // the arms detach from the spine
+
+        juce::Path body;
+        body.startNewSubPath (x, y);
+        body.lineTo (x, y + h);                                  // spine
+        body.startNewSubPath (x + gap, y);
+        body.lineTo (x + w, y);                                  // top arm
+        body.startNewSubPath (x + gap, y + h);
+        body.lineTo (x + w, y + h);                              // bottom arm
+
+        //  The middle arm IS the response: flat, then the fall.
+        juce::Path fall;
+        fall.startNewSubPath (x + gap, y + h * 0.5f);
+        fall.lineTo (x + w * 0.62f, y + h * 0.5f);
+        fall.quadraticTo (x + w * 0.84f, y + h * 0.5f,
+                          x + w, y + h * 0.5f + h * 0.30f);
+
+        const juce::PathStrokeType pen (stroke, juce::PathStrokeType::curved,
+                                        juce::PathStrokeType::rounded);
+
+        g.setColour (ink);
+        g.strokePath (body, pen);
+        g.setColour (tintFall ? colour::high : ink);
+        g.strokePath (fall, pen);
+    }
+
     void drawWordmark (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour ink)
     {
         //  v0.17.1: the falling tail is dead - at header scale it read as a
@@ -58,23 +92,25 @@ namespace edge::ui
 
             const float ax = x + 2.0f + stroke;                   // 2 px break
 
+            m.startNewSubPath (ax, y0);
+            m.lineTo (x + gw, y0);                                // top arm
+            m.startNewSubPath (ax, y0 + capH);
+            m.lineTo (x + gw, y0 + capH);                         // bottom arm
+
+            //  The FINAL E's middle arm is the logo mark's falling arm - the
+            //  mark and the wordmark are one idea, drawn once each.
+            m.startNewSubPath (ax, y0 + capH * 0.5f);
+
             if (withCut)
             {
-                //  Top arm ends in the EDGE CUT: 14 px run, 10 px fall.
-                m.startNewSubPath (ax, y0);
-                m.lineTo (x + gw - 14.0f + 10.0f, y0);
-                m.lineTo (x + gw, y0 + 10.0f);
+                m.lineTo (x + gw * 0.62f, y0 + capH * 0.5f);
+                m.quadraticTo (x + gw * 0.84f, y0 + capH * 0.5f,
+                               x + gw, y0 + capH * 0.5f + capH * 0.30f);
             }
             else
             {
-                m.startNewSubPath (ax, y0);
-                m.lineTo (x + gw, y0);
+                m.lineTo (x + gw - 4.0f, y0 + capH * 0.5f);
             }
-
-            m.startNewSubPath (ax, y0 + capH * 0.5f);
-            m.lineTo (x + gw - 4.0f, y0 + capH * 0.5f);
-            m.startNewSubPath (ax, y0 + capH);
-            m.lineTo (x + gw, y0 + capH);
         };
 
         auto letterD = [&] (float x)

@@ -364,11 +364,286 @@ namespace
     }
 }
 
+namespace
+{
+    //  ---- logo mark candidates -------------------------------------------------
+    //  A MARK, not a wordmark: something that survives at 32 px in a plug-in
+    //  list and still says what EDGE is. Each one is pure JUCE Path geometry.
+    //
+    //  The shared idea they draw from: EDGE's response is flat, then it falls.
+    //  That silhouette is the product.
+
+    //  The canonical curve: flat run, then the fall, inside a unit box.
+    juce::Path edgeCurve (juce::Rectangle<float> b, float kneeX = 0.42f)
+    {
+        juce::Path p;
+        const float y0 = b.getY() + b.getHeight() * 0.30f;
+        const float kx = b.getX() + b.getWidth() * kneeX;
+
+        p.startNewSubPath (b.getX(), y0);
+        p.lineTo (kx, y0);
+        p.cubicTo (kx + b.getWidth() * 0.22f, y0,
+                   b.getRight() - b.getWidth() * 0.10f, b.getBottom() - b.getHeight() * 0.22f,
+                   b.getRight(), b.getBottom());
+        return p;
+    }
+
+    //  1. THE CUT - the curve carved through a rounded square, the falling
+    //     side filled. Reads as a filter at any size.
+    void markCut (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.14f);
+
+        juce::Path frame;
+        frame.addRoundedRectangle (b, b.getWidth() * 0.22f);
+        g.setColour (ink.withAlpha (0.30f));
+        g.strokePath (frame, juce::PathStrokeType (w * 0.7f));
+
+        auto curve = edgeCurve (inner);
+        juce::Path fill (curve);
+        fill.lineTo (inner.getRight(), inner.getBottom());
+        fill.lineTo (inner.getX(), inner.getBottom());
+        fill.closeSubPath();
+
+        juce::Graphics::ScopedSaveState clip (g);
+        juce::Path clipPath;
+        clipPath.addRoundedRectangle (b.reduced (w * 0.5f), b.getWidth() * 0.20f);
+        g.reduceClipRegion (clipPath);
+
+        g.setColour (ink.withAlpha (0.18f));
+        g.fillPath (fill);
+        g.setColour (ink);
+        g.strokePath (curve, juce::PathStrokeType (w, juce::PathStrokeType::curved));
+    }
+
+    //  2. THE JOURNEY - the curve as a dotted route ending in the destination
+    //     diamond. The product's own signature object, alone.
+    void markJourney (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.10f);
+        auto curve = edgeCurve (inner, 0.30f);
+
+        const float total = curve.getLength();
+        const float step = juce::jmax (3.0f, b.getWidth() * 0.085f);
+
+        for (float d = 0.0f; d < total - step * 0.5f; d += step)
+        {
+            const auto pt = curve.getPointAlongPath (d);
+            const float t = d / total;
+            const float r = w * (0.62f + 0.30f * (1.0f - t));
+            g.setColour (ink.withAlpha (0.35f + 0.55f * (1.0f - t)));
+            g.fillEllipse (pt.x - r, pt.y - r, r * 2.0f, r * 2.0f);
+        }
+
+        const auto end = curve.getPointAlongPath (total);
+        const float dr = w * 1.7f;
+        juce::Path diamond;
+        diamond.addQuadrilateral (end.x, end.y - dr, end.x + dr, end.y,
+                                  end.x, end.y + dr, end.x - dr, end.y);
+        g.setColour (ink);
+        g.strokePath (diamond, juce::PathStrokeType (w * 0.8f));
+    }
+
+    //  3. THE MONOGRAM - E, with its middle arm running flat and then falling.
+    //     The wordmark's idea, isolated as a mark.
+    void markMonogram (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.18f);
+        const float x = inner.getX(), y = inner.getY();
+        const float h = inner.getHeight(), wd = inner.getWidth();
+
+        juce::Path p;
+        p.startNewSubPath (x, y);
+        p.lineTo (x, y + h);                       // spine
+        p.startNewSubPath (x + w, y);
+        p.lineTo (x + wd, y);                      // top
+        p.startNewSubPath (x + w, y + h);
+        p.lineTo (x + wd, y + h);                  // bottom
+
+        //  the middle arm: flat, then the fall
+        p.startNewSubPath (x + w, y + h * 0.5f);
+        p.lineTo (x + wd * 0.62f, y + h * 0.5f);
+        p.lineTo (x + wd, y + h * 0.5f + h * 0.30f);
+
+        g.setColour (ink);
+        g.strokePath (p, { w, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+    }
+
+    //  4. TWO EDGES - the low edge rising from the left, the high edge falling
+    //     to the right, the band between them. The whole plug-in in one shape.
+    void markTwoEdges (juce::Graphics& g, juce::Rectangle<float> b,
+                       juce::Colour lowInk, juce::Colour highInk, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.10f);
+        const float top = inner.getY() + inner.getHeight() * 0.28f;
+
+        juce::Path lowSide;
+        lowSide.startNewSubPath (inner.getX(), inner.getBottom());
+        lowSide.cubicTo (inner.getX() + inner.getWidth() * 0.16f, inner.getBottom(),
+                         inner.getX() + inner.getWidth() * 0.22f, top,
+                         inner.getCentreX(), top);
+
+        juce::Path highSide;
+        highSide.startNewSubPath (inner.getCentreX(), top);
+        highSide.cubicTo (inner.getRight() - inner.getWidth() * 0.22f, top,
+                          inner.getRight() - inner.getWidth() * 0.16f, inner.getBottom(),
+                          inner.getRight(), inner.getBottom());
+
+        g.setColour (lowInk);
+        g.strokePath (lowSide, { w, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+        g.setColour (highInk);
+        g.strokePath (highSide, { w, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+    }
+
+    //  5. THE PUCK - the live position sitting on the knee. Minimal: a curve
+    //     and the one dot that is travelling along it.
+    void markPuck (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink,
+                   juce::Colour dot, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.12f);
+        auto curve = edgeCurve (inner, 0.34f);
+
+        g.setColour (ink.withAlpha (0.55f));
+        g.strokePath (curve, { w, juce::PathStrokeType::curved });
+
+        const auto pt = curve.getPointAlongPath (curve.getLength() * 0.42f);
+        const float r = w * 1.9f;
+        g.setColour (dot);
+        g.fillEllipse (pt.x - r, pt.y - r, r * 2.0f, r * 2.0f);
+        g.setColour (juce::Colour (0xff05070C));
+        g.drawEllipse (pt.x - r * 0.55f, pt.y - r * 0.55f, r * 1.1f, r * 1.1f, w * 0.7f);
+    }
+
+    //  6. THE KNEE - no container, no ornament. Just the silhouette, bold.
+    void markKnee (juce::Graphics& g, juce::Rectangle<float> b, juce::Colour ink, float w)
+    {
+        auto inner = b.reduced (b.getWidth() * 0.06f, b.getHeight() * 0.20f);
+        g.setColour (ink);
+        g.strokePath (edgeCurve (inner, 0.38f),
+                      { w * 1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+    }
+
+    //  The app icon: the mark on EDGE's own graph black, with the safe-area
+    //  padding macOS and Windows both expect.
+    int renderIcon (const juce::File& out, int size)
+    {
+        juce::Image image (juce::Image::ARGB, size, size, true);
+        juce::Graphics g (image);
+
+        const float s = (float) size;
+        juce::Path bg;
+        bg.addRoundedRectangle (0.0f, 0.0f, s, s, s * 0.22f);
+
+        juce::ColourGradient grad (juce::Colour (0xff141A24), 0.0f, 0.0f,
+                                   juce::Colour (0xff05070C), 0.0f, s, false);
+        g.setGradientFill (grad);
+        g.fillPath (bg);
+
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.strokePath (bg, juce::PathStrokeType (s * 0.008f));
+
+        //  The mark, centred, at 46 % of the canvas - the proportion that
+        //  survives being masked into a circle by a launcher.
+        const float markH = s * 0.46f, markW = markH * 0.86f;
+        edge::ui::drawLogoMark (g, { (s - markW) * 0.5f, (s - markH) * 0.5f, markW, markH },
+                                juce::Colour (0xffEDF4FF), s * 0.055f);
+
+        out.getParentDirectory().createDirectory();
+        out.deleteFile();
+        juce::FileOutputStream stream (out);
+        if (! stream.openedOk() || ! juce::PNGImageFormat().writeImageToStream (image, stream))
+            return 1;
+
+        std::printf ("wrote %s  (%d x %d)\n", out.getFullPathName().toRawUTF8(), size, size);
+        return 0;
+    }
+
+    int renderLogoSheet (const juce::File& out)
+    {
+        constexpr int cell = 190, small = 34, cols = 6;
+        const int W = cols * cell + 40, H = cell + 150;
+
+        juce::Image image (juce::Image::ARGB, W, H, true);
+        juce::Graphics g (image);
+
+        g.setColour (juce::Colour (0xff05070C));
+        g.fillAll();
+
+        const juce::Colour ink (0xffEDF4FF);
+        const juce::Colour amber (0xffFFAA3D), cyan (0xff35D5F2), violet (0xff9A7BFF);
+
+        const char* names[cols] = { "1  CUT", "2  JOURNEY", "3  MONOGRAM",
+                                    "4  TWO EDGES", "5  PUCK", "6  KNEE" };
+
+        auto drawOne = [&] (int i, juce::Rectangle<float> b, float w)
+        {
+            switch (i)
+            {
+                case 0: markCut (g, b, ink, w); break;
+                case 1: markJourney (g, b, cyan, w); break;
+                case 2: markMonogram (g, b, ink, w); break;
+                case 3: markTwoEdges (g, b, amber, cyan, w); break;
+                case 4: markPuck (g, b, ink, violet, w); break;
+                default: markKnee (g, b, ink, w); break;
+            }
+        };
+
+        for (int i = 0; i < cols; ++i)
+        {
+            const auto big = juce::Rectangle<float> (20.0f + (float) (i * cell) + 22.0f,
+                                                     28.0f, (float) cell - 44.0f,
+                                                     (float) cell - 44.0f);
+            drawOne (i, big, 5.5f);
+
+            //  the same mark at plug-in-list size, where most logos die
+            const auto tiny = juce::Rectangle<float> (20.0f + (float) (i * cell) + (float) (cell - small) * 0.5f,
+                                                      (float) cell + 6.0f,
+                                                      (float) small, (float) small);
+            drawOne (i, tiny, 1.6f);
+
+            g.setColour (juce::Colour (0xff8D96A3));
+            g.setFont (juce::FontOptions (11.0f));
+            g.drawText (names[i], 20 + i * cell, cell + 52, cell, 16,
+                        juce::Justification::centred, false);
+        }
+
+        g.setColour (juce::Colour (0xff687182));
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText ("EDGE logo marks - large, and at 34 px where a plug-in list shows them",
+                    20, H - 34, W - 40, 16, juce::Justification::centred, false);
+
+        out.getParentDirectory().createDirectory();
+        out.deleteFile();
+        juce::FileOutputStream stream (out);
+        if (! stream.openedOk() || ! juce::PNGImageFormat().writeImageToStream (image, stream))
+            return 1;
+
+        std::printf ("wrote %s\n", out.getFullPathName().toRawUTF8());
+        return 0;
+    }
+}
+
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI init;
 
     const juce::StringArray args (argv + 1, juce::jmax (0, argc - 1));
+
+    if (args.contains ("--icon"))
+    {
+        const int i = args.indexOf ("--icon");
+        const juce::String path = i + 1 < args.size() ? args[i + 1]
+                                                      : juce::String ("packaging/icon.png");
+        return renderIcon (juce::File::getCurrentWorkingDirectory().getChildFile (path), 1024);
+    }
+
+    if (args.contains ("--logo-sheet"))
+    {
+        const int i = args.indexOf ("--logo-sheet");
+        const juce::String path = i + 1 < args.size() ? args[i + 1]
+                                                      : juce::String ("outputs/logo-sheet.png");
+        return renderLogoSheet (juce::File::getCurrentWorkingDirectory().getChildFile (path));
+    }
 
     if (args.contains ("--parameter-table"))
     {

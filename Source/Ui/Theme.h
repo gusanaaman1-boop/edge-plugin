@@ -132,6 +132,13 @@ namespace edge::ui
     juce::Path edgeCutPanel (juce::Rectangle<float> bounds, float radius,
                              float cutW, float cutH);
 
+    //  The logo MARK: the letter E whose middle arm runs flat and then falls -
+    //  EDGE's own response curve living inside its initial. Drawn from Paths,
+    //  legible at 34 px, and the one place the falling arm is allowed to be
+    //  cyan. `stroke` scales the whole mark: pass bounds and it fills them.
+    void drawLogoMark (juce::Graphics&, juce::Rectangle<float> bounds,
+                       juce::Colour ink, float stroke, bool tintFall = true);
+
     //  The wordmark, drawn from Paths - no font, no image asset. Four stroked
     //  geometric capitals whose final E extends its middle arm into the same
     //  flat-then-fall cut the panels carry.

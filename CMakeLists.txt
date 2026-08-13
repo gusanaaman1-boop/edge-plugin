@@ -142,6 +142,10 @@ juce_add_plugin(Edge
     VST3_CATEGORIES "Fx" "Filter" "EQ"
     AU_MAIN_TYPE kAudioUnitType_Effect
     VERSION "${EDGE_VERSION}"
+    # The app/bundle icon: the logo mark, rendered by EdgeShot --icon and
+    # committed. This is a BUNDLE resource, not a UI asset - the interface
+    # itself is still drawn entirely in code.
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png"
     PRODUCT_NAME "EDGE")
 
 target_sources(Edge PRIVATE ${EDGE_PLUGIN_SOURCES} ${EDGE_VENDOR_SOURCES})
