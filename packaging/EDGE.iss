@@ -26,6 +26,12 @@
 #define AppPublisher "Naaman"
 #define AppAuthor    "Gussa Naaman"
 
+; Say which tool this needs, in words, before Inno 5 chokes on a directive it
+; has never heard of and reports a line number instead of a cause.
+#if VER < EncodeVer(6,0,0)
+  #error EDGE's installer needs Inno Setup 6. Get it from https://jrsoftware.org/isdl.php
+#endif
+
 ; --- compile-time proof that there is something to pack ----------------------
 ; The old version of this file checked for the build tree in InitializeSetup -
 ; that is, on the END USER'S machine, at install time, where the build tree of
@@ -64,8 +70,12 @@ OutputBaseFilename=EDGE-{#AppVersion}-windows
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+; "x64" and not "x64compatible": the newer spelling is only understood by Inno
+; Setup 6.3 and later, and refusing to compile on 6.0 is a worse trade than the
+; deprecation warning the newer compilers print for this one. Both mean the same
+; thing here - EDGE is 64-bit only.
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 
 ; What the wizard says before anything is chosen. A plug-in installer that opens
 ; with "Welcome to the EDGE Setup Wizard" and nothing else leaves the one

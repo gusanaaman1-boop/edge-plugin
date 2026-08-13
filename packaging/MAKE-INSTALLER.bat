@@ -108,8 +108,6 @@ if not defined ISCC (
     for %%P in (
         "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
         "%ProgramFiles%\Inno Setup 6\ISCC.exe"
-        "%ProgramFiles(x86)%\Inno Setup 5\ISCC.exe"
-        "%ProgramFiles%\Inno Setup 5\ISCC.exe"
     ) do (
         if not defined ISCC if exist "%%~P" set "ISCC=%%~P"
     )
