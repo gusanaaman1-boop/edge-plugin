@@ -2,6 +2,8 @@
 
 *For v0.18. An autofilter with a destination.*
 
+**EDGE — draw the destination.** By Gussa Naaman.
+
 ---
 
 ## The one idea

@@ -1,5 +1,7 @@
 # EDGE v0.18 — product specification
 
+*A two-sided musical filter by Gussa Naaman.*
+
 *2026-08-12 · build `v0.18` · every number below was measured by the test
 suites, not estimated.*
 

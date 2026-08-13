@@ -139,6 +139,14 @@ void EdgeAudioProcessorEditor::DockPanel::paint (juce::Graphics& g)
     g.drawText ("CLEAN", cleanRect, juce::Justification::centredRight, false);
     g.drawText ("CUT", cutRect, juce::Justification::centredLeft, false);
 
+    //  The maker's name, on the panel's bottom edge - where hardware puts it.
+    //  Quiet, widely tracked, and always present: it was in the metadata only,
+    //  which means it was nowhere a user ever looks.
+    g.setColour (colour::tertiary.withAlpha (0.75f));
+    g.setFont (juce::Font (juce::FontOptions (8.5f)).withExtraKerningFactor (0.22f));
+    g.drawText ("GUSSA NAAMAN",
+                getLocalBounds().reduced (22, 7), juce::Justification::bottomLeft, false);
+
    #if JUCE_DEBUG
     g.setColour (colour::textDim.withAlpha (0.5f));
     g.setFont (juce::FontOptions (font::tiny));

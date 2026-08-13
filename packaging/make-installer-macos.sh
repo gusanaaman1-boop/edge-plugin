@@ -71,7 +71,7 @@ build_component app  app  "/Applications"
 cat > "$STAGE/distribution.xml" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>EDGE $VERSION</title>
+    <title>EDGE $VERSION - by Gussa Naaman</title>
     <organization>com.naaman</organization>
     <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_localSystem="true"/>
@@ -102,7 +102,8 @@ XML
 mkdir -p "$STAGE/resources"
 cat > "$STAGE/resources/welcome.html" <<HTML
 <html><body style="font-family:-apple-system;font-size:13px">
-<p><b>EDGE $VERSION</b> — a two-sided filter for electronic music.</p>
+<p><b>EDGE $VERSION</b> — a two-sided filter for electronic music.<br>
+by <b>Gussa Naaman</b></p>
 <p>This build is <b>not signed or notarised</b>. macOS may warn about it the
 first time you open the standalone application; the plug-ins themselves load
 normally in a host.</p>
