@@ -1,0 +1,197 @@
+#  EDGE — the Windows build, on a machine that has a Windows compiler.
+#
+#  What it produces, every time it runs:
+#
+#      EDGE-<version>-windows.exe     a real installer, needs no tools
+#      EDGE-<version>-windows-VST3    the raw bundle, for hand placement
+#
+#  and it refuses to produce either unless all 226 measurement checks pass with
+#  MSVC. That is the whole point: the Mac can prove EDGE is correct with clang,
+#  and cannot prove it compiles at all with Microsoft's compiler.
+#
+#  ---------------------------------------------------------------------------
+#  RUNNING IT
+#
+#  Nothing here starts by itself. Pushing to main does not trigger it — this
+#  file only runs when you ask for it (Actions tab, "Run workflow") or when a
+#  v* tag is pushed.
+#
+#  "runner: windows-latest" uses GitHub's own machine and costs Actions
+#  minutes. "runner: self-hosted" uses YOUR Windows desktop and costs nothing
+#  on any plan — see docs/CI-WINDOWS.md for the five-minute setup.
+#  ---------------------------------------------------------------------------
+
+name: Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Where to build"
+        type: choice
+        default: windows-latest
+        options: [windows-latest, self-hosted]
+      release:
+        description: "Attach the installer to a GitHub release"
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+# Two runs of this on the same ref would fight over the same release asset.
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write        # only so a tagged run can attach the installer
+
+env:
+  # JUCE 9, the exact commit every EDGE build on every machine uses. Pinned
+  # rather than tracked: "it built last week" has to keep meaning something.
+  JUCE_COMMIT: 857aab9c4eb3084af639a380a693dcec7d728b73
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner || 'windows-latest' }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out EDGE
+        uses: actions/checkout@v4
+
+      # Into ./JUCE, which is CMakeLists' third and last fallback. Not into the
+      # home directory: on a self-hosted runner that is a real person's ~/JUCE,
+      # and a workflow has no business checking out over it.
+      - name: Check out JUCE (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_COMMIT }}
+          path: JUCE
+          fetch-depth: 1
+
+      - name: Read the version from CMakeLists
+        id: ver
+        shell: pwsh
+        run: |
+          $line = Select-String -Path CMakeLists.txt -Pattern '^project\(Edge VERSION ([0-9.]+)' |
+                  Select-Object -First 1
+          if (-not $line) { throw "Could not read the version out of CMakeLists.txt" }
+          $v = $line.Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "EDGE $v"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+                -DEDGE_COPY_AFTER_BUILD=OFF
+
+      - name: Build the plug-in and both test suites
+        shell: pwsh
+        run: |
+          cmake --build build --config Release `
+                --target Edge_VST3 Edge_Standalone EdgeTests EdgeHostTests `
+                --parallel
+
+      # Built is not the same as present. A build that dies half way leaves an
+      # empty EDGE.vst3 folder, and an empty bundle installs perfectly and then
+      # fails to scan — so check the payload inside it, not the folder.
+      - name: Check the artefacts exist
+        shell: pwsh
+        run: |
+          $need = @(
+            "build\Edge_artefacts\Release\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3",
+            "build\Edge_artefacts\Release\Standalone\EDGE.exe"
+          )
+          $missing = @($need | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            Get-ChildItem -Recurse build\Edge_artefacts | Select-Object -First 60 FullName
+            $missing | ForEach-Object { Write-Host "  MISSING  $_" }
+            throw "the build reported success but $($missing.Count) artefact(s) are not there"
+          }
+          $need | ForEach-Object { Write-Host "  ok  $_" }
+
+      - name: 93 DSP checks
+        shell: pwsh
+        run: .\build\EdgeTests_artefacts\Release\EdgeTests.exe
+
+      # This one opens real editors. If it ever fails on a hosted runner while
+      # passing on a desktop, suspect the session before suspecting the code.
+      - name: 133 host-contract checks
+        shell: pwsh
+        run: .\build\EdgeHostTests_artefacts\Release\EdgeHostTests.exe
+
+      - name: Find or install Inno Setup 6
+        id: inno
+        shell: pwsh
+        run: |
+          $paths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            Write-Host "Inno Setup not found; installing it."
+            choco install innosetup --no-progress -y
+            $iscc = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "Inno Setup 6 is still not available." }
+          Write-Host "  using $iscc"
+          "iscc=$iscc" >> $env:GITHUB_OUTPUT
+
+      - name: Pack the installer
+        shell: pwsh
+        run: |
+          $src  = "$pwd\build\Edge_artefacts\Release"
+          $icon = "$pwd\build\Edge_artefacts\JuceLibraryCode\icon.ico"
+          $args = @("/Q", "/DAppVersion=${{ steps.ver.outputs.version }}", "/DSrcRoot=$src")
+          # Only pass the icon once it exists — Inno refuses to compile against
+          # a SetupIconFile that is not there.
+          if (Test-Path $icon) { $args += "/DEdgeIcon=$icon" }
+          $args += "packaging\EDGE.iss"
+          & "${{ steps.inno.outputs.iscc }}" @args
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup refused (exit $LASTEXITCODE)" }
+
+      # An installer that packed nothing is still a valid .exe — about a
+      # megabyte of wizard and no payload. It installs, says it worked, and
+      # leaves the plug-in folder empty.
+      - name: Check the installer is not empty
+        shell: pwsh
+        run: |
+          $exe = "dist\EDGE-${{ steps.ver.outputs.version }}-windows.exe"
+          if (-not (Test-Path $exe)) { throw "no installer at $exe" }
+          $mb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+          if ((Get-Item $exe).Length -lt 2MB) { throw "the installer is only $mb MB — it is empty" }
+          Write-Host "  ok  $exe  ($mb MB)"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDGE-${{ steps.ver.outputs.version }}-windows-installer
+          path: dist/EDGE-${{ steps.ver.outputs.version }}-windows.exe
+          if-no-files-found: error
+
+      # The raw bundle too, for anyone who would rather drop it in by hand than
+      # run an unsigned installer.
+      - name: Upload the raw VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDGE-${{ steps.ver.outputs.version }}-windows-VST3
+          path: build/Edge_artefacts/Release/VST3/EDGE.vst3/**
+          if-no-files-found: error
+
+      # gh is preinstalled on every runner, so this needs no third-party action.
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $exe = "dist\EDGE-${{ steps.ver.outputs.version }}-windows.exe"
+          if (-not (gh release view $tag 2>$null)) {
+            gh release create $tag --title "EDGE $tag" --notes "Windows installer, built and tested by CI."
+          }
+          gh release upload $tag $exe --clobber
