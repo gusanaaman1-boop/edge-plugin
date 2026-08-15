@@ -31,8 +31,22 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     git status --short
     exit 1
 fi
+# The Windows installer is built by CI on a Windows machine and downloaded into
+# dist/ - this script cannot produce it and must not destroy it. Wiping dist/ is
+# still right (a stale macOS package is worse than none), so carry that one file
+# across the wipe rather than making the user fetch it again.
+KEEP=$(mktemp -d)
+for w in "$DIST"/EDGE-*-windows.exe; do
+    [ -e "$w" ] && cp "$w" "$KEEP/" && echo "keeping $(basename "$w") across the rebuild"
+done
+
 rm -rf "$DIST"
 mkdir -p "$DIST"
+
+for w in "$KEEP"/*.exe; do
+    [ -e "$w" ] && mv "$w" "$DIST/"
+done
+rmdir "$KEEP" 2>/dev/null || true
 
 # --- macOS ------------------------------------------------------------------
 echo
@@ -176,22 +190,23 @@ ON A MAC
 ON WINDOWS
 ----------
 
+  EDGE-0.18.0-windows.exe      <- send THIS
+
+    A normal Windows installer. Double-click, tick VST3 and/or the
+    standalone, done. It needs NOTHING on the machine it runs on — no
+    Visual Studio, no CMake, no git, no source. It also appears in
+    Windows' Apps list, so it uninstalls like any other program.
+
+    Built and tested by GitHub Actions on a Windows machine with Visual
+    Studio 2022 — the same 226 measurement checks the Mac runs, run again
+    with Microsoft's compiler, before the installer was allowed to exist.
+
   EDGE-$VERSION-windows-src.zip
 
-    This is the SOURCE. Whoever runs it needs Visual Studio 2022 (free).
-    Extract it, then right-click INSTALL-EDGE.bat and Run as administrator.
-
-    There is no Windows compiler on the Mac these packages were built on, so
-    a ready-made Windows installer cannot be produced here. It can be
-    produced ONCE on any Windows machine:
-
-        extract the ZIP  ->  double-click MAKE-INSTALLER.bat
-
-    That yields a single file — dist\\EDGE-<version>-windows.exe, whose exact
-    name it prints when it finishes — and that file needs NO tools at all on
-    the machines you then send it to.
-
-    Do that once, keep the .exe, and Windows becomes as simple as the Mac.
+    The source, for anyone who would rather build it themselves. Extract
+    it, then right-click INSTALL-EDGE.bat and Run as administrator. Needs
+    Visual Studio 2022 (free). MAKE-INSTALLER.bat inside it rebuilds the
+    .exe above locally.
 
 
 NOT SIGNED

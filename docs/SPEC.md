@@ -153,11 +153,21 @@ ASan+UBSan with zero sanitiser diagnostics. `auval` passes. The MID
 stale-display defect, the EDGE-travel defect and the LP-label defect are each
 reproduced by a regression test that failed before its fix.
 
-**Verified on this machine:** macOS universal, auval, both suites, installed
-to `~/Library/Audio/Plug-Ins` (VST3 + AU, v0.18, signatures valid, registered
-in Cubase's scanner cache), **and confirmed working inside Cubase 15 by the
+**Verified on macOS:** universal build, `auval`, both suites, installed to
+`~/Library/Audio/Plug-Ins` (VST3 + AU, v0.18, signatures valid, registered in
+Cubase's scanner cache), **and confirmed working inside Cubase 15 by the
 owner**.
-**Not yet verified:** Windows/MSVC build, pluginval, signing/notarisation.
+
+**Verified on Windows** (GitHub Actions, `windows-2022`, Visual Studio 17
+2022, run 31880792789): configure, build, **93 DSP checks and 133
+host-contract checks green under MSVC**, and the installer packed and
+size-checked. Two defects were found by that first MSVC compile and fixed —
+an `__has_feature` guard that a non-short-circuiting preprocessor could not
+parse, and an absolute CPU bar that measured the runner rather than the
+plug-in.
+
+**Still not verified:** pluginval, signing/notarisation, and the installer's
+behaviour on a real Windows desktop (it is built and checked, not yet run).
 
 ---
 

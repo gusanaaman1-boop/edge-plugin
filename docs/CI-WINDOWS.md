@@ -10,24 +10,28 @@ only when you ask for it — **Actions → Windows → Run workflow** — or whe
 
 ---
 
-## The one thing standing in the way
+## Status: working
 
-Hosted Actions runs are **blocked on this account** for private repositories,
-and have been since 2026-08-06: a run starts, executes zero steps, and stops
-after about two seconds with
+`edge-plugin` was made **public** on 2026-08-15. Public repositories get
+unmetered Actions, so hosted runs work here and cost nothing.
 
-> The job was not started because recent account payments have failed or your
-> spending limit needs to be increased.
+Run **31880792789** was the first fully green one: Visual Studio 2022, 93 DSP
+checks and 133 host-contract checks under MSVC, installer packed and
+size-checked, 4.8 MB. It took about twelve minutes.
 
-`edge-plugin` is private, so a `windows-latest` run will do exactly that. The
-workflow file is correct and ready; the runner is what is missing.
+That first compile also found two real defects — see the commit log for
+`__has_feature` and for the CPU bar. EDGE had never met a Microsoft compiler
+before; both are fixed.
 
-There are two ways to get a green Windows build without paying anything, and
-one of them is much better than the other.
+> **Background.** Hosted runs are still blocked on this account's **private**
+> repositories, and have been since 2026-08-06 — a run starts, executes zero
+> steps, and stops after about two seconds citing billing. That is why this
+> repository being public is what makes the workflow run. If EDGE is ever made
+> private again, use Option A below.
 
 ---
 
-## Option A — your own Windows desktop as a runner (recommended)
+## Option A — your own Windows desktop as a runner
 
 A **self-hosted runner** is your Windows machine, registered with the repo.
 GitHub sends it the job; your machine does the work. **It consumes no Actions
@@ -61,14 +65,14 @@ forgot to test is indistinguishable from one you did.
 
 ---
 
-## Option B — make the repository public
+## Option B — public repository (this is what EDGE does)
 
 Public repositories get unmetered Actions and are unaffected by the spending
-limit. `windows-latest` would then work immediately, with no runner to install.
+limit, so `windows-2022` runs immediately with no runner to install.
 
-It also publishes EDGE's entire source, so it is a real decision and not a
-workaround. Every other plug-in repository here is private; this is noted as an
-option, not a recommendation.
+It publishes EDGE's entire source and its whole history — including
+`Source/Vendor/FourColor/`, FOUR COLOR's saturation engine. That was raised
+before the switch and accepted. Every other plug-in repository here is private.
 
 ---
 
