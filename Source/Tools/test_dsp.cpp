@@ -2207,8 +2207,21 @@ namespace
         //  DSP's flat arrays, so the overhead reads 16 % there and 0.1 % in an
         //  optimised build. Both bars are relaxed together, and both are
         //  printed either way.
-       #if defined(__SANITIZE_ADDRESS__) \
-           || (defined(__has_feature) && __has_feature(address_sanitizer))
+        //  The two spellings must be tested in SEPARATE directives, not joined
+        //  by &&. A preprocessor does not short-circuit: MSVC has no
+        //  __has_feature, so `defined(__has_feature) && __has_feature(...)`
+        //  still expands the right-hand side, reads an undefined identifier as
+        //  0, and reports "unmatched parenthesis" on 0(address_sanitizer).
+        //  MSVC spells it __SANITIZE_ADDRESS__; clang spells it __has_feature.
+       #if defined(__SANITIZE_ADDRESS__)
+        #define EDGE_UNDER_ASAN 1
+       #elif defined(__has_feature)
+        #if __has_feature(address_sanitizer)
+         #define EDGE_UNDER_ASAN 1
+        #endif
+       #endif
+
+       #if defined(EDGE_UNDER_ASAN)
         constexpr double kMinRealtime = 10.0;
         constexpr double kMinRatio = 0.60;
        #else
