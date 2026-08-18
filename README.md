@@ -151,6 +151,8 @@ is not an empty wizard, and asserts `dist/` holds exactly two files.
 | checks | 93 signal + 133 host-contract, green on macOS/clang **and** Windows/MSVC |
 | sanitisers | ASan + UBSan clean, zero diagnostics |
 | `auval` | PASS |
+| pluginval | SUCCESS at strictness 10, VST3 and AU |
+| Windows installer | installed and uninstalled on a real Windows machine by CI |
 | neutral path | `max|out−in| = 0` exactly |
 | latency | 0 samples |
 | audio-thread allocations | 0 in 10,000 blocks |
@@ -158,6 +160,7 @@ is not an empty wizard, and asserts `dist/` holds exactly two files.
 | presets | 23 factory programs |
 | hosts | confirmed working in Cubase 15 by the owner |
 
-Not done: pluginval, code signing and notarisation, and nobody has yet
-double-clicked the Windows installer on a real desktop — it is built, packed
-and checked, but not run.
+Not done: **code signing and notarisation**, which need paid certificates on
+both platforms. The only consequence is one extra click the first time —
+right-click → Open on macOS, *More info* → *Run anyway* on Windows — and
+plug-ins loaded inside a DAW are unaffected either way.

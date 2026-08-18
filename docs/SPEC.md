@@ -150,7 +150,10 @@ v0.17; the parameters themselves are unchanged.*
 ## Verification
 
 93 DSP checks + 133 host-contract checks, green in Release **and** under
-ASan+UBSan with zero sanitiser diagnostics. `auval` passes. The MID
+ASan+UBSan with zero sanitiser diagnostics. `auval` passes, and **pluginval
+1.0.4 at strictness level 10 reports SUCCESS for both the VST3 and the Audio
+Unit** — including its parameter fuzzing and bus-layout passes, which the
+in-house suites do not attempt. The MID
 stale-display defect, the EDGE-travel defect and the LP-label defect are each
 reproduced by a regression test that failed before its fix.
 
@@ -167,14 +170,25 @@ size-checked. That first MSVC compile found two real defects — an
 and an absolute CPU bar measuring the runner rather than the plug-in — both
 invisible to every clang build.
 
+**The installer is run, not just built** (run 32118051987). CI installs it
+silently — what a double-click does — and then inspects disk rather than the
+exit code, because Inno returns 0 for installs that place nothing. Measured:
+`C:\Program Files\Common Files\VST3\EDGE.vst3\…\EDGE.vst3` 7,551,488 bytes,
+`C:\Program Files\Naaman\EDGE\EDGE.exe` 7,796,224 bytes, `MANUAL.md` 9,068
+bytes. It then uninstalls and asserts nothing is left behind.
+
 **Both delivery zips are verified after they are built**, by re-opening them:
 every promised file present, all three macOS components carrying a payload and
 installing to the path their format is loaded from, the Windows installer over
 2 MB with an x86-64 payload inside.
 
-**Still not verified:** pluginval, signing/notarisation, and the installer's
-behaviour on a real Windows desktop — it is built, packed and checked, but
-nobody has double-clicked it yet.
+**Still not done: code signing and notarisation, on either platform.** Both
+need paid certificates — an Apple Developer membership and a Windows
+code-signing certificate — so this is a commercial decision, not an
+engineering gap. The consequence is one extra click for the user the first
+time: right-click → Open on macOS, *More info* → *Run anyway* on Windows.
+Plug-ins loaded inside a DAW are unaffected on both platforms.
+[SIGNING.md](SIGNING.md) has the details.
 
 ---
 
