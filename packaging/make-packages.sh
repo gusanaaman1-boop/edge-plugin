@@ -296,9 +296,25 @@ for f in "EDGE-$VERSION-macOS.pkg" "READ ME.txt" "MANUAL.md" "PARAMETER-TABLE.md
     echo "  mac  ok  $f"
 done
 [ -x "$CHECK/mac/Uninstall EDGE.command" ] || { echo "  the uninstaller is not executable"; exit 1; }
-n=$(pkgutil --payload-files "$CHECK/mac/EDGE-$VERSION-macOS.pkg" 2>/dev/null | wc -l | tr -d ' ')
-[ "$n" -gt 0 ] || { echo "  the pkg has no payload"; exit 1; }
-echo "  mac  ok  pkg carries $n files"
+# Check each COMPONENT, not the product archive. pkgutil --payload-files on a
+# distribution package reports one component's count and looks like a pass even
+# when a format is missing entirely - and a musician who ticks "Audio Unit" and
+# gets nothing has no way to tell that from a Logic problem.
+pkgutil --expand "$CHECK/mac/EDGE-$VERSION-macOS.pkg" "$CHECK/pkg" >/dev/null
+for c in vst3 au app; do
+    [ -e "$CHECK/pkg/$c.pkg/Bom" ] || { echo "  the pkg has no $c component"; exit 1; }
+    n=$(lsbom -s "$CHECK/pkg/$c.pkg/Bom" | wc -l | tr -d ' ')
+    [ "$n" -gt 10 ] || { echo "  the $c component is empty ($n entries)"; exit 1; }
+    echo "  mac  ok  $c component, $n entries"
+done
+# And that each lands where that format is actually loaded from.
+lsbom -s "$CHECK/pkg/vst3.pkg/Bom" | grep -q "/Library/Audio/Plug-Ins/VST3/EDGE.vst3/Contents/MacOS/EDGE$" \
+    || { echo "  the VST3 does not install to the VST3 folder"; exit 1; }
+lsbom -s "$CHECK/pkg/au.pkg/Bom"   | grep -q "/Library/Audio/Plug-Ins/Components/EDGE.component/Contents/MacOS/EDGE$" \
+    || { echo "  the Audio Unit does not install to the Components folder"; exit 1; }
+lsbom -s "$CHECK/pkg/app.pkg/Bom"  | grep -q "/Applications/EDGE.app/Contents/MacOS/EDGE$" \
+    || { echo "  the standalone does not install to /Applications"; exit 1; }
+echo "  mac  ok  all three install where their format is loaded from"
 
 unzip -q "$DIST/EDGE-$VERSION-Windows-Setup.zip" -d "$CHECK/win"
 for f in "EDGE-$VERSION-windows.exe" "READ ME.txt" "MANUAL.md" "EDGE.vst3/Contents/x86_64-win/EDGE.vst3"; do
