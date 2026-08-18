@@ -185,6 +185,60 @@ jobs:
           if ((Get-Item $exe).Length -lt 2MB) { throw "the installer is only $mb MB — it is empty" }
           Write-Host "  ok  $exe  ($mb MB)"
 
+      # An installer that was built is not an installer that works. This runs
+      # it for real, on real Windows, in the mode a person's double-click would
+      # produce - and then checks what actually landed on disk rather than
+      # trusting the exit code, because Inno returns 0 for plenty of installs
+      # that put nothing anywhere.
+      - name: Install it, for real
+        shell: pwsh
+        run: |
+          $exe = "dist\EDGE-${{ steps.ver.outputs.version }}-windows.exe"
+          Start-Process -FilePath $exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Write-Host "installer exit code: $LASTEXITCODE"
+
+          $vst3 = "${env:CommonProgramFiles}\VST3\EDGE.vst3\Contents\x86_64-win\EDGE.vst3"
+          $app  = "${env:ProgramFiles}\Naaman\EDGE\EDGE.exe"
+          $man  = "${env:ProgramFiles}\Naaman\EDGE\MANUAL.md"
+
+          $bad = @()
+          foreach ($f in @($vst3, $app, $man)) {
+            if (Test-Path $f) {
+              Write-Host ("  ok       {0}  ({1:N0} bytes)" -f $f, (Get-Item $f).Length)
+            } else {
+              Write-Host "  MISSING  $f"
+              $bad += $f
+            }
+          }
+          if ($bad.Count -gt 0) { throw "the installer ran and did not install $($bad.Count) of its files" }
+
+          # A VST3 that is present but truncated scans and then fails to load.
+          if ((Get-Item $vst3).Length -lt 1MB) { throw "the installed VST3 is too small to be real" }
+
+      # It has to come off as cleanly as it went on. An uninstaller that leaves
+      # a half-deleted bundle behind gives Cubase something that crashes on the
+      # next scan, and nobody connects that to an uninstall done weeks earlier.
+      - name: Uninstall it, and check nothing is left
+        shell: pwsh
+        run: |
+          $unins = Get-ChildItem "${env:ProgramFiles}\Naaman\EDGE" -Filter "unins*.exe" |
+                   Select-Object -First 1
+          if (-not $unins) { throw "the install left no uninstaller" }
+
+          Start-Process -FilePath $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep -Seconds 5   # Inno's uninstaller detaches a helper to delete itself
+
+          $left = @()
+          foreach ($f in @("${env:CommonProgramFiles}\VST3\EDGE.vst3",
+                           "${env:ProgramFiles}\Naaman\EDGE\EDGE.exe")) {
+            if (Test-Path $f) { $left += $f }
+          }
+          if ($left.Count -gt 0) {
+            $left | ForEach-Object { Write-Host "  LEFT BEHIND  $_" }
+            throw "the uninstaller left $($left.Count) item(s) on disk"
+          }
+          Write-Host "  ok  installed and removed cleanly"
+
       - name: Upload the installer
         uses: actions/upload-artifact@v4
         with:
