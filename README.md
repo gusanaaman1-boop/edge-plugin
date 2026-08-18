@@ -54,6 +54,12 @@ default and installs the VST3 and AU into the user plug-in folders; pass
 macOS builds universal (arm64 + x86_64) by default, matching the rest of the
 workspace. Add `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster local build.
 
+On Windows, `INSTALL-EDGE.bat` does all of the above in one step — it finds
+CMake inside Visual Studio rather than demanding it on PATH, names the
+generator explicitly, and uses the shared `%USERPROFILE%\JUCE`.
+`RUN-EDGE-TESTS.bat` runs both suites; `MAKE-INSTALLER.bat` packs the build
+into a redistributable `.exe`.
+
 ### The measurement suite
 
 ```bash
@@ -99,21 +105,59 @@ docs/
   PARAMETERS.md        the frozen IDs and every control law
 ```
 
+## Installing
+
+The delivery is **two files**, one per platform.
+
+| | |
+|---|---|
+| `EDGE-<ver>-macOS.zip` | `.pkg` installer (VST3 / AU / Standalone, each optional), manual, parameter table, double-clickable uninstaller |
+| `EDGE-<ver>-Windows-Setup.zip` | Inno Setup `.exe`, the raw `EDGE.vst3` for hand placement, manual |
+
+macOS binaries are universal (Apple Silicon + Intel). Neither package is
+code-signed: on macOS the standalone needs right-click → Open once, and on
+Windows SmartScreen wants *More info* → *Run anyway*. Plug-ins loaded by a DAW
+are unaffected on both.
+
+In Cubase: Studio → VST Plug-in Manager → Update. EDGE is under **Naaman**, in
+the **Filter** category.
+
+Full instructions: [docs/MANUAL.md](docs/MANUAL.md).
+
 ## Packaging
 
 ```bash
-./packaging/make-packages.sh v0.4
+./packaging/fetch-windows-ci.sh     # Windows binaries from the last green CI run
+./packaging/make-packages.sh        # both zips, then verified by re-opening them
 ```
 
-Produces `dist/EDGE-<ver>-macOS.zip` (universal VST3 + AU + Standalone, with
-install notes) and `dist/EDGE-<ver>-windows-src.zip` (130 KB of source and a
-`.bat` that clones JUCE at a pinned commit and builds the VST3 itself). There is
-no cross-compiler here, so Windows ships as source that builds itself; the
-script verifies every macOS binary is genuinely universal before zipping.
+There is no Windows compiler on the Mac this is developed on, so the Windows
+half is built by [GitHub Actions](.github/workflows/windows.yml) with Visual
+Studio 2022 — all 226 checks must pass with MSVC before the installer is
+allowed to exist. `fetch-windows-ci.sh` refuses binaries from a run that built
+different code than the tree.
+
+`make-packages.sh` verifies what it produced rather than trusting it: it
+re-opens both zips, checks all three macOS components carry a payload and
+install to the path their format is loaded from, checks the Windows installer
+is not an empty wizard, and asserts `dist/` holds exactly two files.
 
 ## Status
 
-v0.5.1 complete and measured on macOS: 93 checks green, `auval` PASS, ASan+UBSan
-clean, 0 heap allocations in 10,000 audio blocks, ~458x realtime with the
-analyser feeding. v0.1 ran in Cubase; v0.2 has not been re-checked there yet,
-and there is still no Windows build, no presets and no installer.
+**v0.18, complete and measured.**
+
+| | |
+|---|---|
+| checks | 93 signal + 133 host-contract, green on macOS/clang **and** Windows/MSVC |
+| sanitisers | ASan + UBSan clean, zero diagnostics |
+| `auval` | PASS |
+| neutral path | `max|out−in| = 0` exactly |
+| latency | 0 samples |
+| audio-thread allocations | 0 in 10,000 blocks |
+| throughput | ~255× realtime stereo with the analyser feeding |
+| presets | 23 factory programs |
+| hosts | confirmed working in Cubase 15 by the owner |
+
+Not done: pluginval, code signing and notarisation, and nobody has yet
+double-clicked the Windows installer on a real desktop — it is built, packed
+and checked, but not run.

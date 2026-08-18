@@ -24,8 +24,9 @@ At EDGE 0 the plug-in is a **bit-exact wire** with **zero latency**.
 | | |
 |---|---|
 | Formats | VST3, Audio Unit, Standalone |
-| macOS | universal binary (Apple Silicon + Intel), ad-hoc signed. Delivered as `EDGE-<ver>.dmg` — installer, manual and uninstaller in one image. |
-| Windows | VST3 + Standalone, built from the source bundle: right-click `INSTALL-EDGE.bat` and Run as administrator - it finds CMake inside Visual Studio, uses the shared `%USERPROFILE%\JUCE`, builds, installs and verifies. `RUN-EDGE-TESTS.bat` runs the suites separately. `MAKE-INSTALLER.bat` packs the build into `EDGE-<ver>-windows.exe` (Inno Setup 6) — a redistributable installer that needs no tools on the target machine. |
+| Delivery | two files: `EDGE-<ver>-macOS.zip` and `EDGE-<ver>-Windows-Setup.zip` |
+| macOS | universal binary (Apple Silicon + Intel), ad-hoc signed; `.pkg` installer, manual, parameter table and a double-clickable uninstaller |
+| Windows | VST3 + Standalone, x64. An Inno Setup `.exe` built and tested by CI with Visual Studio 2022, plus the raw `EDGE.vst3` for hand placement |
 | Host target | Cubase 15 (filed under *Filter*); any VST3/AU host |
 | Sample rates | 44.1 / 48 / 88.2 / 96 / 192 kHz — corner identical at all five |
 | Channels | mono or stereo |
@@ -159,15 +160,21 @@ Cubase's scanner cache), **and confirmed working inside Cubase 15 by the
 owner**.
 
 **Verified on Windows** (GitHub Actions, `windows-2022`, Visual Studio 17
-2022, run 31880792789): configure, build, **93 DSP checks and 133
+2022, run 32114301353): configure, build, **93 DSP checks and 133
 host-contract checks green under MSVC**, and the installer packed and
-size-checked. Two defects were found by that first MSVC compile and fixed —
-an `__has_feature` guard that a non-short-circuiting preprocessor could not
-parse, and an absolute CPU bar that measured the runner rather than the
-plug-in.
+size-checked. That first MSVC compile found two real defects — an
+`__has_feature` guard a non-short-circuiting preprocessor could not parse,
+and an absolute CPU bar measuring the runner rather than the plug-in — both
+invisible to every clang build.
+
+**Both delivery zips are verified after they are built**, by re-opening them:
+every promised file present, all three macOS components carrying a payload and
+installing to the path their format is loaded from, the Windows installer over
+2 MB with an x86-64 payload inside.
 
 **Still not verified:** pluginval, signing/notarisation, and the installer's
-behaviour on a real Windows desktop (it is built and checked, not yet run).
+behaviour on a real Windows desktop — it is built, packed and checked, but
+nobody has double-clicked it yet.
 
 ---
 
@@ -175,8 +182,12 @@ behaviour on a real Windows desktop (it is built and checked, not yet run).
 
 | what | where |
 |---|---|
-| `EDGE.vst3` v0.18 | `~/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` v0.18 | `~/Library/Audio/Plug-Ins/Components/` |
+| `EDGE.vst3` 0.18.0 | `~/Library/Audio/Plug-Ins/VST3/` |
+| `EDGE.component` 0.18.0 | `~/Library/Audio/Plug-Ins/Components/` |
 
-In Cubase: **Studio → VST Plug-in Manager → rescan**. EDGE appears under
-*Filter*. If Cubase was open during the install, restart it.
+Registered in Cubase 15's VST3 cache as `Fx|Filter|EQ`, not blocklisted.
+
+Note for future sessions: `vstscannermaster -prefPath … -recheckPath …` prints
+*"illegal usage!"* on Cubase 15 and does nothing. Read
+`~/Library/Preferences/Cubase 15/Cubase Pro VST3 Cache (arm64)/vst3plugins.xml`
+to check registration instead, or use the Plug-in Manager's Update button.

@@ -163,37 +163,47 @@ neutral state. No preset ever touches BYPASS.
 
 ## Installing
 
-**macOS** — open `EDGE-<version>.dmg` and double-click the `.pkg` inside
-(VST3 / AU / Standalone, each optional). The manual and a double-clickable
-uninstaller are in the same window. Or copy by hand:
+The whole delivery is two files. Take the one for your machine.
 
-| | |
-|---|---|
-| `EDGE.vst3` | `~/Library/Audio/Plug-Ins/VST3/` |
-| `EDGE.component` | `~/Library/Audio/Plug-Ins/Components/` |
+### macOS — `EDGE-<version>-macOS.zip`
 
-The build is not notarised yet: the standalone needs right-click → Open the
-first time. Plug-ins loaded by a DAW are unaffected.
+Unzip it and double-click `EDGE-<version>-macOS.pkg`. It asks which formats
+you want — VST3, Audio Unit, Standalone — and each can be unticked. Universal
+binaries, so they load natively on Apple Silicon and Intel and under Rosetta.
 
-**Windows** — the download is source plus one script. Extract the ZIP, close
-your DAW, then right-click **`INSTALL-EDGE.bat`** and choose *Run as
-administrator*. It checks what you have (finding CMake inside Visual Studio if
-it is not on your PATH), builds, installs and verifies — writing every step to
-`EDGE-install-log.txt` and stopping at the first real problem rather than
-claiming success.
+Not notarised: the first time you open the standalone, right-click it and
+choose Open, then Open again. Plug-ins loaded by a DAW are unaffected.
 
-JUCE lives at `%USERPROFILE%\JUCE` and is shared by every plug-in, so if you
-have built one of the others it is already there.
+`Uninstall EDGE.command` in the same zip removes everything, on a double-click.
 
-`RUN-EDGE-TESTS.bat` is optional: it runs the 226 measurement checks with your
-own compiler. `UNINSTALL-EDGE.bat` removes everything.
+### Windows — `EDGE-<version>-Windows-Setup.zip`
 
-To pass EDGE on to someone with no developer tools, run `MAKE-INSTALLER.bat`
-once on a Windows machine — it produces `EDGE-<version>-windows.exe`, an
-ordinary single-file installer that needs nothing on the machines you send it
-to. It uses Inno Setup 6 (free, ~5 MB, <https://jrsoftware.org/isdl.php>).
+Close your DAW, unzip, and double-click `EDGE-<version>-windows.exe`. Tick
+VST3 and/or the standalone. It installs to `C:\Program Files\Common
+Files\VST3` and `C:\Program Files\Naaman\EDGE`, and it appears in Windows'
+Apps list so it uninstalls like any other program.
 
-In Cubase: Studio → VST Plug-in Manager → rescan. EDGE is under **Filter**.
+Not code-signed: SmartScreen may show a blue panel — *More info*, then *Run
+anyway*.
+
+The same zip carries the raw `EDGE.vst3` folder, if you would rather copy it
+into `C:\Program Files\Common Files\VST3\` by hand than run an installer.
+
+That Windows build is made by GitHub Actions on a machine with Visual Studio
+2022, and all 226 measurement checks must pass with Microsoft's compiler
+before the installer is allowed to exist.
+
+### Either way
+
+In Cubase: Studio → VST Plug-in Manager → Update. EDGE is under **Naaman**, in
+the **Filter** category.
+
+### Building it yourself
+
+The source is at <https://github.com/gusanaaman1-boop/edge-plugin>.
+`INSTALL-EDGE.bat` builds and installs on Windows, `RUN-EDGE-TESTS.bat` runs
+the 226 checks with your own compiler, and `MAKE-INSTALLER.bat` rebuilds the
+installer locally. All three need Visual Studio 2022 (free).
 
 ---
 
